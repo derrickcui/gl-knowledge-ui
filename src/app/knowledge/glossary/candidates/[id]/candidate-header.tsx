@@ -1,6 +1,18 @@
 import { CandidateDTO } from "@/lib/api";
-import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
+
+const STATUS_LABELS: Record<string, string> = {
+  DRAFT: "Not Reviewed",
+  CANDIDATE: "Not Reviewed",
+  SUBMITTED: "Under Review",
+  IN_REVIEW: "Under Review",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+};
+
+function getStatusLabel(status: string) {
+  return STATUS_LABELS[status] ?? status;
+}
 
 export function CandidateHeader({
   candidate,
@@ -11,6 +23,11 @@ export function CandidateHeader({
   status: string;
   onBack: () => void;
 }) {
+  const statusLabel = getStatusLabel(status);
+  const roleLabel = candidate.role
+    ? `${candidate.role[0].toUpperCase()}${candidate.role.slice(1)}`
+    : "Role";
+
   return (
     <div className="flex items-start justify-between">
       <div>
@@ -25,13 +42,8 @@ export function CandidateHeader({
           {candidate.canonical}
         </h1>
 
-        <div className="mt-1 flex items-center gap-2 text-sm">
-          <Badge variant={candidate.role as any}>
-            {candidate.role}
-          </Badge>
-          <span className="opacity-60">
-            Status: {status}
-          </span>
+        <div className="mt-1 text-sm text-muted-foreground">
+          {roleLabel} · {statusLabel}
         </div>
       </div>
 

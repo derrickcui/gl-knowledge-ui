@@ -9,10 +9,16 @@ export type CandidateDTO = {
   role: string;
   definition: string | null;
   status: string;
+  extractionStatus?: string;
+  lifecycleStatus?: string;
   confidence: number;
   source: string;
   owner: string;
   version: number;
+  published_at?: string | null;
+  submitted_by?: string | null;
+  reviewed_by?: string | null;
+  review_comment?: string | null;
   topics: any[];
 };
 
@@ -21,6 +27,10 @@ export type ReviewInfoDTO = {
   canSubmitForReview: boolean;
   effectiveStatus: string;
   reason?: string;
+  submittedBy?: string;
+  submittedAt?: string;
+  reviewedBy?: string;
+  reviewComment?: string;
 };
 
 /* =========================
