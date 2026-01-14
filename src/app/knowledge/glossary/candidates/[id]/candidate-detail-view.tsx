@@ -10,6 +10,28 @@ import { CandidateEvidencePanel } from "./candidate-evidence-panel";
 import { CandidateActions } from "./candidate-actions";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 
+const LIFECYCLE_LABELS: Record<string, string> = {
+  DRAFT: "Pending Review",
+  CANDIDATE: "Pending Review",
+  SUBMITTED: "Under Review",
+  IN_REVIEW: "Under Review",
+  APPROVED: "Published",
+  PUBLISHED: "Published",
+  REJECTED: "Rejected",
+};
+
+function formatStatusValue(status: string) {
+  return status
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function formatLifecycleStatus(status?: string) {
+  if (!status) return undefined;
+  return LIFECYCLE_LABELS[status] ?? formatStatusValue(status);
+}
+
 export function CandidateDetailView({
   candidate,
   reviewInfo,
@@ -39,6 +61,12 @@ export function CandidateDetailView({
   const reviewedBy = candidate.reviewed_by;
   const reviewComment = candidate.review_comment;
   const publishedAt = candidate.published_at;
+  const lifecycleLabel = formatLifecycleStatus(
+    candidate.lifecycleStatus
+  );
+  const extractionLabel = candidate.extractionStatus
+    ? formatStatusValue(candidate.extractionStatus)
+    : undefined;
 
   const [feedback, setFeedback] = useState<null | {
     type: "error" | "success";
@@ -89,7 +117,7 @@ export function CandidateDetailView({
                 <span>
                   Lifecycle:{" "}
                   <span className="font-medium">
-                    {candidate.lifecycleStatus}
+                    {lifecycleLabel}
                   </span>
                 </span>
               )}
@@ -97,7 +125,7 @@ export function CandidateDetailView({
                 <span>
                   Extraction:{" "}
                   <span className="font-medium">
-                    {candidate.extractionStatus}
+                    {extractionLabel}
                   </span>
                 </span>
               )}

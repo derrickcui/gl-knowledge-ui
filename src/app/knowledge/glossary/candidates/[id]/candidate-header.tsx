@@ -2,11 +2,12 @@ import { CandidateDTO } from "@/lib/api";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Not Reviewed",
-  CANDIDATE: "Not Reviewed",
+  DRAFT: "Pending Review",
+  CANDIDATE: "Pending Review",
   SUBMITTED: "Under Review",
   IN_REVIEW: "Under Review",
-  APPROVED: "Approved",
+  APPROVED: "Published",
+  PUBLISHED: "Published",
   REJECTED: "Rejected",
 };
 
@@ -35,7 +36,7 @@ export function CandidateHeader({
           className="mb-2 text-sm text-muted-foreground hover:underline"
           onClick={onBack}
         >
-          ← Back to Candidates
+          {"<-"} Back to Candidates
         </button>
 
         <h1 className="text-lg font-semibold">
@@ -43,7 +44,7 @@ export function CandidateHeader({
         </h1>
 
         <div className="mt-1 text-sm text-muted-foreground">
-          {roleLabel} · {statusLabel}
+          {roleLabel} - {statusLabel}
         </div>
       </div>
 

@@ -8,20 +8,24 @@ import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 
 const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Not Reviewed",
-  CANDIDATE: "Not Reviewed",
+  DRAFT: "Pending Review",
+  PENDING_REVIEW: "Pending Review",
+  CANDIDATE: "Pending Review",
   SUBMITTED: "Under Review",
   IN_REVIEW: "Under Review",
-  APPROVED: "Approved",
+  APPROVED: "Published",
+  PUBLISHED: "Published",
   REJECTED: "Rejected",
 };
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700",
+  PENDING_REVIEW: "bg-gray-100 text-gray-700",
   CANDIDATE: "bg-gray-100 text-gray-700",
   SUBMITTED: "bg-amber-100 text-amber-800",
   IN_REVIEW: "bg-amber-100 text-amber-800",
   APPROVED: "bg-green-100 text-green-700",
+  PUBLISHED: "bg-green-100 text-green-700",
   REJECTED: "bg-red-100 text-red-700",
 };
 
@@ -34,8 +38,14 @@ function getStatusClass(status: string) {
 }
 
 function isEditableStatus(status: string) {
-  return status === "CANDIDATE" || status === "DRAFT";
+  return (
+    status === "CANDIDATE" ||
+    status === "DRAFT" ||
+    status === "PENDING_REVIEW"
+  );
 }
+
+const ALL_CANDIDATES = "ALL";
 
 export function CandidatesView({
   initialStatus,
@@ -52,12 +62,21 @@ export function CandidatesView({
   async function reload(nextStatus: string) {
     setLoading(true);
     try {
-      const data = await fetchCandidates({
-        status: nextStatus,
-        limit: 50,
-        offset: 0,
-      });
-      setRows(data);
+      if (nextStatus === ALL_CANDIDATES) {
+        const data = await fetchCandidates({
+          status: "CANDIDATE",
+          limit: 50,
+          offset: 0,
+        });
+        setRows(data);
+      } else {
+        const data = await fetchCandidates({
+          status: nextStatus,
+          limit: 50,
+          offset: 0,
+        });
+        setRows(data);
+      }
     } finally {
       setLoading(false);
     }
@@ -83,8 +102,9 @@ export function CandidatesView({
             reload(v);
           }}
         >
-          <option value="CANDIDATE">CANDIDATE</option>
-          <option value="REJECTED">REJECTED</option>
+          <option value={ALL_CANDIDATES}>All Candidates</option>
+          <option value="PENDING_REVIEW">Pending Review</option>
+          <option value="IN_REVIEW">Under Review</option>
         </select>
 
         {loading && (

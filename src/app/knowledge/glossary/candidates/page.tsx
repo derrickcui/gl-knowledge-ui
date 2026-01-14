@@ -10,7 +10,7 @@ export default async function CandidatesPage() {
 
   return (
     <CandidatesView
-      initialStatus="CANDIDATE"
+      initialStatus="ALL"
       initialData={data}
     />
   );
