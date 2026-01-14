@@ -1,12 +1,23 @@
-export default function ApprovalsPage() {
+import { fetchApprovals } from "@/lib/api";
+import { ApprovalTable } from "@/components/glossary/approval/approval-table";
+
+export default async function ApprovalsPage() {
+  const items = await fetchApprovals({
+    status: "PENDING",
+    limit: 50,
+    offset: 0,
+  });
+
   return (
-    <div>
-      <div className="text-lg font-semibold">Approvals</div>
-      <p className="mt-2 text-sm opacity-70">
-        Terms under review that require your decision.
-        This tab is user-centric and only includes lifecycle
-        status IN_REVIEW assigned to the current reviewer.
-      </p>
+    <div className="space-y-4">
+      <div>
+        <div className="text-lg font-semibold">Approvals</div>
+        <p className="mt-2 text-sm opacity-70">
+          Terms under review that require your decision.
+        </p>
+      </div>
+
+      <ApprovalTable items={items} />
     </div>
   );
 }

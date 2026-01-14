@@ -3,6 +3,7 @@ import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Pending Review",
+  PENDING_REVIEW: "Pending Review",
   CANDIDATE: "Pending Review",
   SUBMITTED: "Under Review",
   IN_REVIEW: "Under Review",

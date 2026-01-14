@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CandidateDTO, ReviewInfoDTO } from "@/lib/api";
 
 import { CandidateHeader } from "./candidate-header";
@@ -9,9 +9,11 @@ import { CandidateTermEditor } from "./candidate-term-editor";
 import { CandidateEvidencePanel } from "./candidate-evidence-panel";
 import { CandidateActions } from "./candidate-actions";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import { ApprovalActionPanel } from "@/components/glossary/approval/approval-action-panel";
 
 const LIFECYCLE_LABELS: Record<string, string> = {
   DRAFT: "Pending Review",
+  PENDING_REVIEW: "Pending Review",
   CANDIDATE: "Pending Review",
   SUBMITTED: "Under Review",
   IN_REVIEW: "Under Review",
@@ -40,6 +42,11 @@ export function CandidateDetailView({
   reviewInfo: ReviewInfoDTO;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const changeIdParam = searchParams.get("changeId");
+  const changeId = changeIdParam
+    ? Number(changeIdParam)
+    : undefined;
   const [draft, setDraft] = useState(candidate);
 
   // ƒo. †"_„,?‘-œ‡­r‡s, readonly †^‘--
@@ -185,20 +192,13 @@ export function CandidateDetailView({
         )}
 
         {isInReview && (
-          <div className="flex gap-2">
-            <button
-              className="rounded-md border px-3 py-1 text-sm text-muted-foreground"
-              disabled
-            >
-              Approve
-            </button>
-            <button
-              className="rounded-md border px-3 py-1 text-sm text-muted-foreground"
-              disabled
-            >
-              Reject
-            </button>
-          </div>
+          <ApprovalActionPanel
+            candidate={{
+              ...candidate,
+              changeId,
+            }}
+            onFeedback={setFeedback}
+          />
         )}
       </div>
     </div>

@@ -16,6 +16,7 @@ export type CandidateDTO = {
   owner: string;
   version: number;
   published_at?: string | null;
+  submitted_at?: string | null;
   submitted_by?: string | null;
   reviewed_by?: string | null;
   review_comment?: string | null;
@@ -33,6 +34,18 @@ export type ReviewInfoDTO = {
   reviewComment?: string;
 };
 
+export type ApprovalDTO = {
+  id: number;
+  changeId: number;
+  candidateId: number;
+  candidateName: string;
+  status: string;
+  reviewer: string | null;
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 /* =========================
  * Candidates
  * ========================= */
@@ -41,10 +54,40 @@ export async function fetchCandidates(params: {
   status: string;
   limit?: number;
   offset?: number;
+  reviewer?: string;
 }): Promise<CandidateDTO[]> {
-  const { status, limit = 50, offset = 0 } = params;
+  const {
+    status,
+    limit = 50,
+    offset = 0,
+    reviewer,
+  } = params;
 
   const url = new URL("/v1/candidates", API_BASE);
+  url.searchParams.set("status", status);
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+  if (reviewer) {
+    url.searchParams.set("reviewer", reviewer);
+  }
+
+  const res = await fetch(url.toString(), { cache: "no-store" });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch candidates`);
+  }
+
+  return res.json();
+}
+
+export async function fetchApprovals(params: {
+  status: string;
+  limit?: number;
+  offset?: number;
+}): Promise<ApprovalDTO[]> {
+  const { status, limit = 50, offset = 0 } = params;
+
+  const url = new URL("/v1/approvals", API_BASE);
   url.searchParams.set("status", status);
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
@@ -52,7 +95,7 @@ export async function fetchCandidates(params: {
   const res = await fetch(url.toString(), { cache: "no-store" });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch candidates`);
+    throw new Error("Failed to fetch approvals");
   }
 
   return res.json();
@@ -129,6 +172,30 @@ export async function submitChange(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(params),
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+
+  return res.json();
+}
+
+export async function decideChange(params: {
+  changeId: number;
+  payload: {
+    status: "APPROVED" | "REJECTED";
+    reviewer?: string;
+    comment: string;
+  };
+}) {
+  const res = await fetch(
+    `${API_BASE}/v1/changes/${params.changeId}/decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params.payload),
     }
   );
 
