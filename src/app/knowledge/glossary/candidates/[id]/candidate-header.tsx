@@ -4,9 +4,11 @@ import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 
 export function CandidateHeader({
   candidate,
+  status,
   onBack,
 }: {
   candidate: CandidateDTO;
+  status: string;
   onBack: () => void;
 }) {
   return (
@@ -28,7 +30,7 @@ export function CandidateHeader({
             {candidate.role}
           </Badge>
           <span className="opacity-60">
-            Status: {candidate.status}
+            Status: {status}
           </span>
         </div>
       </div>

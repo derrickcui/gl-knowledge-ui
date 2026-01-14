@@ -1,12 +1,26 @@
-import { fetchCandidateById } from "@/lib/api";
+import {
+  fetchCandidateById,
+  fetchReviewInfo,
+} from "@/lib/api";
 import { CandidateDetailView } from "./candidate-detail-view";
 
 export default async function CandidateDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const candidate = await fetchCandidateById(Number(params.id));
+  const { id } = await params;
+  const candidateId = Number(id);
 
-  return <CandidateDetailView candidate={candidate} />;
+  const [candidate, reviewInfo] = await Promise.all([
+    fetchCandidateById(candidateId),
+    fetchReviewInfo(candidateId),
+  ]);
+
+  return (
+    <CandidateDetailView
+      candidate={candidate}
+      reviewInfo={reviewInfo}
+    />
+  );
 }

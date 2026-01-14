@@ -16,6 +16,17 @@ export type CandidateDTO = {
   topics: any[];
 };
 
+export type ReviewInfoDTO = {
+  hasActiveChange: boolean;
+  canSubmitForReview: boolean;
+  effectiveStatus: string;
+  reason?: string;
+};
+
+/* =========================
+ * Candidates
+ * ========================= */
+
 export async function fetchCandidates(params: {
   status: string;
   limit?: number;
@@ -28,26 +39,22 @@ export async function fetchCandidates(params: {
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
 
-  const res = await fetch(url.toString(), {
-    cache: "no-store",
-  });
+  const res = await fetch(url.toString(), { cache: "no-store" });
 
   if (!res.ok) {
-    throw new Error(`Failed to fetch candidates: ${res.status}`);
+    throw new Error(`Failed to fetch candidates`);
   }
 
-  // 🔥 关键：直接返回数组
   return res.json();
 }
 
 export async function fetchCandidateById(
   id: number
 ): Promise<CandidateDTO> {
-  const url = new URL(`/v1/candidates/${id}`, API_BASE);
-
-  const res = await fetch(url.toString(), {
-    cache: "no-store",
-  });
+  const res = await fetch(
+    `${API_BASE}/v1/candidates/${id}`,
+    { cache: "no-store" }
+  );
 
   if (!res.ok) {
     throw new Error(`Failed to fetch candidate ${id}`);
@@ -55,6 +62,29 @@ export async function fetchCandidateById(
 
   return res.json();
 }
+
+/* =========================
+ * Review Info (关键)
+ * ========================= */
+
+export async function fetchReviewInfo(
+  candidateId: number
+): Promise<ReviewInfoDTO> {
+  const res = await fetch(
+    `${API_BASE}/v1/candidates/${candidateId}/review-info`,
+    { cache: "no-store" }
+  );
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch review info");
+  }
+
+  return res.json();
+}
+
+/* =========================
+ * Change Request
+ * ========================= */
 
 export async function createChange(params: {
   candidateId: number;
@@ -66,8 +96,25 @@ export async function createChange(params: {
   };
   submittedBy: string;
 }) {
+  const res = await fetch(`${API_BASE}/v1/changes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to create change");
+  }
+
+  return res.json();
+}
+
+export async function submitChange(
+  changeId: number,
+  params: { submittedBy?: string }
+) {
   const res = await fetch(
-    `${API_BASE}/v1/changes`,
+    `${API_BASE}/v1/changes/${changeId}/submit`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -76,36 +123,8 @@ export async function createChange(params: {
   );
 
   if (!res.ok) {
-    throw new Error("Failed to create change");
-  }
-
-  return res.json(); // { id, status }
-}
-
-export async function submitChange(
-  changeId: number,
-  params: {
-    submittedBy?: string;
-  }
-) {
-  const res = await fetch(
-    `${API_BASE}/v1/changes/${changeId}/submit`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        submittedBy: params.submittedBy,
-      }),
-    }
-  );
-
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text);
+    throw new Error(await res.text());
   }
 
   return res.json();
 }
-
