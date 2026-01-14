@@ -1,6 +1,7 @@
-﻿import type { ReactNode } from "react";
-
-export default function KnowledgeLayout({ children }: { children: ReactNode }) {
-  return <div className="space-y-6">{children}</div>;
+export default function KnowledgeLayout({
+  children
+}: {
+  children: React.ReactNode;
+}) {
+  return <div className="min-h-full">{children}</div>;
 }
-

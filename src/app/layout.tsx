@@ -1,20 +1,26 @@
-﻿import type { Metadata } from "next";
 import "./globals.css";
-import AppShell from "@/components/layout/app-shell";
-import type { ReactNode } from "react";
+import { AppDrawer } from "@/components/drawer/app-drawer";
 
-export const metadata: Metadata = {
-  title: "Glossary and Topics",
-  description: "Glossary and Topic management UI",
+export const metadata = {
+  title: "Geelink Knowledge UI",
+  description: "Glossary & Topic Manager"
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en">
-      <body>
-        <AppShell>{children}</AppShell>
+    <html lang="zh">
+      <body className="h-screen w-screen overflow-hidden">
+        <div className="flex h-full w-full">
+          <AppDrawer />
+          <main className="flex-1 overflow-auto scrollbar-thin">
+            {children}
+          </main>
+        </div>
       </body>
     </html>
   );
 }
-
