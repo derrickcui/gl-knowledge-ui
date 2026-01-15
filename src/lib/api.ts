@@ -1,3 +1,6 @@
+
+import { AuditRecord } from "@/types/audit";
+
 const API_BASE =
   process.env.NEXT_PUBLIC_GLOSSARY_API ??
   "http://localhost:8000";
@@ -32,6 +35,7 @@ export type ReviewInfoDTO = {
   submittedAt?: string;
   reviewedBy?: string;
   reviewComment?: string;
+  changeId?: number | null;
 };
 
 export type ApprovalDTO = {
@@ -44,6 +48,35 @@ export type ApprovalDTO = {
   comment: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+
+/* =========================
+ * Governance Audit Events
+ * ========================= */
+
+export type GovernanceEventDTO = {
+  id: number;
+  candidateId: number;
+  changeId?: number | null;
+
+  type:
+    | "EXTRACTED"
+    | "REQUEST_SUBMITTED"
+    | "APPROVED"
+    | "REJECTED"
+    | "PUBLISHED"
+    | "ARCHIVED";
+
+  operator: string;        // system / username
+  timestamp: string;       // ISO
+
+  reason?: string | null;  // only for APPROVED / REJECTED
+};
+
+export type ApprovalListResponse = {
+  total: number;
+  items: ApprovalDTO[];
 };
 
 /* =========================
@@ -84,7 +117,7 @@ export async function fetchApprovals(params: {
   status: string;
   limit?: number;
   offset?: number;
-}): Promise<ApprovalDTO[]> {
+}): Promise<ApprovalListResponse> {
   const { status, limit = 50, offset = 0 } = params;
 
   const url = new URL("/v1/approvals", API_BASE);
@@ -201,6 +234,72 @@ export async function decideChange(params: {
 
   if (!res.ok) {
     throw new Error(await res.text());
+  }
+
+  return res.json();
+}
+
+/* =========================
+ * Audit Events (Timeline)
+ * ========================= */
+
+export async function fetchAuditEvents(params?: {
+  candidateId?: number;
+  limit?: number;
+  offset?: number;
+}): Promise<GovernanceEventDTO[]> {
+  const { candidateId, limit = 100, offset = 0 } = params ?? {};
+
+  const url = new URL("/v1/audit/events", API_BASE);
+
+  if (candidateId) {
+    url.searchParams.set("candidateId", String(candidateId));
+  }
+  url.searchParams.set("limit", String(limit));
+  url.searchParams.set("offset", String(offset));
+
+  const res = await fetch(url.toString(), {
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch audit events");
+  }
+
+  return res.json();
+}
+
+export interface AuditLogResponse {
+  items: AuditRecord[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export async function fetchGlossaryAuditLogs(params?: {
+  limit?: number;
+  before?: string;
+  query?: string;
+}): Promise<AuditLogResponse> {
+  const search = new URLSearchParams();
+
+  search.set("limit", String(params?.limit ?? 20));
+
+  if (params?.before) {
+    search.set("before", params.before);
+  }
+  if (params?.query) {
+    search.set("query", params.query);
+  }
+
+  const res = await fetch(
+    `${API_BASE}/v1/audit/logs?${search.toString()}`,
+    { cache: "no-store" }
+  );
+
+  if (!res.ok) {
+    throw new Error(
+      `Failed to fetch audit logs (${res.status} ${res.statusText})`
+    );
   }
 
   return res.json();

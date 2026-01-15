@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CandidateDTO, ReviewInfoDTO } from "@/lib/api";
+import {
+  CandidateDTO,
+  ReviewInfoDTO,
+  fetchApprovals,
+} from "@/lib/api";
 
 import { CandidateHeader } from "./candidate-header";
 import { CandidateTermEditor } from "./candidate-term-editor";
@@ -34,6 +38,17 @@ function formatLifecycleStatus(status?: string) {
   return LIFECYCLE_LABELS[status] ?? formatStatusValue(status);
 }
 
+function normalizeChangeId(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 export function CandidateDetailView({
   candidate,
   reviewInfo,
@@ -44,9 +59,15 @@ export function CandidateDetailView({
   const router = useRouter();
   const searchParams = useSearchParams();
   const changeIdParam = searchParams.get("changeId");
-  const changeId = changeIdParam
-    ? Number(changeIdParam)
-    : undefined;
+  const changeIdFromQuery = normalizeChangeId(changeIdParam);
+  const changeIdFromReviewInfo = normalizeChangeId(
+    reviewInfo.changeId ?? (reviewInfo as any).change_id
+  );
+  const initialChangeId =
+    changeIdFromQuery ?? changeIdFromReviewInfo;
+  const [resolvedChangeId, setResolvedChangeId] = useState(
+    initialChangeId
+  );
   const [draft, setDraft] = useState(candidate);
 
   // ƒo. †"_„,?‘-œ‡­r‡s, readonly †^‘--
@@ -80,6 +101,35 @@ export function CandidateDetailView({
     title: string;
     message?: string;
   }>(null);
+
+  useEffect(() => {
+    if (resolvedChangeId || !isInReview) return;
+    let ignore = false;
+
+    async function loadChangeId() {
+      try {
+        const approvals = await fetchApprovals({
+          status: "PENDING",
+          limit: 200,
+          offset: 0,
+        });
+        const match = approvals.items.find(
+          (item) => item.candidateId === candidate.id
+        );
+        if (!ignore && match?.changeId) {
+          setResolvedChangeId(match.changeId);
+        }
+      } catch {
+        // best-effort lookup; keep existing behavior on failure
+      }
+    }
+
+    loadChangeId();
+
+    return () => {
+      ignore = true;
+    };
+  }, [candidate.id, isInReview, resolvedChangeId]);
 
   return (
     <div className="space-y-4">
@@ -195,7 +245,7 @@ export function CandidateDetailView({
           <ApprovalActionPanel
             candidate={{
               ...candidate,
-              changeId,
+              changeId: resolvedChangeId,
             }}
             onFeedback={setFeedback}
           />

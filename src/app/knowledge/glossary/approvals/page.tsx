@@ -2,7 +2,7 @@ import { fetchApprovals } from "@/lib/api";
 import { ApprovalTable } from "@/components/glossary/approval/approval-table";
 
 export default async function ApprovalsPage() {
-  const items = await fetchApprovals({
+  const approvals = await fetchApprovals({
     status: "PENDING",
     limit: 50,
     offset: 0,
@@ -17,7 +17,7 @@ export default async function ApprovalsPage() {
         </p>
       </div>
 
-      <ApprovalTable items={items} />
+      <ApprovalTable items={approvals.items} />
     </div>
   );
 }

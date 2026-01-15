@@ -1,11 +1,15 @@
-export default function AuditPage() {
+import PageClient from "./page-client";
+import { fetchGlossaryAuditLogs } from "@/lib/api";
+
+export default async function AuditPage() {
+  // 只加载第一页（最近的一批）
+  const data = await fetchGlossaryAuditLogs({ limit: 20 });
+
   return (
-    <div>
-      <div className="text-lg font-semibold">Audit Log</div>
-      <p className="mt-2 text-sm opacity-70">
-        Immutable governance history, including rejected or
-        archived terms and any historical versions.
-      </p>
-    </div>
+    <PageClient
+      initialItems={data.items}
+      initialCursor={data.nextCursor}
+      initialHasMore={data.hasMore}
+    />
   );
 }

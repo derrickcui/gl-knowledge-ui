@@ -1,38 +1,24 @@
-import Link from "next/link";
+import { fetchApprovals } from "@/lib/api";
+import { GlossaryTabs } from "@/components/glossary/glossary-tabs";
 
-function Tab({
-  href,
-  label
-}: {
-  href: string;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="rounded-md px-3 py-1 text-sm hover:bg-accent"
-    >
-      {label}
-    </Link>
-  );
-}
-
-export default function GlossaryLayout({
+export default async function GlossaryLayout({
   children
 }: {
   children: React.ReactNode;
 }) {
+  const approvals = await fetchApprovals({
+    status: "PENDING",
+    limit: 50,
+    offset: 0,
+  });
+  const pendingCount = approvals.total;
+
   return (
     <div className="min-h-full">
       <div className="border-b bg-background p-3">
         <div className="flex items-center justify-between">
           <div className="font-semibold">Glossary</div>
-          <div className="flex items-center gap-2">
-            <Tab href="/knowledge/glossary/candidates" label="Candidates" />
-            <Tab href="/knowledge/glossary/approvals" label="Approvals" />
-            <Tab href="/knowledge/glossary/published" label="Published" />
-            <Tab href="/knowledge/glossary/audit" label="Audit" />
-          </div>
+          <GlossaryTabs pendingCount={pendingCount} />
         </div>
       </div>
 
