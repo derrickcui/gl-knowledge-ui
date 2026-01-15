@@ -4,7 +4,7 @@ import { CandidatesView } from "./candidates-view";
 export default async function CandidatesPage() {
   const data = await fetchCandidates({
     status: "CANDIDATE",
-    limit: 50,
+    limit: 10,
     offset: 0,
   });
 

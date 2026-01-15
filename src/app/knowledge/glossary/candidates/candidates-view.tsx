@@ -3,7 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { fetchCandidates, CandidateDTO } from "@/lib/api";
+import {
+  fetchCandidates,
+  CandidateDTO,
+  CandidateListResponse,
+} from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 
@@ -46,37 +50,49 @@ function isEditableStatus(status: string) {
 }
 
 const ALL_CANDIDATES = "ALL";
+const PAGE_SIZE = 10;
 
 export function CandidatesView({
   initialStatus,
   initialData,
 }: {
   initialStatus: string;
-  initialData: CandidateDTO[];
+  initialData: CandidateListResponse;
 }) {
   const router = useRouter(); // ƒ-? †.3‚"r 1
   const [status, setStatus] = useState(initialStatus);
-  const [rows, setRows] = useState<CandidateDTO[]>(initialData);
+  const [rows, setRows] = useState<CandidateDTO[]>(
+    initialData.items
+  );
   const [loading, setLoading] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(initialData.hasMore);
+  const [nextCursor, setNextCursor] = useState<number | null>(
+    initialData.nextCursor ?? null
+  );
+  const [query, setQuery] = useState("");
 
-  async function reload(nextStatus: string) {
+  function getStatusForFetch(value: string) {
+    return value === ALL_CANDIDATES ? "CANDIDATE" : value;
+  }
+
+  async function reload(
+    nextStatus: string,
+    nextOffset = 0,
+    nextQuery = query
+  ) {
     setLoading(true);
     try {
-      if (nextStatus === ALL_CANDIDATES) {
-        const data = await fetchCandidates({
-          status: "CANDIDATE",
-          limit: 50,
-          offset: 0,
-        });
-        setRows(data);
-      } else {
-        const data = await fetchCandidates({
-          status: nextStatus,
-          limit: 50,
-          offset: 0,
-        });
-        setRows(data);
-      }
+      const data = await fetchCandidates({
+        status: getStatusForFetch(nextStatus),
+        limit: PAGE_SIZE,
+        offset: nextOffset,
+        query: nextQuery || undefined,
+      });
+      setRows(data.items);
+      setHasMore(data.hasMore);
+      setNextCursor(data.nextCursor ?? null);
+      setOffset(nextOffset);
     } finally {
       setLoading(false);
     }
@@ -92,20 +108,46 @@ export function CandidatesView({
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <select
           className="h-9 rounded-md border bg-background px-3 text-sm"
           value={status}
           onChange={(e) => {
             const v = e.target.value;
             setStatus(v);
-            reload(v);
+            reload(v, 0);
           }}
         >
           <option value={ALL_CANDIDATES}>All Candidates</option>
           <option value="PENDING_REVIEW">Pending Review</option>
           <option value="IN_REVIEW">Under Review</option>
         </select>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            className="h-9 w-56 rounded-md border bg-background px-3 text-sm"
+            placeholder="Search candidates"
+            value={query}
+            onChange={(e) => {
+              const nextQuery = e.target.value;
+              setQuery(nextQuery);
+              reload(status, 0, nextQuery);
+            }}
+          />
+          {query && (
+            <button
+              type="button"
+              className="h-9 rounded-md border px-3 text-sm"
+              onClick={() => {
+                setQuery("");
+                reload(status, 0, "");
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
 
         {loading && (
           <span className="text-sm opacity-60">Loadingƒ?Ý</span>
@@ -218,6 +260,36 @@ export function CandidatesView({
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex items-center justify-between text-sm">
+        <span className="opacity-70">
+          Page {Math.floor(offset / PAGE_SIZE) + 1}
+        </span>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="h-8 rounded-md border px-3 text-sm disabled:opacity-40"
+            disabled={loading || offset === 0}
+            onClick={() =>
+              reload(status, Math.max(0, offset - PAGE_SIZE))
+            }
+          >
+            Previous
+          </button>
+          <button
+            type="button"
+            className="h-8 rounded-md border px-3 text-sm disabled:opacity-40"
+            disabled={loading || !hasMore}
+            onClick={() => {
+              const nextOffset =
+                nextCursor ?? offset + PAGE_SIZE;
+              reload(status, nextOffset);
+            }}
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );

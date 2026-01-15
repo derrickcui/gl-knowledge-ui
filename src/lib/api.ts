@@ -26,6 +26,12 @@ export type CandidateDTO = {
   topics: any[];
 };
 
+export type CandidateListResponse = {
+  items: CandidateDTO[];
+  nextCursor: number | null;
+  hasMore: boolean;
+};
+
 export type ReviewInfoDTO = {
   hasActiveChange: boolean;
   canSubmitForReview: boolean;
@@ -88,12 +94,14 @@ export async function fetchCandidates(params: {
   limit?: number;
   offset?: number;
   reviewer?: string;
-}): Promise<CandidateDTO[]> {
+  query?: string;
+}): Promise<CandidateListResponse> {
   const {
     status,
     limit = 50,
     offset = 0,
     reviewer,
+    query,
   } = params;
 
   const url = new URL("/v1/candidates", API_BASE);
@@ -102,6 +110,9 @@ export async function fetchCandidates(params: {
   url.searchParams.set("offset", String(offset));
   if (reviewer) {
     url.searchParams.set("reviewer", reviewer);
+  }
+  if (query) {
+    url.searchParams.set("query", query);
   }
 
   const res = await fetch(url.toString(), { cache: "no-store" });
