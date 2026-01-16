@@ -37,9 +37,9 @@ export function ApproveDialog({
         </p>
 
         <div className="mt-4 rounded-md bg-muted/40 p-3 text-sm">
-          <div className="font-medium">This action may activate:</div>
+          <div className="font-medium">This approval may lead to:</div>
           <ul className="mt-2 list-disc space-y-1 pl-5">
-            <li>{summary.total} relationships</li>
+            <li>{summary.total} relationship becoming eligible for activation</li>
             <li>
               {summary.inactive} relationship
               {summary.inactive === 1 ? "" : "s"} will remain inactive (target not published)

@@ -187,6 +187,53 @@ export async function fetchCandidateById(
   return res.json();
 }
 
+export async function publishCandidate(
+  id: number,
+  actor?: string
+) {
+  const url = new URL(
+    `/v1/candidates/${id}/publish`,
+    API_BASE
+  );
+  if (actor) {
+    url.searchParams.set("actor", actor);
+  }
+
+  const res = await fetch(url.toString(), {
+    method: "POST",
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to publish candidate ${id}`);
+  }
+
+  return res.json();
+}
+
+export async function publishCandidates(
+  ids: number[],
+  actor?: string
+) {
+  const body: { ids: number[]; actor?: string } = {
+    ids,
+  };
+  if (actor) {
+    body.actor = actor;
+  }
+
+  const res = await fetch(`${API_BASE}/v1/candidates/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to publish candidates");
+  }
+
+  return res.json();
+}
+
 export async function fetchCandidateRelations(
   id: number
 ): Promise<CandidateRelationsResponse> {

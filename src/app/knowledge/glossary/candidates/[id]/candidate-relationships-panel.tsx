@@ -120,7 +120,9 @@ export function CandidateRelationshipsPanel({
                 )}
               </div>
             ) : (
-              <div className="text-sm opacity-60">None</div>
+              <div className="text-sm opacity-60">
+                No other candidates currently reference this concept.
+              </div>
             )}
           </div>
 
