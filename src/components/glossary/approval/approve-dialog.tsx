@@ -5,12 +5,17 @@ import { useEffect, useState } from "react";
 export function ApproveDialog({
   open,
   term,
+  summary,
   loading,
   onCancel,
   onConfirm,
 }: {
   open: boolean;
   term: string;
+  summary: {
+    total: number;
+    inactive: number;
+  };
   loading: boolean;
   onCancel: () => void;
   onConfirm: (reason: string) => void;
@@ -26,10 +31,21 @@ export function ApproveDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-        <h3 className="text-base font-semibold">Approve Term</h3>
+        <h3 className="text-base font-semibold">Approve Concept</h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          You are approving <strong>{term}</strong>. Provide a reason.
+          You are approving this concept. Provide a reason.
         </p>
+
+        <div className="mt-4 rounded-md bg-muted/40 p-3 text-sm">
+          <div className="font-medium">This action may activate:</div>
+          <ul className="mt-2 list-disc space-y-1 pl-5">
+            <li>{summary.total} relationships</li>
+            <li>
+              {summary.inactive} relationship
+              {summary.inactive === 1 ? "" : "s"} will remain inactive (target not published)
+            </li>
+          </ul>
+        </div>
 
         <div className="mt-4">
           <label className="text-xs font-medium text-muted-foreground">
@@ -57,7 +73,7 @@ export function ApproveDialog({
             disabled={!reason.trim() || loading}
             onClick={() => onConfirm(reason.trim())}
           >
-            Confirm Approve
+            Approve
           </button>
         </div>
       </div>

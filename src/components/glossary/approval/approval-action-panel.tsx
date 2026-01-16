@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CandidateDTO, decideChange } from "@/lib/api";
+import {
+  CandidateDTO,
+  CandidateRelationsResponse,
+  decideChange,
+} from "@/lib/api";
 import { ApproveDialog } from "./approve-dialog";
 import { RejectDialog } from "./reject-dialog";
 
@@ -10,9 +14,11 @@ const CURRENT_REVIEWER = "ui-user";
 
 export function ApprovalActionPanel({
   candidate,
+  relations,
   onFeedback,
 }: {
   candidate: CandidateDTO & { changeId?: number };
+  relations: CandidateRelationsResponse;
   onFeedback: (f: {
     type: "error" | "success";
     title: string;
@@ -25,6 +31,19 @@ export function ApprovalActionPanel({
   const [loadingAction, setLoadingAction] = useState<
     "approve" | "reject" | null
   >(null);
+
+  function isPublishedStatus(status: string) {
+    return status === "PUBLISHED" || status === "APPROVED";
+  }
+
+  const relationStatuses = [
+    ...relations.outgoing.map((item) => item.target.status),
+    ...relations.incoming.map((item) => item.source.status),
+  ];
+  const totalRelations = relationStatuses.length;
+  const inactiveRelations = relationStatuses.filter(
+    (status) => !isPublishedStatus(status)
+  ).length;
 
   async function handleApprove(reason: string) {
     try {
@@ -124,6 +143,10 @@ export function ApprovalActionPanel({
       <ApproveDialog
         open={approveOpen}
         term={candidate.canonical}
+        summary={{
+          total: totalRelations,
+          inactive: inactiveRelations,
+        }}
         loading={loadingAction === "approve"}
         onCancel={() => setApproveOpen(false)}
         onConfirm={handleApprove}
