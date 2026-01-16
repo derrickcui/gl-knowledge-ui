@@ -3,9 +3,11 @@ import { AuditRecord } from "@/types/audit";
 export function AuditRecordDetail({
   record,
   onViewSnapshot,
+  onViewCurrent,
 }: {
   record: AuditRecord;
   onViewSnapshot: () => void;
+  onViewCurrent: () => void;
 }) {
   return (
     <div className="border-t bg-muted px-4 py-3 text-sm">
@@ -25,13 +27,14 @@ export function AuditRecordDetail({
 
       <div className="flex gap-4 pt-2 text-sm">
         <button
-          className="underline"
+          className="underline disabled:opacity-50"
           onClick={onViewSnapshot}
+          disabled={!record.snapshotId}
         >
           View Snapshot
         </button>
 
-        <button className="underline">
+        <button className="underline" onClick={onViewCurrent}>
           View Current
         </button>
       </div>

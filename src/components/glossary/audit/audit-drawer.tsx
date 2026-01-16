@@ -1,10 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import clsx from "clsx";
 
 import type { AuditRecord } from "@/types/audit";
+import {
+  CandidateDTO,
+  CandidateRelationsResponse,
+  fetchCandidateById,
+  fetchCandidateRelations,
+  fetchCandidateSnapshot,
+  fetchCandidateSnapshotRelations,
+} from "@/lib/api";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 
 /**
  * AuditDrawer
@@ -15,12 +24,24 @@ import type { AuditRecord } from "@/types/audit";
 export function AuditDrawer({
   open,
   record,
+  mode,
   onClose,
 }: {
   open: boolean;
   record: AuditRecord | null;
+  mode: "snapshot" | "current";
   onClose: () => void;
 }) {
+  const [loadingMessage, setLoadingMessage] = useState<
+    string | null
+  >(null);
+  const [error, setError] = useState<string | null>(null);
+  const [candidate, setCandidate] = useState<
+    CandidateDTO | null
+  >(null);
+  const [relations, setRelations] = useState<
+    CandidateRelationsResponse | null
+  >(null);
   // 关闭时禁止 body 滚动（基础处理）
   useEffect(() => {
     if (open) {
@@ -32,6 +53,60 @@ export function AuditDrawer({
       document.body.style.overflow = "";
     };
   }, [open]);
+
+  useEffect(() => {
+    if (!open || !record) return;
+    let ignore = false;
+
+    async function load() {
+      setCandidate(null);
+      setRelations(null);
+      setError(null);
+
+      const isSnapshot = mode === "snapshot";
+      if (isSnapshot && !record.snapshotId) {
+        setError("No snapshot available for this record.");
+        return;
+      }
+
+      setLoadingMessage(
+        `正在执行加载${isSnapshot ? "快照" : "当前"}数据操作，请稍后...`
+      );
+      const candidateId = Number(record.conceptId);
+      const snapshotId = record.snapshotId ?? "";
+
+      const [candidateRes, relationRes] = isSnapshot
+        ? await Promise.all([
+            fetchCandidateSnapshot(candidateId, snapshotId),
+            fetchCandidateSnapshotRelations(candidateId, snapshotId),
+          ])
+        : await Promise.all([
+            fetchCandidateById(candidateId),
+            fetchCandidateRelations(candidateId),
+          ]);
+
+      if (!ignore) {
+        if (candidateRes.data) {
+          setCandidate(candidateRes.data);
+        } else {
+          setError(candidateRes.error ?? "Failed to load data.");
+        }
+
+        if (relationRes.data) {
+          setRelations(relationRes.data);
+        } else if (!candidateRes.error) {
+          setError(relationRes.error ?? "Failed to load relations.");
+        }
+        setLoadingMessage(null);
+      }
+    }
+
+    load();
+
+    return () => {
+      ignore = true;
+    };
+  }, [open, record, mode]);
 
   if (!open || !record) return null;
 
@@ -58,7 +133,9 @@ export function AuditDrawer({
               {record.conceptName}
             </div>
             <div className="text-xs text-muted-foreground">
-              Viewing historical snapshot
+              {mode === "snapshot"
+                ? "Viewing historical snapshot"
+                : "Viewing current data"}
               {record.version ? ` · ${record.version}` : ""}
             </div>
           </div>
@@ -73,7 +150,21 @@ export function AuditDrawer({
 
         {/* Content */}
         <div className="flex-1 overflow-auto p-4 text-sm">
-          <SnapshotContent record={record} />
+          {loadingMessage && (
+            <FeedbackBanner type="info" title={loadingMessage} />
+          )}
+          {error && (
+            <div className="mt-3">
+              <FeedbackBanner type="error" title={error} />
+            </div>
+          )}
+          {candidate && (
+            <SnapshotContent
+              record={record}
+              candidate={candidate}
+              relations={relations}
+            />
+          )}
         </div>
 
         {/* Footer */}
@@ -90,9 +181,26 @@ export function AuditDrawer({
  * ⚠️ v1：只展示 audit record 自带的信息
  * v2：这里可以 fetch `/concepts/{id}/snapshots/{version}`
  */
-function SnapshotContent({ record }: { record: AuditRecord }) {
+function SnapshotContent({
+  record,
+  candidate,
+  relations,
+}: {
+  record: AuditRecord;
+  candidate: CandidateDTO;
+  relations: CandidateRelationsResponse | null;
+}) {
+  const lifecycleStatus =
+    candidate.lifecycleStatus ?? candidate.status;
   return (
     <div className="space-y-4">
+      <section>
+        <div className="font-medium">Term</div>
+        <div className="text-muted-foreground">
+          {candidate.canonical}
+        </div>
+      </section>
+
       <section>
         <div className="font-medium">Action</div>
         <div className="text-muted-foreground">
@@ -131,6 +239,40 @@ function SnapshotContent({ record }: { record: AuditRecord }) {
           </div>
         </section>
       )}
+
+      <section>
+        <div className="font-medium">Lifecycle</div>
+        <div className="text-muted-foreground">
+          {lifecycleStatus}
+        </div>
+      </section>
+
+      {candidate.definition && (
+        <section>
+          <div className="font-medium">Definition</div>
+          <div className="text-muted-foreground">
+            {candidate.definition}
+          </div>
+        </section>
+      )}
+
+      {candidate.aliases?.length ? (
+        <section>
+          <div className="font-medium">Aliases</div>
+          <div className="text-muted-foreground">
+            {candidate.aliases.join(", ")}
+          </div>
+        </section>
+      ) : null}
+
+      <section>
+        <div className="font-medium">Relations</div>
+        <div className="text-muted-foreground">
+          {relations?.outgoing && relations?.incoming
+            ? `${relations.outgoing.length} outgoing, ${relations.incoming.length} incoming`
+            : "No relations loaded"}
+        </div>
+      </section>
     </div>
   );
 }

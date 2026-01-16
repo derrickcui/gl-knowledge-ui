@@ -9,6 +9,9 @@ import { AuditDrawer } from "./audit-drawer";
 export function AuditRecordItem({ record }: { record: AuditRecord }) {
   const [expanded, setExpanded] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<
+    "snapshot" | "current"
+  >("snapshot");
 
   return (
     <>
@@ -21,7 +24,14 @@ export function AuditRecordItem({ record }: { record: AuditRecord }) {
         {expanded && (
           <AuditRecordDetail
             record={record}
-            onViewSnapshot={() => setDrawerOpen(true)}
+            onViewSnapshot={() => {
+              setDrawerMode("snapshot");
+              setDrawerOpen(true);
+            }}
+            onViewCurrent={() => {
+              setDrawerMode("current");
+              setDrawerOpen(true);
+            }}
           />
         )}
       </div>
@@ -29,6 +39,7 @@ export function AuditRecordItem({ record }: { record: AuditRecord }) {
       <AuditDrawer
         open={drawerOpen}
         record={record}
+        mode={drawerMode}
         onClose={() => setDrawerOpen(false)}
       />
     </>

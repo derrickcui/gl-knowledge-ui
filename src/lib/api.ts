@@ -106,6 +106,11 @@ export type CandidateRelationsResponse = {
   }[];
 };
 
+export type CandidateSnapshotDTO = CandidateDTO & {
+  snapshotId?: string | null;
+  version?: string | null;
+};
+
 export type ConceptGraphNode = {
   id: number;
   canonical: string;
@@ -320,6 +325,26 @@ export async function fetchCandidateRelations(
 ): Promise<ApiResult<CandidateRelationsResponse>> {
   return requestJson(
     `${API_BASE}/v1/candidates/${id}/relations`,
+    { cache: "no-store" }
+  );
+}
+
+export async function fetchCandidateSnapshot(
+  candidateId: number,
+  snapshotId: string
+): Promise<ApiResult<CandidateSnapshotDTO>> {
+  return requestJson(
+    `${API_BASE}/v1/candidates/${candidateId}/snapshots/${snapshotId}`,
+    { cache: "no-store" }
+  );
+}
+
+export async function fetchCandidateSnapshotRelations(
+  candidateId: number,
+  snapshotId: string
+): Promise<ApiResult<CandidateRelationsResponse>> {
+  return requestJson(
+    `${API_BASE}/v1/candidates/${candidateId}/snapshots/${snapshotId}/relations`,
     { cache: "no-store" }
   );
 }
