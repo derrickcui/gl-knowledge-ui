@@ -1,23 +1,13 @@
 import { fetchApprovals } from "@/lib/api";
-import { ApprovalTable } from "@/components/glossary/approval/approval-table";
+import { ApprovalsView } from "./approvals-view";
 
 export default async function ApprovalsPage() {
-  const approvals = await fetchApprovals({
+  const response = await fetchApprovals({
     status: "PENDING",
     limit: 50,
     offset: 0,
   });
+  const approvals = response.data ?? { items: [], total: 0 };
 
-  return (
-    <div className="space-y-4">
-      <div>
-        <div className="text-lg font-semibold">Approvals</div>
-        <p className="mt-2 text-sm opacity-70">
-          Terms under review that require your decision.
-        </p>
-      </div>
-
-      <ApprovalTable items={approvals.items} />
-    </div>
-  );
+  return <ApprovalsView initialItems={approvals.items} />;
 }

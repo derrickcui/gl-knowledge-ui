@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Pending Review",
@@ -60,6 +61,9 @@ export function CandidatesView({
   initialData: CandidateListResponse;
 }) {
   const router = useRouter(); // ƒ-? †.3‚"r 1
+  const [statusMessage, setStatusMessage] = useState<
+    string | null
+  >(null);
   const [status, setStatus] = useState(initialStatus);
   const [rows, setRows] = useState<CandidateDTO[]>(
     initialData.items
@@ -79,27 +83,42 @@ export function CandidatesView({
   async function reload(
     nextStatus: string,
     nextOffset = 0,
-    nextQuery = query
+    nextQuery = query,
+    actionLabel = "加载"
   ) {
+    setStatusMessage(
+      `正在执行${actionLabel}操作，请稍后...`
+    );
     setLoading(true);
     try {
-      const data = await fetchCandidates({
+      const result = await fetchCandidates({
         status: getStatusForFetch(nextStatus),
         limit: PAGE_SIZE,
         offset: nextOffset,
         query: nextQuery || undefined,
       });
-      setRows(data.items);
-      setHasMore(data.hasMore);
-      setNextCursor(data.nextCursor ?? null);
-      setOffset(nextOffset);
+      if (result.data) {
+        setRows(result.data.items);
+        setHasMore(result.data.hasMore);
+        setNextCursor(result.data.nextCursor ?? null);
+        setOffset(nextOffset);
+      } else {
+        setRows([]);
+        setHasMore(false);
+        setNextCursor(null);
+        setOffset(nextOffset);
+      }
     } finally {
       setLoading(false);
+      setStatusMessage(null);
     }
   }
 
   return (
     <div className="space-y-4">
+      {statusMessage && (
+        <FeedbackBanner type="info" title={statusMessage} />
+      )}
       <div>
         <h1 className="text-lg font-semibold">Candidates</h1>
         <p className="text-sm opacity-70">
@@ -115,7 +134,7 @@ export function CandidatesView({
           onChange={(e) => {
             const v = e.target.value;
             setStatus(v);
-            reload(v, 0);
+            reload(v, 0, query, "筛选");
           }}
         >
           <option value={ALL_CANDIDATES}>All Candidates</option>
@@ -132,7 +151,7 @@ export function CandidatesView({
             onChange={(e) => {
               const nextQuery = e.target.value;
               setQuery(nextQuery);
-              reload(status, 0, nextQuery);
+              reload(status, 0, nextQuery, "搜索");
             }}
           />
           {query && (
@@ -141,7 +160,7 @@ export function CandidatesView({
               className="h-9 rounded-md border px-3 text-sm"
               onClick={() => {
                 setQuery("");
-                reload(status, 0, "");
+                reload(status, 0, "", "清除搜索");
               }}
             >
               Clear
@@ -272,7 +291,12 @@ export function CandidatesView({
             className="h-8 rounded-md border px-3 text-sm disabled:opacity-40"
             disabled={loading || offset === 0}
             onClick={() =>
-              reload(status, Math.max(0, offset - PAGE_SIZE))
+              reload(
+                status,
+                Math.max(0, offset - PAGE_SIZE),
+                query,
+                "上一页"
+              )
             }
           >
             Previous
@@ -284,7 +308,7 @@ export function CandidatesView({
             onClick={() => {
               const nextOffset =
                 nextCursor ?? offset + PAGE_SIZE;
-              reload(status, nextOffset);
+              reload(status, nextOffset, query, "下一页");
             }}
           >
             Next

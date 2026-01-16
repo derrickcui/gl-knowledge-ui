@@ -1,4 +1,4 @@
-import { fetchApprovals } from "@/lib/api";
+import { fetchApprovals, isServiceDownError } from "@/lib/api";
 import { GlossaryTabs } from "@/components/glossary/glossary-tabs";
 
 export default async function GlossaryLayout({
@@ -11,7 +11,10 @@ export default async function GlossaryLayout({
     limit: 50,
     offset: 0,
   });
-  const pendingCount = approvals.total;
+  const pendingCount = approvals.data?.total ?? 0;
+  const serviceError = isServiceDownError(approvals.error)
+    ? approvals.error
+    : null;
 
   return (
     <div className="min-h-full">
@@ -22,7 +25,14 @@ export default async function GlossaryLayout({
         </div>
       </div>
 
-      <div className="p-4">{children}</div>
+      <div className="space-y-4 p-4">
+        {serviceError && (
+          <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+            {serviceError}
+          </div>
+        )}
+        {children}
+      </div>
     </div>
   );
 }

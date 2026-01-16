@@ -18,7 +18,7 @@ export function CandidateActions({
   draft: CandidateDTO;
   reviewInfo: ReviewInfoDTO;
   onFeedback: (f: {
-    type: "error" | "success";
+    type: "error" | "success" | "info";
     title: string;
     message?: string;
   }) => void;
@@ -30,8 +30,12 @@ export function CandidateActions({
   async function handleSubmit() {
     try {
       setLoading(true);
+      onFeedback({
+        type: "info",
+        title: "正在执行提交审核操作，请稍后...",
+      });
 
-      const change = await createChange({
+      const changeResult = await createChange({
         candidateId: draft.id,
         payload: {
           canonical: draft.canonical,
@@ -42,9 +46,20 @@ export function CandidateActions({
         submittedBy: "ui-user",
       });
 
-      await submitChange(change.id, {
+      if (!changeResult.data) {
+        throw new Error(
+          changeResult.error ?? "Failed to create change."
+        );
+      }
+
+      const submitResult = await submitChange(changeResult.data.id, {
         submittedBy: "ui-user",
       });
+      if (!submitResult.data) {
+        throw new Error(
+          submitResult.error ?? "Failed to submit change."
+        );
+      }
 
       onFeedback({
         type: "success",

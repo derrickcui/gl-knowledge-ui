@@ -13,11 +13,27 @@ export default async function CandidateDetailPage({
   const { id } = await params;
   const candidateId = Number(id);
 
-  const [candidate, reviewInfo, relations] = await Promise.all([
-    fetchCandidateById(candidateId),
-    fetchReviewInfo(candidateId),
-    fetchCandidateRelations(candidateId),
-  ]);
+  const [candidateResult, reviewInfoResult, relationsResult] =
+    await Promise.all([
+      fetchCandidateById(candidateId),
+      fetchReviewInfo(candidateId),
+      fetchCandidateRelations(candidateId),
+    ]);
+  const candidate = candidateResult.data;
+  const reviewInfo = reviewInfoResult.data;
+  const relations = relationsResult.data;
+  const loadError =
+    candidateResult.error ||
+    reviewInfoResult.error ||
+    relationsResult.error;
+
+  if (!candidate || !reviewInfo || !relations) {
+    return (
+      <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+        {loadError ?? "Unable to load candidate details."}
+      </div>
+    );
+  }
 
   return (
     <CandidateDetailView

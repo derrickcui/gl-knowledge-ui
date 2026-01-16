@@ -1,9 +1,9 @@
 import { fetchCandidates } from "@/lib/api";
-import { PublishedView } from "./published-view";
+import { PublishedView } from "../published/published-view";
 
-export default async function PublishedPage() {
+export default async function KnowbasePage() {
   const response = await fetchCandidates({
-    status: "APPROVED",
+    status: "PUBLISHED",
     limit: 10,
     offset: 0,
   });
@@ -13,5 +13,5 @@ export default async function PublishedPage() {
     nextCursor: null,
   };
 
-  return <PublishedView initialData={data} mode="publish" />;
+  return <PublishedView initialData={data} mode="knowbase" />;
 }

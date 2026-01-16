@@ -54,7 +54,11 @@ export function GlossaryTabs({
         </span>
       ),
     },
-    { href: "/knowledge/glossary/published", label: "Published" },
+    { href: "/knowledge/glossary/published", label: "Publish" },
+    {
+      href: "/knowledge/glossary/knowbase",
+      label: "Knowbase (Published)",
+    },
     { href: "/knowledge/glossary/audit", label: "Audit" },
   ];
 

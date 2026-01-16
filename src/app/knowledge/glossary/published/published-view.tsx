@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import cytoscape from "cytoscape";
 
 import {
   fetchCandidates,
@@ -10,6 +11,8 @@ import {
   fetchCandidateById,
   publishCandidate,
   publishCandidates,
+  fetchConceptGraph,
+  ConceptGraphResponse,
   CandidateDTO,
   CandidateListResponse,
 } from "@/lib/api";
@@ -63,10 +66,14 @@ function isApprovedStatus(status: string) {
 
 export function PublishedView({
   initialData,
+  mode,
 }: {
   initialData: CandidateListResponse;
+  mode: "publish" | "knowbase";
 }) {
   const router = useRouter();
+  const isPublishMode = mode === "publish";
+  const fetchStatus = isPublishMode ? "APPROVED" : "PUBLISHED";
   const [rows, setRows] = useState<CandidateDTO[]>(
     initialData.items
   );
@@ -76,6 +83,7 @@ export function PublishedView({
   const [nextCursor, setNextCursor] = useState<number | null>(
     initialData.nextCursor ?? null
   );
+  const [query, setQuery] = useState("");
   const [dependencyMap, setDependencyMap] = useState<
     Record<number, DependencySummary>
   >({});
@@ -89,10 +97,25 @@ export function PublishedView({
   );
   const [publishing, setPublishing] = useState(false);
   const [feedback, setFeedback] = useState<null | {
-    type: "error" | "success";
+    type: "error" | "success" | "info";
     title: string;
     message?: string;
   }>(null);
+  const [statusMessage, setStatusMessage] = useState<
+    string | null
+  >(null);
+  const [graphOpen, setGraphOpen] = useState(false);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(
+    null
+  );
+  const [graphData, setGraphData] =
+    useState<ConceptGraphResponse | null>(null);
+  const [graphDepth, setGraphDepth] = useState(1);
+  const [graphMaxNodes, setGraphMaxNodes] = useState(20);
+  const graphContainerRef = useRef<HTMLDivElement | null>(
+    null
+  );
 
   const candidateNames = useMemo(() => {
     const map: Record<number, string> = {};
@@ -102,21 +125,34 @@ export function PublishedView({
     return map;
   }, [rows]);
 
-  async function reload(nextOffset = 0) {
+  async function reload(
+    nextOffset = 0,
+    actionLabel = "加载",
+    nextQuery = query
+  ) {
+    setStatusMessage(
+      `正在执行${actionLabel}操作，请稍后...`
+    );
     setLoading(true);
     try {
-      const data = await fetchCandidates({
-        status: "APPROVED",
+      const result = await fetchCandidates({
+        status: fetchStatus,
         limit: PAGE_SIZE,
         offset: nextOffset,
+        query: nextQuery || undefined,
       });
-      setRows(data.items);
-      setHasMore(data.hasMore);
-      setNextCursor(data.nextCursor ?? null);
-      setOffset(nextOffset);
-      setSelectedIds([]);
+      if (result.data) {
+        setRows(result.data.items);
+        setHasMore(result.data.hasMore);
+        setNextCursor(result.data.nextCursor ?? null);
+        setOffset(nextOffset);
+        if (isPublishMode) {
+          setSelectedIds([]);
+        }
+      }
     } finally {
       setLoading(false);
+      setStatusMessage(null);
     }
   }
 
@@ -125,30 +161,38 @@ export function PublishedView({
 
     async function loadDependencies() {
       const updates: Record<number, DependencySummary> = {};
-      await Promise.all(
-        rows.map(async (row) => {
-          try {
-            const relations = await fetchCandidateRelations(
+      setStatusMessage(
+        "正在执行加载依赖关系操作，请稍后..."
+      );
+      try {
+        await Promise.all(
+          rows.map(async (row) => {
+            const result = await fetchCandidateRelations(
               row.id
             );
-            const relationRows = await buildRelationRows(
-              row.canonical,
-              relations
-            );
-            updates[row.id] = {
-              hasPending: relationRows.some(
-                (entry) => !isApprovedStatus(entry.status)
-              ),
-              rows: relationRows,
-            };
-          } catch {
-            updates[row.id] = {
-              hasPending: false,
-              rows: [],
-            };
-          }
-        })
-      );
+            if (result.data) {
+              const relationRows = await buildRelationRows(
+                row.canonical,
+                result.data
+              );
+              updates[row.id] = {
+                hasPending: relationRows.some(
+                  (entry) =>
+                    !isApprovedStatus(entry.status)
+                ),
+                rows: relationRows,
+              };
+            } else {
+              updates[row.id] = {
+                hasPending: false,
+                rows: [],
+              };
+            }
+          })
+        );
+      } finally {
+        setStatusMessage(null);
+      }
 
       if (!ignore) {
         setDependencyMap((prev) => ({ ...prev, ...updates }));
@@ -178,16 +222,15 @@ export function PublishedView({
       if (statusCache.has(id)) {
         return statusCache.get(id) as string;
       }
-      try {
-        const candidate = await fetchCandidateById(id);
+      const result = await fetchCandidateById(id);
+      if (result.data) {
         const resolved =
-          candidate.lifecycleStatus ?? candidate.status;
+          result.data.lifecycleStatus ?? result.data.status;
         statusCache.set(id, resolved);
         return resolved;
-      } catch {
-        statusCache.set(id, fallback);
-        return fallback;
       }
+      statusCache.set(id, fallback);
+      return fallback;
     }
 
     for (const item of relations.outgoing) {
@@ -233,6 +276,68 @@ export function PublishedView({
     setDependencyOpen(true);
   }
 
+  async function openGraph(candidateId: number) {
+    setGraphOpen(true);
+    setGraphLoading(true);
+    setGraphError(null);
+    setGraphDepth(1);
+    setGraphMaxNodes(20);
+    setStatusMessage(
+      "正在执行加载概念图操作，请稍后..."
+    );
+    try {
+      const result = await fetchConceptGraph({
+        id: candidateId,
+        depth: 1,
+        maxNodes: 20,
+        includeIncoming: true,
+        includeOutgoing: true,
+      });
+      if (result.data) {
+        setGraphData(result.data);
+      } else {
+        setGraphError(
+          result.error ?? "Unable to load graph data."
+        );
+      }
+    } finally {
+      setGraphLoading(false);
+      setStatusMessage(null);
+    }
+  }
+
+  async function expandGraph() {
+    if (!graphData) return;
+    const nextDepth = graphDepth + 1;
+    const nextMaxNodes = graphMaxNodes + 20;
+    setGraphLoading(true);
+    setGraphError(null);
+    setStatusMessage(
+      "正在执行扩展概念图操作，请稍后..."
+    );
+    try {
+      const result = await fetchConceptGraph({
+        id: graphData.center.id,
+        depth: nextDepth,
+        maxNodes: nextMaxNodes,
+        includeIncoming: true,
+        includeOutgoing: true,
+      });
+      if (result.data) {
+        setGraphData(result.data);
+        setGraphDepth(nextDepth);
+        setGraphMaxNodes(nextMaxNodes);
+      } else {
+        setGraphError(
+          result.error ?? "Unable to load graph data."
+        );
+      }
+    } finally {
+      setGraphLoading(false);
+      setStatusMessage(null);
+    }
+  }
+
   const allSelected =
     rows.length > 0 && selectedIds.length === rows.length;
 
@@ -255,32 +360,39 @@ export function PublishedView({
 
   async function handlePublish() {
     if (!selectedIds.length) return;
+    setStatusMessage("正在执行发布操作，请稍后...");
     setPublishing(true);
     try {
-      if (selectedIds.length === 1) {
-        await publishCandidate(selectedIds[0]);
-      } else {
-        await publishCandidates(selectedIds);
+      const result =
+        selectedIds.length === 1
+          ? await publishCandidate(selectedIds[0])
+          : await publishCandidates(selectedIds);
+      if (result.error) {
+        setFeedback({
+          type: "error",
+          title: "Publish failed",
+          message:
+            result.error ?? "Unable to publish candidates.",
+        });
+        return;
       }
       setFeedback({
         type: "success",
         title: "Published",
         message: "Selected candidates have been published.",
       });
-      await reload(offset);
-    } catch (error: any) {
-      setFeedback({
-        type: "error",
-        title: "Publish failed",
-        message: error?.message ?? "Unable to publish candidates.",
-      });
+      await reload(offset, "刷新列表");
     } finally {
       setPublishing(false);
+      setStatusMessage(null);
     }
   }
 
   return (
     <div className="space-y-4">
+      {statusMessage && (
+        <FeedbackBanner type="info" title={statusMessage} />
+      )}
       {feedback && (
         <FeedbackBanner
           type={feedback.type}
@@ -291,38 +403,72 @@ export function PublishedView({
       )}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-lg font-semibold">Published</h1>
+          <h1 className="text-lg font-semibold">
+            {isPublishMode ? "Publish" : "Knowbase (Published)"}
+          </h1>
           <p className="text-sm opacity-70">
-            Terms that are active and available to downstream use.
+            {isPublishMode
+              ? "Publish approved terms into the knowledge base."
+              : "Published terms available to downstream use."}
           </p>
         </div>
-        <button
-          type="button"
-          className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-50"
-          disabled={!selectedIds.length || publishing}
-          onClick={handlePublish}
-        >
-          Publish
-        </button>
+        {isPublishMode && (
+          <button
+            type="button"
+            className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-50"
+            disabled={!selectedIds.length || publishing}
+            onClick={handlePublish}
+          >
+            Publish
+          </button>
+        )}
       </div>
 
       {loading && (
         <span className="text-sm opacity-60">Loading...</span>
       )}
 
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          className="h-9 w-56 rounded-md border bg-background px-3 text-sm"
+          placeholder="Search candidates"
+          value={query}
+          onChange={(event) => {
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
+            reload(0, "搜索", nextQuery);
+          }}
+        />
+        {query && (
+          <button
+            type="button"
+            className="h-9 rounded-md border px-3 text-sm"
+            onClick={() => {
+              setQuery("");
+              reload(0, "清除搜索", "");
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
       <div className="overflow-auto rounded-md border">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="border-b px-3 py-2 text-left">
-                <input
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={(event) =>
-                    toggleSelectAll(event.target.checked)
-                  }
-                />
-              </th>
+              {isPublishMode && (
+                <th className="border-b px-3 py-2 text-left">
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={(event) =>
+                      toggleSelectAll(event.target.checked)
+                    }
+                  />
+                </th>
+              )}
               <th className="border-b px-3 py-2 text-left">
                 Canonical
               </th>
@@ -338,6 +484,11 @@ export function PublishedView({
               <th className="border-b px-3 py-2 text-left">
                 Dependencies
               </th>
+              {!isPublishMode && (
+                <th className="border-b px-3 py-2 text-left">
+                  Graph
+                </th>
+              )}
             </tr>
           </thead>
 
@@ -349,6 +500,11 @@ export function PublishedView({
                 getStatusLabel(displayStatus);
               const statusClass =
                 getStatusClass(displayStatus);
+              const normalizedStatus =
+                normalizeStatus(displayStatus);
+              const canViewGraph = isPublishMode
+                ? normalizedStatus === "PUBLISHED"
+                : true;
 
               return (
                 <tr
@@ -360,18 +516,25 @@ export function PublishedView({
                     );
                   }}
                 >
-                  <td
-                    className="border-b px-3 py-2"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.includes(r.id)}
-                      onChange={(event) =>
-                        toggleRow(r.id, event.target.checked)
+                  {isPublishMode && (
+                    <td
+                      className="border-b px-3 py-2"
+                      onClick={(event) =>
+                        event.stopPropagation()
                       }
-                    />
-                  </td>
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(r.id)}
+                        onChange={(event) =>
+                          toggleRow(
+                            r.id,
+                            event.target.checked
+                          )
+                        }
+                      />
+                    </td>
+                  )}
                   <td className="border-b px-3 py-2">
                     {r.canonical}
                   </td>
@@ -410,6 +573,21 @@ export function PublishedView({
                       <span className="text-xs opacity-50">-</span>
                     )}
                   </td>
+                  {!isPublishMode && (
+                    <td className="border-b px-3 py-2">
+                      <button
+                        type="button"
+                        className="rounded-md border px-2 py-1 text-xs disabled:opacity-40"
+                        disabled={!canViewGraph}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openGraph(r.id);
+                        }}
+                      >
+                        View
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -417,10 +595,12 @@ export function PublishedView({
             {!rows.length && !loading && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={isPublishMode ? 6 : 6}
                   className="px-3 py-6 text-center text-sm opacity-60"
                 >
-                  No published candidates found
+                  {isPublishMode
+                    ? "No candidates ready to publish"
+                    : "No published candidates found"}
                 </td>
               </tr>
             )}
@@ -438,7 +618,11 @@ export function PublishedView({
             className="h-8 rounded-md border px-3 text-sm disabled:opacity-40"
             disabled={loading || offset === 0}
             onClick={() =>
-              reload(Math.max(0, offset - PAGE_SIZE))
+              reload(
+                Math.max(0, offset - PAGE_SIZE),
+                "上一页",
+                query
+              )
             }
           >
             Previous
@@ -450,7 +634,7 @@ export function PublishedView({
             onClick={() => {
               const nextOffset =
                 nextCursor ?? offset + PAGE_SIZE;
-              reload(nextOffset);
+              reload(nextOffset, "下一页", query);
             }}
           >
             Next
@@ -464,6 +648,20 @@ export function PublishedView({
         rows={dependencyRows}
         onClose={() => setDependencyOpen(false)}
       />
+
+      {!isPublishMode && (
+        <ConceptGraphDialog
+          open={graphOpen}
+          loading={graphLoading}
+          error={graphError}
+          data={graphData}
+          depth={graphDepth}
+          maxNodes={graphMaxNodes}
+          containerRef={graphContainerRef}
+          onExpand={expandGraph}
+          onClose={() => setGraphOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -575,6 +773,176 @@ function DependencyDialog({
           >
             Close
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConceptGraphDialog({
+  open,
+  loading,
+  error,
+  data,
+  depth,
+  maxNodes,
+  containerRef,
+  onExpand,
+  onClose,
+}: {
+  open: boolean;
+  loading: boolean;
+  error: string | null;
+  data: ConceptGraphResponse | null;
+  depth: number;
+  maxNodes: number;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  onExpand: () => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open || !data || !containerRef.current) return;
+
+    const elements = [
+      ...data.nodes.map((node) => ({
+        data: {
+          id: String(node.id),
+          label: node.canonical,
+          type: node.type,
+          isCenter: node.id === data.center.id,
+        },
+      })),
+      ...data.edges.map((edge) => ({
+        data: {
+          id: String(edge.id),
+          source: String(edge.source),
+          target: String(edge.target),
+          label: edge.predicate,
+        },
+      })),
+    ];
+
+    const cy = cytoscape({
+      container: containerRef.current,
+      elements,
+      layout: {
+        name: "cose",
+        animate: true,
+        fit: true,
+      },
+      style: [
+        {
+          selector: "node",
+          style: {
+            label: "data(label)",
+            "text-wrap": "wrap",
+            "text-max-width": "120px",
+            "text-valign": "center",
+            "text-halign": "center",
+            "font-size": 10,
+            "background-color": "#e2e8f0",
+            color: "#111827",
+            width: 42,
+            height: 42,
+            "border-width": 1,
+            "border-color": "#94a3b8",
+          },
+        },
+        {
+          selector: "node[isCenter]",
+          style: {
+            "background-color": "#111827",
+            color: "#f8fafc",
+            "border-color": "#111827",
+          },
+        },
+        {
+          selector: "edge",
+          style: {
+            label: "data(label)",
+            "font-size": 9,
+            color: "#334155",
+            "text-rotation": "autorotate",
+            "text-background-color": "#f8fafc",
+            "text-background-opacity": 0.8,
+            "text-background-padding": 2,
+            width: 1.5,
+            "line-color": "#94a3b8",
+            "target-arrow-shape": "triangle",
+            "target-arrow-color": "#94a3b8",
+            "curve-style": "bezier",
+          },
+        },
+      ],
+      wheelSensitivity: 0.2,
+    });
+
+    cy.fit();
+
+    return () => {
+      cy.destroy();
+    };
+  }, [open, data, containerRef]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-[900px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-base font-semibold">
+              Concept Graph
+            </div>
+            {data && (
+              <div className="text-xs opacity-70">
+                Depth {depth} · Nodes {data.meta.nodeCount} ·
+                Edges {data.meta.edgeCount}
+                {data.meta.truncated ? " · Truncated" : ""}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="rounded-md border px-3 py-1 text-xs disabled:opacity-40"
+              disabled={loading}
+              onClick={onExpand}
+            >
+              Expand
+            </button>
+            <button
+              type="button"
+              className="rounded-md border px-3 py-1 text-xs"
+              onClick={onClose}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-md border bg-slate-50">
+          {loading && (
+            <div className="p-4 text-sm opacity-70">
+              Loading graph...
+            </div>
+          )}
+          {error && (
+            <div className="p-4 text-sm text-red-700">
+              {error}
+            </div>
+          )}
+          {!loading && !error && (
+            <div
+              ref={containerRef}
+              className="h-[520px] w-full"
+            />
+          )}
+          {!loading && !error && data?.meta.truncated && (
+            <div className="border-t px-4 py-2 text-xs opacity-70">
+              Graph truncated. Use Expand to load more nodes (max {maxNodes}).
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -5,6 +5,53 @@ const API_BASE =
   process.env.NEXT_PUBLIC_GLOSSARY_API ??
   "http://localhost:8000";
 
+export const SERVICE_DOWN_MESSAGE =
+  "concept-service 未启动或无法连接，请启动服务后重试。";
+const SERVICE_ERROR_MESSAGE =
+  "concept-service 请求失败，请稍后重试。";
+
+export type ApiResult<T> = {
+  data: T | null;
+  error: string | null;
+};
+
+export function isServiceDownError(error: string | null) {
+  return error === SERVICE_DOWN_MESSAGE;
+}
+
+async function buildErrorMessage(
+  res: Response,
+  fallback: string
+) {
+  const text = await res.text().catch(() => "");
+  if (text) return text;
+  const status = res.status
+    ? ` (${res.status} ${res.statusText})`
+    : "";
+  return `${fallback}${status}`.trim();
+}
+
+async function requestJson<T>(
+  input: string,
+  init?: RequestInit
+): Promise<ApiResult<T>> {
+  try {
+    const res = await fetch(input, init);
+    if (!res.ok) {
+      return {
+        data: null,
+        error: await buildErrorMessage(
+          res,
+          SERVICE_ERROR_MESSAGE
+        ),
+      };
+    }
+    return { data: (await res.json()) as T, error: null };
+  } catch {
+    return { data: null, error: SERVICE_DOWN_MESSAGE };
+  }
+}
+
 export type CandidateDTO = {
   id: number;
   canonical: string;
@@ -59,6 +106,37 @@ export type CandidateRelationsResponse = {
   }[];
 };
 
+export type ConceptGraphNode = {
+  id: number;
+  canonical: string;
+  version: number;
+  type: string;
+};
+
+export type ConceptGraphEdge = {
+  id: number;
+  source: number;
+  target: number;
+  predicate: string;
+  version: number;
+};
+
+export type ConceptGraphResponse = {
+  center: {
+    id: number;
+    canonical: string;
+    version: number;
+  };
+  nodes: ConceptGraphNode[];
+  edges: ConceptGraphEdge[];
+  meta: {
+    depth: number;
+    nodeCount: number;
+    edgeCount: number;
+    truncated: boolean;
+  };
+};
+
 export type ReviewInfoDTO = {
   hasActiveChange: boolean;
   canSubmitForReview: boolean;
@@ -69,6 +147,11 @@ export type ReviewInfoDTO = {
   reviewedBy?: string;
   reviewComment?: string;
   changeId?: number | null;
+};
+
+export type ChangeDTO = {
+  id: number;
+  [key: string]: unknown;
 };
 
 export type ApprovalDTO = {
@@ -122,7 +205,7 @@ export async function fetchCandidates(params: {
   offset?: number;
   reviewer?: string;
   query?: string;
-}): Promise<CandidateListResponse> {
+}): Promise<ApiResult<CandidateListResponse>> {
   const {
     status,
     limit = 50,
@@ -142,20 +225,14 @@ export async function fetchCandidates(params: {
     url.searchParams.set("query", query);
   }
 
-  const res = await fetch(url.toString(), { cache: "no-store" });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch candidates`);
-  }
-
-  return res.json();
+  return requestJson(url.toString(), { cache: "no-store" });
 }
 
 export async function fetchApprovals(params: {
   status: string;
   limit?: number;
   offset?: number;
-}): Promise<ApprovalListResponse> {
+}): Promise<ApiResult<ApprovalListResponse>> {
   const { status, limit = 50, offset = 0 } = params;
 
   const url = new URL("/v1/approvals", API_BASE);
@@ -163,34 +240,50 @@ export async function fetchApprovals(params: {
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
 
-  const res = await fetch(url.toString(), { cache: "no-store" });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch approvals");
-  }
-
-  return res.json();
+  return requestJson(url.toString(), { cache: "no-store" });
 }
 
 export async function fetchCandidateById(
   id: number
-): Promise<CandidateDTO> {
-  const res = await fetch(
-    `${API_BASE}/v1/candidates/${id}`,
-    { cache: "no-store" }
+): Promise<ApiResult<CandidateDTO>> {
+  return requestJson(`${API_BASE}/v1/candidates/${id}`, {
+    cache: "no-store",
+  });
+}
+
+export async function fetchConceptGraph(params: {
+  id: number;
+  depth?: number;
+  maxNodes?: number;
+  includeIncoming?: boolean;
+  includeOutgoing?: boolean;
+}): Promise<ApiResult<ConceptGraphResponse>> {
+  const {
+    id,
+    depth = 1,
+    maxNodes = 20,
+    includeIncoming = true,
+    includeOutgoing = true,
+  } = params;
+  const url = new URL(`/v1/concepts/${id}/graph`, API_BASE);
+  url.searchParams.set("depth", String(depth));
+  url.searchParams.set("maxNodes", String(maxNodes));
+  url.searchParams.set(
+    "includeIncoming",
+    String(includeIncoming)
+  );
+  url.searchParams.set(
+    "includeOutgoing",
+    String(includeOutgoing)
   );
 
-  if (!res.ok) {
-    throw new Error(`Failed to fetch candidate ${id}`);
-  }
-
-  return res.json();
+  return requestJson(url.toString(), { cache: "no-store" });
 }
 
 export async function publishCandidate(
   id: number,
   actor?: string
-) {
+): Promise<ApiResult<unknown>> {
   const url = new URL(
     `/v1/candidates/${id}/publish`,
     API_BASE
@@ -199,21 +292,15 @@ export async function publishCandidate(
     url.searchParams.set("actor", actor);
   }
 
-  const res = await fetch(url.toString(), {
+  return requestJson<unknown>(url.toString(), {
     method: "POST",
   });
-
-  if (!res.ok) {
-    throw new Error(`Failed to publish candidate ${id}`);
-  }
-
-  return res.json();
 }
 
 export async function publishCandidates(
   ids: number[],
   actor?: string
-) {
+): Promise<ApiResult<unknown>> {
   const body: { ids: number[]; actor?: string } = {
     ids,
   };
@@ -221,32 +308,20 @@ export async function publishCandidates(
     body.actor = actor;
   }
 
-  const res = await fetch(`${API_BASE}/v1/candidates/publish`, {
+  return requestJson<unknown>(`${API_BASE}/v1/candidates/publish`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-
-  if (!res.ok) {
-    throw new Error("Failed to publish candidates");
-  }
-
-  return res.json();
 }
 
 export async function fetchCandidateRelations(
   id: number
-): Promise<CandidateRelationsResponse> {
-  const res = await fetch(
+): Promise<ApiResult<CandidateRelationsResponse>> {
+  return requestJson(
     `${API_BASE}/v1/candidates/${id}/relations`,
     { cache: "no-store" }
   );
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch candidate relations ${id}`);
-  }
-
-  return res.json();
 }
 
 /* =========================
@@ -255,17 +330,11 @@ export async function fetchCandidateRelations(
 
 export async function fetchReviewInfo(
   candidateId: number
-): Promise<ReviewInfoDTO> {
-  const res = await fetch(
+): Promise<ApiResult<ReviewInfoDTO>> {
+  return requestJson(
     `${API_BASE}/v1/candidates/${candidateId}/review-info`,
     { cache: "no-store" }
   );
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch review info");
-  }
-
-  return res.json();
 }
 
 /* =========================
@@ -281,25 +350,19 @@ export async function createChange(params: {
     role: string;
   };
   submittedBy: string;
-}) {
-  const res = await fetch(`${API_BASE}/v1/changes`, {
+}): Promise<ApiResult<ChangeDTO>> {
+  return requestJson<ChangeDTO>(`${API_BASE}/v1/changes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-
-  if (!res.ok) {
-    throw new Error("Failed to create change");
-  }
-
-  return res.json();
 }
 
 export async function submitChange(
   changeId: number,
   params: { submittedBy?: string }
-) {
-  const res = await fetch(
+): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(
     `${API_BASE}/v1/changes/${changeId}/submit`,
     {
       method: "POST",
@@ -307,12 +370,6 @@ export async function submitChange(
       body: JSON.stringify(params),
     }
   );
-
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
-
-  return res.json();
 }
 
 export async function decideChange(params: {
@@ -322,8 +379,8 @@ export async function decideChange(params: {
     reviewer?: string;
     comment: string;
   };
-}) {
-  const res = await fetch(
+}): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(
     `${API_BASE}/v1/changes/${params.changeId}/decision`,
     {
       method: "POST",
@@ -331,12 +388,6 @@ export async function decideChange(params: {
       body: JSON.stringify(params.payload),
     }
   );
-
-  if (!res.ok) {
-    throw new Error(await res.text());
-  }
-
-  return res.json();
 }
 
 /* =========================
@@ -347,7 +398,7 @@ export async function fetchAuditEvents(params?: {
   candidateId?: number;
   limit?: number;
   offset?: number;
-}): Promise<GovernanceEventDTO[]> {
+}): Promise<ApiResult<GovernanceEventDTO[]>> {
   const { candidateId, limit = 100, offset = 0 } = params ?? {};
 
   const url = new URL("/v1/audit/events", API_BASE);
@@ -358,15 +409,7 @@ export async function fetchAuditEvents(params?: {
   url.searchParams.set("limit", String(limit));
   url.searchParams.set("offset", String(offset));
 
-  const res = await fetch(url.toString(), {
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    throw new Error("Failed to fetch audit events");
-  }
-
-  return res.json();
+  return requestJson(url.toString(), { cache: "no-store" });
 }
 
 export interface AuditLogResponse {
@@ -379,7 +422,7 @@ export async function fetchGlossaryAuditLogs(params?: {
   limit?: number;
   before?: string;
   query?: string;
-}): Promise<AuditLogResponse> {
+}): Promise<ApiResult<AuditLogResponse>> {
   const search = new URLSearchParams();
 
   search.set("limit", String(params?.limit ?? 20));
@@ -397,10 +440,14 @@ export async function fetchGlossaryAuditLogs(params?: {
   );
 
   if (!res.ok) {
-    throw new Error(
-      `Failed to fetch audit logs (${res.status} ${res.statusText})`
-    );
+    return {
+      data: null,
+      error: await buildErrorMessage(
+        res,
+        SERVICE_ERROR_MESSAGE
+      ),
+    };
   }
 
-  return res.json();
+  return { data: await res.json(), error: null };
 }

@@ -101,30 +101,37 @@ export function CandidateDetailView({
     : undefined;
 
   const [feedback, setFeedback] = useState<null | {
-    type: "error" | "success";
+    type: "error" | "success" | "info";
     title: string;
     message?: string;
   }>(null);
+  const [statusMessage, setStatusMessage] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     if (resolvedChangeId || !isInReview) return;
     let ignore = false;
 
     async function loadChangeId() {
-      try {
-        const approvals = await fetchApprovals({
-          status: "PENDING",
-          limit: 200,
-          offset: 0,
-        });
-        const match = approvals.items.find(
-          (item) => item.candidateId === candidate.id
+      if (!ignore) {
+        setStatusMessage(
+          "正在执行加载审批信息操作，请稍后..."
         );
-        if (!ignore && match?.changeId) {
-          setResolvedChangeId(match.changeId);
-        }
-      } catch {
-        // best-effort lookup; keep existing behavior on failure
+      }
+      const approvalsResult = await fetchApprovals({
+        status: "PENDING",
+        limit: 200,
+        offset: 0,
+      });
+      const match = approvalsResult.data?.items.find(
+        (item) => item.candidateId === candidate.id
+      );
+      if (!ignore && match?.changeId) {
+        setResolvedChangeId(match.changeId);
+      }
+      if (!ignore) {
+        setStatusMessage(null);
       }
     }
 
@@ -137,6 +144,9 @@ export function CandidateDetailView({
 
   return (
     <div className="space-y-4">
+      {statusMessage && (
+        <FeedbackBanner type="info" title={statusMessage} />
+      )}
       {feedback && (
         <FeedbackBanner
           type={feedback.type}

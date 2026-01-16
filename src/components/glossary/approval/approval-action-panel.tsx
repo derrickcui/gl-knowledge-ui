@@ -20,7 +20,7 @@ export function ApprovalActionPanel({
   candidate: CandidateDTO & { changeId?: number };
   relations: CandidateRelationsResponse;
   onFeedback: (f: {
-    type: "error" | "success";
+    type: "error" | "success" | "info";
     title: string;
     message?: string;
   }) => void;
@@ -48,10 +48,14 @@ export function ApprovalActionPanel({
   async function handleApprove(reason: string) {
     try {
       setLoadingAction("approve");
+      onFeedback({
+        type: "info",
+        title: "正在执行审批通过操作，请稍后...",
+      });
       if (!candidate.changeId) {
         throw new Error("Missing change id");
       }
-      await decideChange({
+      const result = await decideChange({
         changeId: candidate.changeId,
         payload: {
           status: "APPROVED",
@@ -59,6 +63,9 @@ export function ApprovalActionPanel({
           comment: reason,
         },
       });
+      if (result.error) {
+        throw new Error(result.error);
+      }
       onFeedback({
         type: "success",
         title: "Approved",
@@ -85,10 +92,14 @@ export function ApprovalActionPanel({
   }) {
     try {
       setLoadingAction("reject");
+      onFeedback({
+        type: "info",
+        title: "正在执行审批拒绝操作，请稍后...",
+      });
       if (!candidate.changeId) {
         throw new Error("Missing change id");
       }
-      await decideChange({
+      const result = await decideChange({
         changeId: candidate.changeId,
         payload: {
           status: "REJECTED",
@@ -96,6 +107,9 @@ export function ApprovalActionPanel({
           comment: `${payload.reasonType}: ${payload.reason}`,
         },
       });
+      if (result.error) {
+        throw new Error(result.error);
+      }
       onFeedback({
         type: "success",
         title: "Rejected",
