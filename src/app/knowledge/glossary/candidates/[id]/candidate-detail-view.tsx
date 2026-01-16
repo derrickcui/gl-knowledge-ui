@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   CandidateDTO,
   ReviewInfoDTO,
+  CandidateRelationsResponse,
   fetchApprovals,
 } from "@/lib/api";
 
 import { CandidateHeader } from "./candidate-header";
 import { CandidateTermEditor } from "./candidate-term-editor";
 import { CandidateEvidencePanel } from "./candidate-evidence-panel";
+import { CandidateRelationshipsPanel } from "./candidate-relationships-panel";
 import { CandidateActions } from "./candidate-actions";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { ApprovalActionPanel } from "@/components/glossary/approval/approval-action-panel";
@@ -52,9 +54,11 @@ function normalizeChangeId(value: unknown) {
 export function CandidateDetailView({
   candidate,
   reviewInfo,
+  relations,
 }: {
   candidate: CandidateDTO;
   reviewInfo: ReviewInfoDTO;
+  relations: CandidateRelationsResponse;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -230,6 +234,11 @@ export function CandidateDetailView({
 
           <CandidateEvidencePanel candidate={candidate} />
         </div>
+
+        <CandidateRelationshipsPanel
+          candidateName={candidate.canonical}
+          relations={relations}
+        />
 
         {/* Actions‹¬s†?¦‡"ñ reviewInfo †+3†rs‘~_†?Ý†Ø§‡Zø */}
         {reviewInfo.canSubmitForReview && (

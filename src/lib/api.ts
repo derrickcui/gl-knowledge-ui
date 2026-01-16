@@ -36,6 +36,29 @@ export type CandidateListResponse = {
   hasMore: boolean;
 };
 
+export type CandidateRelationStatus = "PUBLISHED" | "CANDIDATE" | "ARCHIVED" | string;
+
+export type CandidateRelationsResponse = {
+  outgoing: {
+    predicate: string;
+    target: {
+      id: number;
+      name: string;
+      status: CandidateRelationStatus;
+    };
+    relationStatus: string;
+  }[];
+  incoming: {
+    predicate: string;
+    source: {
+      id: number;
+      name: string;
+      status: CandidateRelationStatus;
+    };
+    relationStatus: string;
+  }[];
+};
+
 export type ReviewInfoDTO = {
   hasActiveChange: boolean;
   canSubmitForReview: boolean;
@@ -159,6 +182,21 @@ export async function fetchCandidateById(
 
   if (!res.ok) {
     throw new Error(`Failed to fetch candidate ${id}`);
+  }
+
+  return res.json();
+}
+
+export async function fetchCandidateRelations(
+  id: number
+): Promise<CandidateRelationsResponse> {
+  const res = await fetch(
+    `${API_BASE}/v1/candidates/${id}/relations`,
+    { cache: "no-store" }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch candidate relations ${id}`);
   }
 
   return res.json();
