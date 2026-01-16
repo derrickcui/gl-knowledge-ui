@@ -18,18 +18,28 @@ export function CandidateEvidencePanel({
         <span className="opacity-60">Topics:</span>{" "}
         {candidate.topics.length
           ? candidate.topics.join(", ")
-          : "—"}
+          : "None"}
       </div>
 
       <div className="rounded-md bg-muted p-3 text-xs leading-relaxed">
-        <div className="mb-1 font-medium">
-          Confidence explanation
-        </div>
-        <ul className="list-disc space-y-1 pl-4">
-          <li>在多个文档中重复出现</li>
-          <li>上下文语义一致</li>
-          <li>命中抽取规则或统计模型</li>
-        </ul>
+        <div className="mb-1 font-medium">Evidence</div>
+        {candidate.evidence?.length ? (
+          <ul className="list-disc space-y-2 pl-4">
+            {candidate.evidence.map((item) => (
+              <li key={item.chunk_id}>
+                <div>{item.quote}</div>
+                <a
+                  href={`/knowledge/glossary/chunks/${item.chunk_id}`}
+                  className="text-xs text-muted-foreground underline"
+                >
+                  Chunk: {item.chunk_id}
+                </a>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="opacity-70">No evidence provided.</div>
+        )}
       </div>
     </div>
   );

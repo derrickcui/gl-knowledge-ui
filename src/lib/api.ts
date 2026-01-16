@@ -24,6 +24,10 @@ export type CandidateDTO = {
   reviewed_by?: string | null;
   review_comment?: string | null;
   topics: any[];
+  evidence?: {
+    quote: string;
+    chunk_id: string;
+  }[];
 };
 
 export type CandidateListResponse = {
