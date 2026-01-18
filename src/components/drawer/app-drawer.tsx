@@ -76,10 +76,9 @@ export function AppDrawer() {
           <DrawerItem
             href="/knowledge/topics"
             label="Topics"
-            icon={<Layers className="h-4 w-4 opacity-60" />}
+            icon={<Layers className="h-4 w-4" />}
             collapsed={collapsed}
             nested
-            disabled
           />
         </DrawerGroup>
 

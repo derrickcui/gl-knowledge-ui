@@ -31,7 +31,7 @@ async function buildErrorMessage(
   return `${fallback}${status}`.trim();
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   input: string,
   init?: RequestInit
 ): Promise<ApiResult<T>> {
@@ -76,6 +76,7 @@ export type CandidateDTO = {
     chunk_id: string;
   }[];
 };
+
 
 export type CandidateListResponse = {
   items: CandidateDTO[];
@@ -232,6 +233,7 @@ export async function fetchCandidates(params: {
 
   return requestJson(url.toString(), { cache: "no-store" });
 }
+
 
 export async function fetchApprovals(params: {
   status: string;
