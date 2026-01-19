@@ -72,6 +72,21 @@ type CreateTopicApiResponse = {
   error: string | null;
 };
 
+type TopicDetailResponse = {
+  id: string;
+  name: string;
+  status: string;
+  description?: string | null;
+  usedBy?: string[];
+  updatedAt?: string | null;
+};
+
+type TopicDetailApiResponse = {
+  success: boolean;
+  data: TopicDetailResponse;
+  error: string | null;
+};
+
 export async function fetchTopics(): Promise<
   ApiResult<TopicListResponse>
 > {
@@ -115,6 +130,28 @@ export async function createTopic(params: {
     return {
       data: null,
       error: result.data.error ?? "Unable to create topic.",
+    };
+  }
+
+  return { data: result.data.data, error: null };
+}
+
+export async function fetchTopicById(
+  topicId: string
+): Promise<ApiResult<TopicDetailResponse>> {
+  const result = await requestJson<TopicDetailApiResponse>(
+    `${TOPICS_API_PROXY}/${encodeURIComponent(topicId)}`,
+    { cache: "no-store" }
+  );
+
+  if (!result.data) {
+    return { data: null, error: result.error };
+  }
+
+  if (!result.data.success) {
+    return {
+      data: null,
+      error: result.data.error ?? "Unable to load topic.",
     };
   }
 

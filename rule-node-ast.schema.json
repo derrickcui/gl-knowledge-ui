@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geelink.ai/schema/rulenode/v1.json",
+  "title": "RuleNode AST v1",
+  "type": "object",
+  "required": ["id", "type", "params"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Rule node unique id (UUID)"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "GROUP",
+        "LOGIC",
+        "ACCUMULATE",
+        "PROXIMITY",
+        "CONCEPT_MATCH",
+        "TEXT_MATCH",
+        "FIELD_CONDITION",
+        "WHEN",
+        "TOPIC_REF"
+      ]
+    },
+    "params": {
+      "type": "object",
+      "description": "Node specific parameters"
+    },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#" }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/definitions/GroupRule" },
+    { "$ref": "#/definitions/LogicRule" },
+    { "$ref": "#/definitions/AccumulateRule" },
+    { "$ref": "#/definitions/ProximityRule" },
+    { "$ref": "#/definitions/ConceptMatchRule" },
+    { "$ref": "#/definitions/TextMatchRule" },
+    { "$ref": "#/definitions/FieldConditionRule" },
+    { "$ref": "#/definitions/WhenRule" },
+    { "$ref": "#/definitions/TopicRefRule" }
+  ],
+  "definitions": {
+    "GroupRule": {
+      "properties": {
+        "type": { "const": "GROUP" },
+        "params": {
+          "required": ["operator"],
+          "properties": {
+            "operator": {
+              "enum": ["AND", "OR", "ANY", "ALL", "NONE"]
+            }
+          }
+        },
+        "children": { "minItems": 1 }
+      }
+    },
+    "LogicRule": {
+      "properties": {
+        "type": { "const": "LOGIC" },
+        "params": {
+          "required": ["operator"],
+          "properties": {
+            "operator": { "const": "NOT" }
+          }
+        },
+        "children": { "minItems": 1, "maxItems": 1 }
+      }
+    },
+    "AccumulateRule": {
+      "properties": {
+        "type": { "const": "ACCUMULATE" },
+        "params": {
+          "required": ["mode"],
+          "properties": {
+            "mode": { "enum": ["ACCRUE", "SUM"] },
+            "threshold": { "type": "number" }
+          }
+        },
+        "children": { "minItems": 1 }
+      }
+    },
+    "ProximityRule": {
+      "properties": {
+        "type": { "const": "PROXIMITY" },
+        "params": {
+          "required": ["mode"],
+          "properties": {
+            "mode": { "enum": ["NEAR", "SENTENCE", "PARAGRAPH"] },
+            "distance": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "children": { "minItems": 2, "maxItems": 2 }
+      }
+    },
+    "ConceptMatchRule": {
+      "properties": {
+        "type": { "const": "CONCEPT_MATCH" },
+        "params": {
+          "required": ["conceptId", "conceptName", "relation"],
+          "properties": {
+            "conceptId": { "type": "string" },
+            "conceptName": { "type": "string" },
+            "relation": { "enum": ["SELF", "DESCENDANT", "ANCESTOR"] }
+          }
+        }
+      }
+    },
+    "TextMatchRule": {
+      "properties": {
+        "type": { "const": "TEXT_MATCH" },
+        "params": {
+          "required": ["mode", "value"],
+          "properties": {
+            "mode": {
+              "enum": ["CONTAINS", "PHRASE", "NEAR", "SENTENCE", "PARAGRAPH"]
+            },
+            "value": { "type": "string" },
+            "distance": { "type": "integer" }
+          }
+        }
+      }
+    },
+    "FieldConditionRule": {
+      "properties": {
+        "type": { "const": "FIELD_CONDITION" },
+        "params": {
+          "required": ["semanticField", "operator", "value"],
+          "properties": {
+            "semanticField": { "type": "string" },
+            "operator": { "enum": ["=", "!=", ">", ">=", "<", "<="] },
+            "value": {}
+          }
+        }
+      }
+    },
+    "WhenRule": {
+      "properties": {
+        "type": { "const": "WHEN" }
+      }
+    },
+    "TopicRefRule": {
+      "properties": {
+        "type": { "const": "TOPIC_REF" },
+        "params": {
+          "required": ["topicId", "topicName"],
+          "properties": {
+            "topicId": { "type": "string" },
+            "topicName": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

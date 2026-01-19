@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import {
   createTopic,
@@ -33,6 +33,7 @@ function formatUpdatedAt(updatedAt?: string | null) {
 
 export default function TopicsPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const mountedRef = useRef(true);
   const [topics, setTopics] = useState<TopicDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +69,12 @@ export default function TopicsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (searchParams.get("fromReview")) {
+      loadTopics(false);
+    }
+  }, [searchParams]);
+
   const filteredTopics = useMemo(() => {
     const nextQuery = query.trim().toLowerCase();
     if (!nextQuery) return topics;
@@ -75,6 +82,11 @@ export default function TopicsPage() {
       topic.name.toLowerCase().includes(nextQuery)
     );
   }, [query, topics]);
+
+  function handleRowActivate(topicId: string) {
+    router.push(`/knowledge/topics/${encodeURIComponent(topicId)}`);
+  }
+
 
   return (
     <div className="space-y-4 p-6">
@@ -140,9 +152,23 @@ export default function TopicsPage() {
             </thead>
             <tbody>
               {filteredTopics.map((topic) => (
-                <tr key={topic.id} className="hover:bg-muted/60">
+                <tr
+                  key={topic.id}
+                  className="cursor-pointer hover:bg-muted/60"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleRowActivate(topic.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      handleRowActivate(topic.id);
+                    }
+                  }}
+                >
                   <td className="border-b px-3 py-2">
-                    {topic.name}
+                    <span className="font-medium hover:underline">
+                      {topic.name}
+                    </span>
                   </td>
                   <td className="border-b px-3 py-2">
                     <span

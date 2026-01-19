@@ -1,0 +1,907 @@
+options {
+    MULTI = true;
+    KEEP_LINE_COLUMN = false;
+    STATIC = false;
+    NODE_PREFIX = "";
+    UNICODE_INPUT = true;
+    VISITOR=false;
+}
+
+PARSER_BEGIN(GQLParser)
+
+package com.geelink.ume.gql.qparser.parser;
+
+import java.io.StringReader;
+
+public class GQLParser {
+    public GQLParser(String input) {
+        this(new StringReader((input == null || input.equals(""))? " " : input));
+    }
+}
+PARSER_END(GQLParser)
+
+SKIP :
+{
+  " "
+| "\f"
+| "\t"
+| "\r"
+| "\n"
+| "\u3000"
+}
+
+TOKEN : {
+  <ACCRUE:        "<ACCRUE>"    |  "<accrue>"       >
+| <ALL:           "<ALL>"       |  "<all>"          >
+| <AND:           "<AND>"       |  "<and>"          >
+| <ANY:           "<ANY>"       |  "<any>"          >
+| <OR:            "<OR>"        |  "<or>"           >
+| <SOUNDEX:       "<SOUNDEX>"   |  "<soundex>"      >
+| <STEM:          "<STEM>"      |  "<stem>"         >
+| <TYPO:          "<TYPO" (<SLASH> <INTEGER> )?">" | "<typo" (<SLASH> <INTEGER> )?">" >
+| <WILDCARD:      "<WILDCARD>"  |  "<wildcard>"     >
+| <WORD:          "<WORD>"      |  "<word>"         >
+| <IN:            "<in"   (<SLASH> <TERM> )   ">"   >
+| <NEAR:          "<near" (<SLASH> <INTEGER> )? ">" >
+| <PARAGRAPH:     "<PARAGRAPH>" |  "<paragraph>"    >
+| <PHRASE:        "<PHRASE>"    |  "<phrase>"       >
+| <SENTENCE:      "<SENTENCE>"  |  "<sentence>"     >
+| <CASE:          "<CASE>"      |  "<case>"         >
+| <LANG:          "<LANG" (<SLASH> <TERM> )   ">"   |  "<lang" (<SLASH> <TERM> )   ">" >
+| <MANY:          "<MANY>"      |  "<many>"         >
+| <NOT:           "<NOT>"       |  "<not>"          >
+| <ORDER:         "<ORDER>"     |  "<order>"        >
+| <THESAURUS:     "<THESAURUS>" |  "<thesaurus>"    >
+| <WHEN:          "<WHEN>"      |  "<when>"         >
+| <LIKE:          "<LIKE>"      |  "<like>"         >
+| <FREETEXT:      "<FREETEXT>"  |  "<freetext>"     >
+| <COMPLEMENT:    "<COMPLEMENT>"|  "<complement>"   >
+| <LOGSUM:        "<LOGSUM" (<SLASH> <INTEGER> )?">"|  "<logsum" (<SLASH> <INTEGER> )?">" >
+| <MULT:          "<MULT" (<SLASH> <INTEGER> )?">"  |  "<mult" (<SLASH> <INTEGER> )?">"  >
+| <PRODUCT:       "<PRODUCT>"   |  "<product>"      >
+| <SUM:           "<SUM>"       |  "<sum>"          >
+| <YESNO:         "<YESNO>"     |  "<yesno>"        >
+| <CONTAINS:      "<CONTAINS>"  |  "<contains>"     >
+| <STARTS:        "<STARTS>"    |  "<starts>"       >
+| <ENDS:          "<ENDS>"      |  "<ends>"         >
+| <MATCHES:       "<MATCHES>"   |  "<matches>"      >
+| <SUBSTRING:     "<SUBSTRING>" |  "<substring>"    >
+| <FUZZ:          "<fuzz" (<SLASH> <INTEGER> )?">"  >
+}
+
+TOKEN : {
+  <NEQ:                 "!=" >
+| <GTE:                 ">=" >
+| <LTE:                 "<=" >
+| <EQ:                  "=" >
+| <GT:                  ">" >
+| <LT:                  "<" >
+}
+
+TOKEN : {
+  <#INTEGER:            (<_NUM_CHAR>)+ >
+| <TERM:                <_TERM_START_CHAR> (<_TERM_CHAR>)*  >
+| <LPAREN:              "(" >
+| <RPAREN:              ")" >
+| <LBRACKET:            "[" >
+| <RBRACKET:            "]" >
+| <LBRACE:              "{" >
+| <RBRACE:              "}" >
+| <SLASH:               "/" >
+| <COMMA:               "," >
+| <QUOTED:              "\"" (<_QUOTED_CHAR>)* "\"" >
+| <#_TERM_START_CHAR:   ( ~["\t", "\n", "\r", "(", ")",
+                           "<", ">", "[", "]", "{", "}", ",", "/","\""] //"\"","\\",
+                        | <_ESCAPED_CHAR> ) >
+| <#_NUM_CHAR:          ["0"-"9"] >
+| <#_TERM_CHAR:         ( <_TERM_START_CHAR> ) > //加回来
+| <#_ESCAPED_CHAR:      "\\" ~[] >  // every character that follows a backslash is considered as an escaped character
+| <#_QUOTED_CHAR:       ( ~[ "\"", "\\" ] | <_ESCAPED_CHAR> ) >
+}
+
+
+/**
+* @param field
+*/
+JNode parse(String field) #void :
+{
+    Token lang;
+}
+{
+  (
+    (
+        (lang = <LANG>)?
+        Logic(field)<EOF>
+        {return (JNode) jjtThis.jjtGetChild(0);}
+    |
+        Like(field) <EOF>
+        {return (JNode) jjtThis.jjtGetChild(0);}
+    )
+
+  )
+  #RootJNode
+}
+
+void Like(String field) #LikeJNode :
+{
+    Token text;
+}
+{
+    <LIKE> <LPAREN> (text =  <TERM>) <RPAREN>
+    {
+        jjtThis.setText(text.image);
+        jjtThis.setField(field);
+    }
+}
+
+void Logic(String field) #void: {}
+{
+    AccrueOrAny(field)
+}
+
+void  AccrueOrAny(String field) #void : {
+    int num = 1;
+}
+{
+    AndAll(field)
+    (
+        (
+            LOOKAHEAD(20)
+            (
+                ( LOOKAHEAD(10)<ACCRUE> AndAll(field) {num++;})+ #AccJNode(num) {num=1;}
+            |
+                ( LOOKAHEAD(10) <OR> AndAll(field) {num++;})+ #OrJNode(num) {num=1;}
+            |
+                ( LOOKAHEAD(10) <ANY> AndAll(field) {num++;})+ #AnyJNode(num) {num=1;}
+            )
+        )*
+    )
+}
+
+void AndAll(String field) #void : {
+    int num = 1;
+}
+{
+    Not(field)
+    (
+        LOOKAHEAD(20)
+        (
+            (
+                LOOKAHEAD(2) <AND>
+                (
+                    Not(field)
+                )
+
+                {num++;}
+
+            )+  #AndJNode(num) {num=1;}
+        |
+
+            (
+                LOOKAHEAD(2) <ALL>
+                (
+                    Not(field)
+                )
+
+                {num++;}
+
+            )+ #AllJNode(num) {num=1;}
+        )
+    )*
+}
+
+void Not(String field) #void: {
+    boolean not = false;
+}
+{
+    (
+        (<NOT> {not=true;})? WhenWrap(field)
+    )   #NotJNode(not)
+}
+
+  void WhenWrap(String field) #void: {
+      boolean hasWhen = false;
+  }
+  {
+      (
+          In(field)
+          (
+              <WHEN> <LPAREN> WhenLogic(field) <RPAREN>
+              {
+                  hasWhen = true;
+              }
+          )?
+      ) #WhenJNode(hasWhen)
+  }
+
+void In(String field) #void: {
+    boolean hasIn = false;
+    Token in;
+}
+{
+    (
+        (
+            in=<IN>
+            {
+                hasIn = true;  // we generate the node only <in> occurs.
+
+                field = jjtThis.extractField(in.image); // get field
+
+                jjtThis.setField(field);
+            }
+        )?
+
+        (
+            LOOKAHEAD(30)
+            Proxi(field)
+        |
+            LOOKAHEAD(<MANY>)
+            Proxi(field)
+        |
+            LogicBoost(field)
+        )
+
+    ) #InJNode(hasIn)
+}
+
+void LogicBoost(String field) #void : {
+    Token boost;
+    float value = 0;
+}
+{
+    (
+        (
+            LOOKAHEAD(10)
+            <LBRACKET> boost = <TERM> <RBRACKET>
+            {
+                value = Float.parseFloat(boost.image);
+                jjtThis.setValue(value);
+            }
+        )?
+        LogicLeaf(field)
+
+    ) #LogicBoostJNode(value > 0)
+}
+
+void LogicLeaf(String field) #void : {
+}
+{
+    LogicPrefix(field)
+|
+    LOOKAHEAD(2)
+    Freetext(field)
+|
+    LOOKAHEAD(20)
+    LogicParen(field)
+|
+    LOOKAHEAD(20)
+    Topic(field)
+}
+
+void LogicPrefix(String field) #void: {
+    Token tok = null;
+}
+{
+    LOOKAHEAD(2)
+    (
+        //(<NOT> {jjtThis.setPrefixNot(true);})?
+        <ACCRUE> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #AccJNode
+|
+    LOOKAHEAD(2)
+    (
+        <ALL> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #AllJNode
+|
+    LOOKAHEAD(2)
+    (
+        <AND> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #AndJNode
+|
+    LOOKAHEAD(2)
+    (
+        <ANY> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #AnyJNode
+|
+    LOOKAHEAD(2)
+    (
+        <OR> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #OrJNode
+|
+    LOOKAHEAD(2)
+    (
+        <COMPLEMENT> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #ComplementJNode
+|
+    LOOKAHEAD(2)
+    (
+        tok = <LOGSUM>
+        <LPAREN> LogicPrefixParam(field) <RPAREN>
+        {
+            int start = tok.image.indexOf('/') + 1;
+            int end = tok.image.length() - 1;
+            int value = (start > 0 && end > start) ? Integer.parseInt(tok.image.substring(start, end)) : 0;
+            jjtThis.jjtSetValue(value);
+        }
+    )   #LogSumJNode
+|
+    LOOKAHEAD(2)
+    (
+        tok = <MULT>
+        <LPAREN> LogicPrefixParam(field) <RPAREN>
+        {
+            int start = tok.image.indexOf('/') + 1;
+            int end = tok.image.length() - 1;
+            int value = (start > 0 && end > start) ? Integer.parseInt(tok.image.substring(start, end)) : 0;
+            jjtThis.jjtSetValue(value);
+        }
+    )   #MultJNode
+|
+    LOOKAHEAD(2)
+    (
+        <PRODUCT> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #ProductJNode
+|
+    LOOKAHEAD(2)
+    (
+        <SUM> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #SumJNode
+|
+    LOOKAHEAD(2)
+    (
+        <YESNO> <LPAREN> LogicPrefixParam(field) <RPAREN>
+    )   #YesNoJNode
+}
+
+void LogicPrefixParam(String field) #void: {}
+{
+    AccrueOrAny(field) ( <COMMA> AccrueOrAny(field) )*
+}
+
+void LogicParen(String field) #void: {
+}
+{
+     <LPAREN> Logic(field) <RPAREN>
+}
+
+void Topic(String field) #TopicJNode :
+{
+    Token topic = null;
+}
+{
+    (
+        <LBRACE> topic = <TERM> <RBRACE>
+        {
+            jjtThis.setTopic(topic.image);
+            jjtThis.setField(field);
+        }
+    )
+
+}
+
+void Proxi(String field) #void: {}
+{
+    Paragraph(field)
+}
+
+void Paragraph(String field) #void: {}
+{
+    (
+        Sentence(field)
+        (
+            LOOKAHEAD(20)
+            (
+                (<ORDER><PARAGRAPH> )
+                {
+                    jjtThis.setOrder(true);
+                }
+            |
+                (<PARAGRAPH>)
+            )
+            Sentence(field)
+        )*
+    )   #ParagraphJNode(>1)
+}
+
+void Sentence(String field) #void : {
+    int num = 0;
+}
+{
+    (
+        (
+            (
+
+                Near(field) {num++;}
+            )
+            (
+                LOOKAHEAD(2)
+                (
+                    <SENTENCE>
+                    (
+                        (Near(field) {num++;})
+                    )
+                |
+                    <ORDER> <SENTENCE>
+                    (
+                        (Near(field) {num++;})
+                    )
+                    {
+                        jjtThis.setOrder(true);
+                    }
+                )
+            )*
+        )
+        {
+            if (jjtThis != null) {
+                jjtThis.setField(field);
+            }
+        }
+    )   #SentJNode(>1)
+}
+
+void Near(String field) #void: {
+    Token slopToken = null;
+}
+{
+    Phrase(field)
+    (
+        LOOKAHEAD(2)
+        (
+            (
+                (slopToken = <NEAR>)
+            |
+                (<ORDER> slopToken = <NEAR>)
+                {
+                    jjtThis.setOrder(true);
+                }
+            )
+            {
+                int slop = jjtThis.parseSlop(slopToken.image);
+                jjtThis.setSlop(slop);
+            }
+            Phrase(field)
+        ) #NearJNode(2)
+    )*
+}
+
+void Phrase(String field) #void: {}
+{
+    (
+        ProxiBoost(field)
+        (
+            <PHRASE>
+            ProxiBoost(field)
+        )*
+    ) #PhraseJNode(>1)
+}
+
+void ProxiBoost(String field) #void : {
+    Token boost;
+    float value = 0;
+}
+{
+    (
+        (
+            <LBRACKET> (boost = <TERM>) <RBRACKET>
+            {
+                value = Float.parseFloat(boost.image);
+                jjtThis.setValue(value);
+            }
+        )?
+        ProxiLeaf(field)
+
+    ) #ProxiBoostJNode(value > 0)
+}
+
+void ProxiLeaf(String field) #void : {}
+{
+    LOOKAHEAD( <TERM> ( <EQ> | <NEQ> | <LT> | <LTE> | <GT> | <GTE> ) )
+    RelationalTerm(field)
+|
+    LOOKAHEAD( <TERM> ( <CONTAINS> | <STARTS> | <ENDS> | <MATCHES> | <SUBSTRING> ) )
+    TextFieldOp(field)
+|
+    LOOKAHEAD(2)
+    terms_opr(field)
+|
+    LOOKAHEAD(<MANY>)
+    terms_opr(field)
+|
+    ProxiPrefix(field)
+|
+    ProxiParen(field)
+}
+
+void terms_opr(String field) #void :
+{}
+{
+    (
+        LOOKAHEAD(1)
+        Ch_term(field)
+    |
+        LOOKAHEAD(1)
+        En_term(field)
+    )
+}
+
+void TextFieldOp(String field) #LikeJNode :
+{
+    Token fieldToken;
+    Token opToken;
+    String text;
+    String op = null;
+    boolean quoted = false;
+}
+{
+    fieldToken = <TERM>
+    (
+        opToken = <CONTAINS> { op = "CONTAINS"; }
+    |
+        opToken = <STARTS> { op = "STARTS"; }
+    |
+        opToken = <ENDS> { op = "ENDS"; }
+    |
+        opToken = <MATCHES> { op = "MATCHES"; }
+    |
+        opToken = <SUBSTRING> { op = "SUBSTRING"; }
+    )
+    (
+        text = token(field)
+    |
+        text = quoted(field)
+        {
+            quoted = true;
+            if (text != null && text.length() >= 2 && text.startsWith("\"") && text.endsWith("\"")) {
+                text = text.substring(1, text.length() - 1);
+            }
+        }
+    )
+    {
+        jjtThis.setField(fieldToken.image);
+        jjtThis.setText(text);
+        jjtThis.jjtSetValue(op + "|" + (quoted ? "1" : "0"));
+    }
+}
+
+void Ch_term(String field) #TokensJNode :
+{
+    String text;
+    boolean phrase = false;
+    boolean fuzz = false;
+    boolean thesaurus = false;
+    boolean many = false;
+    boolean isCase = false;
+    int slop = 0;
+    Token slopToken;
+}
+{
+    (
+        <MANY>
+        {
+            many = true;
+        }
+    )?
+    (
+        <CASE>
+        {
+            isCase = true;
+        }
+    )?
+    (
+        slopToken = <FUZZ>
+        {
+            fuzz = true;
+            jjtThis.setSlop(jjtThis.parseSlop(slopToken.image));
+        }
+    |
+        slopToken = <TYPO>
+        {
+            fuzz = true;
+            jjtThis.setSlop(jjtThis.parseSlop(slopToken.image));
+        }
+    |
+        <THESAURUS>
+        {
+            thesaurus = true;
+        }
+    )?
+    (
+        text = token(field)
+    |
+        text = quoted(field)
+        {
+            phrase = true;
+        }
+    )
+    {
+        jjtThis.setField(field);
+        jjtThis.setPhrase(phrase);
+        jjtThis.setFuzz(fuzz);
+        jjtThis.setText(text);
+        jjtThis.setThesaurus(thesaurus);
+        jjtThis.setMany(many);
+        jjtThis.setCase(isCase);
+    }
+}
+
+void En_term(String field)  #TokensJNode :
+{
+    Token operator;
+    String text;
+    boolean phrase = false;
+    boolean fuzz = false;
+    boolean thesaurus = false;
+    Token slopToken;
+}
+{
+    (
+        operator = <STEM>
+    |
+        operator = <SOUNDEX>
+    |
+        operator = <WILDCARD>
+    |
+        operator = <WORD>
+    |
+        operator = <TYPO>
+    |
+        operator = <CASE>
+        (
+            slopToken = <FUZZ>
+            {
+                fuzz = true;
+                jjtThis.setSlop(jjtThis.parseSlop(slopToken.image));
+            }
+        |
+            slopToken = <TYPO>
+            {
+                fuzz = true;
+                jjtThis.setSlop(jjtThis.parseSlop(slopToken.image));
+            }
+        |
+            (<THESAURUS>)
+            {
+                thesaurus = true;
+            }
+        )?
+    )
+    (
+        text = token(field)
+    |
+        text = quoted(field)
+        {
+            phrase = true;
+        }
+    )
+    {
+        jjtThis.setField(field);
+        jjtThis.setPhrase(phrase);
+        jjtThis.setFuzz(fuzz);
+        jjtThis.setText(text);
+        jjtThis.setThesaurus(thesaurus);
+        if (operator.kind == CASE) {
+            jjtThis.setCase(true);
+        } else if (operator.kind == TYPO) {
+            jjtThis.setFuzz(true);
+            jjtThis.setSlop(jjtThis.parseSlop(operator.image));
+        }
+    }
+}
+
+String token(String field) #void :
+{
+    Token token;
+}
+{
+
+    token = <TERM>
+    {
+        return token.image;
+    }
+
+}
+
+String quoted(String field) #void :
+{
+    Token quoted;
+}
+{
+    quoted = <QUOTED>
+    {
+        return quoted.image;
+    }
+}
+
+void ProxiParen(String field) #void: {}
+{
+     <LPAREN> Proxi(field) <RPAREN>
+}
+
+void ProxiPrefix(String field) #void: {
+    Token tok = null;
+}
+{
+    LOOKAHEAD(2)
+    (
+        (
+            (tok=<NEAR> )
+        |
+            (<ORDER> tok=<NEAR>)
+            {
+                jjtThis.setOrder(true);
+            }
+        )
+        <LPAREN> ProxiPrefixParam(field) <RPAREN>
+        {
+            int slop = jjtThis.parseSlop(tok.image);
+            jjtThis.setSlop(slop);
+        }
+    )   #NearJNode
+|
+    LOOKAHEAD(2)
+    (
+        (
+            (<PARAGRAPH> )
+        |
+            (<ORDER> <PARAGRAPH> )
+            {
+                jjtThis.setOrder(true);
+            }
+        )
+        <LPAREN> ProxiPrefixParam(field) <RPAREN>
+        {
+            jjtThis.setField(field);
+        }
+    )   #ParagraphJNode
+|
+    LOOKAHEAD(2)
+    (
+        (
+            (<SENTENCE> )
+        |
+            (<ORDER> <SENTENCE> )
+            {
+                jjtThis.setOrder(true);
+            }
+        )
+        <LPAREN> ProxiPrefixParam(field) <RPAREN>
+        {
+            jjtThis.setField(field);
+        }
+    )   #SentJNode
+|
+    LOOKAHEAD(2)
+    (
+        <PHRASE> <LPAREN> ProxiPrefixParam(field) <RPAREN>
+    )   #PhraseJNode
+}
+
+void ProxiPrefixParam(String field) #void: {}
+{
+    Proxi(field) ( <COMMA> Proxi(field) )*
+}
+
+void RelationalTerm(String field) #TokensJNode :
+{
+    Token fieldToken;
+    Token opToken;
+    String value;
+}
+{
+    fieldToken = <TERM>
+    (
+        opToken = <NEQ>
+    |
+        opToken = <GTE>
+    |
+        opToken = <LTE>
+    |
+        opToken = <EQ>
+    |
+        opToken = <GT>
+    |
+        opToken = <LT>
+    )
+      (
+          LOOKAHEAD(<QUOTED>)
+          value = quoted(field)
+          {
+              if (value != null && value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+                  value = value.substring(1, value.length() - 1);
+              }
+          }
+      |
+          value = token(field)
+      )
+    {
+        jjtThis.setField(fieldToken.image);
+        jjtThis.setText(fieldToken.image + opToken.image + value);
+    }
+}
+
+void WhenLogic(String field) #void: {
+    int num = 1;
+}
+{
+    WhenTerm(field)
+    (
+        (
+            LOOKAHEAD(2) <AND> WhenTerm(field) {num++;}
+        )+ #AndJNode(num) {num=1;}
+    |
+        (
+            LOOKAHEAD(2) <OR> WhenTerm(field) {num++;}
+        )+ #OrJNode(num) {num=1;}
+    )*
+}
+
+  void WhenTerm(String field) #void: {}
+  {
+      <NOT> WhenAtom(field) #NotJNode
+  |
+      WhenAtom(field)
+  }
+
+  void WhenAtom(String field) #void: {}
+  {
+      LOOKAHEAD(2)
+      TextFieldOp(field)
+  |
+      LOOKAHEAD( <TERM> ( <EQ> | <NEQ> | <LT> | <LTE> | <GT> | <GTE> ) )
+      RelationalTerm(field)
+  |
+      <LPAREN> WhenLogic(field) <RPAREN>
+  }
+
+void Freetext(String field) #TokensJNode :
+{
+    String part;
+    StringBuilder sb = new StringBuilder();
+}
+{
+    <FREETEXT> <LPAREN>
+    (
+        part = token(field)
+        {
+            if (sb.length() > 0) sb.append(" ");
+            sb.append(part);
+        }
+    |
+        part = quoted(field)
+        {
+            if (part != null && part.length() >= 2 && part.startsWith("\"") && part.endsWith("\"")) {
+                part = part.substring(1, part.length() - 1);
+            }
+            if (sb.length() > 0) sb.append(" ");
+            sb.append(part);
+        }
+    )
+    (
+        <COMMA>
+        (
+            part = token(field)
+            {
+                if (sb.length() > 0) sb.append(" ");
+                sb.append(part);
+            }
+        |
+            part = quoted(field)
+            {
+                if (part != null && part.length() >= 2 && part.startsWith("\"") && part.endsWith("\"")) {
+                    part = part.substring(1, part.length() - 1);
+                }
+                if (sb.length() > 0) sb.append(" ");
+                sb.append(part);
+            }
+        )
+    )*
+    <RPAREN>
+    {
+        jjtThis.setField(field);
+        jjtThis.setMany(true);
+        jjtThis.setText(sb.toString());
+    }
+}
+
+
+

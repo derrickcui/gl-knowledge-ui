@@ -1,0 +1,1188 @@
+components:
+  schemas:
+    RuleNode:
+      oneOf:
+        - $ref: "#/components/schemas/GroupRule"
+        - $ref: "#/components/schemas/LogicRule"
+        - $ref: "#/components/schemas/AccumulateRule"
+        - $ref: "#/components/schemas/ProximityRule"
+        - $ref: "#/components/schemas/ConceptMatchRule"
+        - $ref: "#/components/schemas/ConceptScopeRule"
+        - $ref: "#/components/schemas/TextMatchRule"
+        - $ref: "#/components/schemas/FieldConditionRule"
+        - $ref: "#/components/schemas/WhenRule"
+        - $ref: "#/components/schemas/TopicRefRule"
+
+    GroupRule:
+      type: object
+      required: [type, children]
+      properties:
+        type:
+          const: GROUP
+        children:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/RuleNode"
+
+    LogicRule:
+      type: object
+      required: [type, operator, children]
+      properties:
+        type:
+          const: LOGIC
+        operator:
+          enum: [AND, OR, NOT]
+        children:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/RuleNode"
+
+    AccumulateRule:
+      type: object
+      required: [type, combineMode, threshold, items]
+      properties:
+        type:
+          const: ACCUMULATE
+        combineMode:
+          enum: [ACCRUE, SUM, PRODUCT, LOGSUM, YESNO]
+        threshold:
+          type: number
+        items:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/WeightedRule"
+
+    WeightedRule:
+      type: object
+      required: [weight, rule]
+      properties:
+        weight:
+          type: number
+        rule:
+          $ref: "#/components/schemas/RuleNode"
+
+    ProximityRule:
+      type: object
+      required: [type, mode, ordered, left, right]
+      properties:
+        type:
+          const: PROXIMITY
+        mode:
+          enum: [NEAR, SENTENCE, PARAGRAPH]
+        distance:
+          type: integer
+          minimum: 1
+        ordered:
+          type: boolean
+        left:
+          $ref: "#/components/schemas/RuleNode"
+        right:
+          $ref: "#/components/schemas/RuleNode"
+
+    ConceptMatchRule:
+      type: object
+      required: [type, mode, conceptIds, includeAliases]
+      properties:
+        type:
+          const: CONCEPT_MATCH
+        mode:
+          enum: [ANY, ALL]
+        conceptIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        includeAliases:
+          type: boolean
+
+    ConceptScopeRule:
+      type: object
+      required: [type, baseConceptId, scope]
+      properties:
+        type:
+          const: CONCEPT_SCOPE
+        baseConceptId:
+          type: string
+        scope:
+          enum: [SELF, DESCENDANT, ANCESTOR, RELATED]
+        maxDepth:
+          type: integer
+          minimum: 1
+
+    TextMatchRule:
+      type: object
+      required: [type, matchType, value, caseSensitive]
+      properties:
+        type:
+          const: TEXT_MATCH
+        matchType:
+          enum: [WORD, PHRASE, WILDCARD, FREETEXT, STEM, SOUNDEX]
+        value:
+          type: string
+        caseSensitive:
+          type: boolean
+        fuzz:
+          type: integer
+          minimum: 0
+        typo:
+          type: integer
+          minimum: 0
+        lang:
+          type: string
+
+    FieldConditionRule:
+      type: object
+      required: [type, field, operator, valueType, value]
+      properties:
+        type:
+          const: FIELD_CONDITION
+        field:
+          type: string
+        operator:
+          enum: [CONTAINS, STARTS, ENDS, MATCHES, SUBSTRING, EQ, NEQ, GT, GTE, LT, LTE]
+        valueType:
+          enum: [STRING, NUMBER, DATE]
+        value: {}
+        timezone:
+          type: string
+
+    WhenRule:
+      type: object
+      required: [type, inField, expr, condition]
+      properties:
+        type:
+          const: WHEN
+        inField:
+          type: string
+        expr:
+          $ref: "#/components/schemas/RuleNode"
+        condition:
+          $ref: "#/components/schemas/RuleNode"
+
+    TopicRefRule:
+      type: object
+      required: [type, topicId, refMode]
+      properties:
+        type:
+          const: TOPIC_REF
+        topicId:
+          type: string
+        refMode:
+          enum: [PUBLISHED_ONLY, PINNED_VERSION]
+        pinnedVersion:
+          type: integer
+
+    RuleLanguageSpec:
+      type: object
+      required: [version, astSchemaId, ruleTypes, palette, dialects]
+      properties:
+        version:
+          type: string
+          example: v1
+        astSchemaId:
+          type: string
+          example: https://geelink.ai/schema/rulenode/v1.json
+        ruleTypes:
+          type: array
+          items:
+            type: string
+        palette:
+          type: array
+          items:
+            $ref: "#/components/schemas/PaletteItemSpec"
+        dialects:
+          type: array
+          items:
+            $ref: "#/components/schemas/DialectSpec"
+        metadata:
+          type: object
+          additionalProperties: true
+
+    PaletteItemSpec:
+      type: object
+      required: [key, ruleType, label]
+      properties:
+        key:
+          type: string
+          example: concept_match
+        ruleType:
+          type: string
+          example: CONCEPT_MATCH
+        label:
+          type: string
+          example: 涉及某类政策概念
+        category:
+          type: string
+          example: concept
+        uiParams:
+          type: array
+          items:
+            type: string
+        explainHint:
+          type: string
+          example: 文档内容涉及某一政策概念
+
+    DialectSpec:
+      type: object
+      required: [locale, industry, templatesByRuleType]
+      properties:
+        locale:
+          type: string
+          example: zh-CN
+        industry:
+          type: string
+          example: policy
+        templatesByRuleType:
+          type: object
+          additionalProperties:
+            type: string
+
+    ExplainPreviewViewModel:
+      type: object
+      required: [title, blocks]
+      properties:
+        title:
+          type: string
+        blocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplainBlockViewModel"
+
+    ExplainBlockViewModel:
+      type: object
+      required: [id, text, level, indent]
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        level:
+          $ref: "#/components/schemas/ExplainBlockLevel"
+        indent:
+          type: integer
+        children:
+          type: array
+          items:
+            $ref: "#/components/schemas/ExplainBlockViewModel"
+        paletteKey:
+          type: string
+        ruleType:
+          type: string
+
+    ExplainBlockLevel:
+      type: string
+      enum: [INFO, WARNING]
+
+    SemanticDiffResult:
+      type: object
+      required: [summary, items]
+      properties:
+        summary:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/DiffItem"
+
+    DiffItem:
+      type: object
+      required: [kind, path]
+      properties:
+        kind:
+          $ref: "#/components/schemas/DiffKind"
+        path:
+          type: string
+        beforeText:
+          type: string
+          nullable: true
+        afterText:
+          type: string
+          nullable: true
+
+    DiffKind:
+      type: string
+      enum: [ADDED, REMOVED, MODIFIED, MOVED]
+
+    AntiPatternReport:
+      type: object
+      required: [score, findings]
+      properties:
+        score:
+          type: integer
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Finding"
+
+    Finding:
+      type: object
+      required: [severity, code, path, message]
+      properties:
+        severity:
+          $ref: "#/components/schemas/Severity"
+        code:
+          type: string
+        path:
+          type: string
+        message:
+          type: string
+        meta:
+          type: object
+          additionalProperties: true
+
+    Severity:
+      type: string
+      enum: [INFO, WARNING, ERROR]
+
+    ReviewPacket:
+      type: object
+      required:
+        - reviewId
+        - topicId
+        - topicName
+        - baseRule
+        - draftRule
+        - status
+        - contentHash
+        - dialectLocale
+        - dialectIndustry
+        - submittedAt
+        - explain
+        - diff
+        - antiPatterns
+      properties:
+        reviewId:
+          type: integer
+        topicId:
+          type: string
+        topicName:
+          type: string
+        baseRule:
+          $ref: "#/components/schemas/RuleNode"
+        draftRule:
+          $ref: "#/components/schemas/RuleNode"
+        status:
+          type: string
+        contentHash:
+          type: string
+        dialectLocale:
+          type: string
+        dialectIndustry:
+          type: string
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        reviewedBy:
+          type: string
+        reviewedAt:
+          type: string
+          format: date-time
+        reviewComment:
+          type: string
+        explain:
+          $ref: "#/components/schemas/ExplainPreviewViewModel"
+        diff:
+          $ref: "#/components/schemas/SemanticDiffResult"
+        antiPatterns:
+          $ref: "#/components/schemas/AntiPatternReport"
+    TopicDetailResponse:
+      type: object
+      required: [id, name, status, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+    TopicResponse:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+    TopicListItem:
+      type: object
+      required: [id, name, status, tags, updatedAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        updatedAt:
+          type: string
+          format: date-time
+    RulePreviewResult:
+      type: object
+      required: [valid, errors, dialect]
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+        explain:
+          $ref: "#/components/schemas/ExplainPreviewViewModel"
+        antiPatterns:
+          $ref: "#/components/schemas/AntiPatternReport"
+        dialect:
+          type: object
+          required: [locale, industry]
+          properties:
+            locale:
+              type: string
+            industry:
+              type: string
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    ApiResponseTopicResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/TopicResponse"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseTopicDetailResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/TopicDetailResponse"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseRulePreviewResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RulePreviewResult"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseReviewPacket:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/ReviewPacket"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseReviewList:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewListItem"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseRuleLanguageSpec:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RuleLanguageSpec"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseAuditEventList:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEventDTO"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseVoid:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          nullable: true
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseError:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+        data:
+          nullable: true
+        error:
+          $ref: "#/components/schemas/ApiError"
+  responses:
+    ErrorResponse:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiResponseError"
+    PageResponseTopicListItem:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TopicListItem"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    ApiResponsePageResponseTopicListItem:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/PageResponseTopicListItem"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ReviewListItem:
+      type: object
+      required: [reviewId, revision, status, submittedBy, submittedAt]
+      properties:
+        reviewId:
+          type: integer
+        revision:
+          type: integer
+        status:
+          type: string
+        submittedBy:
+          type: string
+        submittedAt:
+          type: string
+          format: date-time
+        reviewedBy:
+          type: string
+          nullable: true
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+    SubmitReviewRequest:
+      type: object
+      required: [draftRule]
+      properties:
+        draftRule:
+          $ref: "#/components/schemas/RuleNode"
+        dialectLocale:
+          type: string
+        dialectIndustry:
+          type: string
+        submittedBy:
+          type: string
+    ReviewDecisionRequest:
+      type: object
+      properties:
+        decision:
+          type: string
+          enum: [APPROVE, REJECT]
+        reviewer:
+          type: string
+        comment:
+          type: string
+        expectedHash:
+          type: string
+    PublishReviewRequest:
+      type: object
+      properties:
+        publisher:
+          type: string
+        expectedHash:
+          type: string
+    TopicRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        rule:
+          $ref: "#/components/schemas/RuleNode"
+    TopicUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+    RulePreviewRequest:
+      type: object
+      required: [rule]
+      properties:
+        rule:
+          $ref: "#/components/schemas/RuleNode"
+        dialectLocale:
+          type: string
+        dialectIndustry:
+          type: string
+    RuleUpdateRequest:
+      type: object
+      required: [rule]
+      properties:
+        rule:
+          $ref: "#/components/schemas/RuleNode"
+    AuditEventDTO:
+      type: object
+      required: [id, action, actor, actorType, createdAt]
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+        actor:
+          type: string
+        actorType:
+          type: string
+        fromStatus:
+          type: string
+        toStatus:
+          type: string
+        reason:
+          type: string
+        metadata:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+
+paths:
+  /topics:
+    get:
+      summary: List topics
+      responses:
+        "200":
+          description: Topic list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponsePageResponseTopicListItem"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Create topic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopicRequest"
+      responses:
+        "200":
+          description: Topic created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseTopicResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /topics/{topicId}:
+    get:
+      summary: Get topic by id
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseTopicDetailResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      summary: Update topic metadata
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopicUpdateRequest"
+      responses:
+        "200":
+          description: Topic detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseTopicDetailResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /topics/{topicId}/publish:
+    post:
+      summary: Publish topic
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseVoid"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /topics/{topicId}/rule/preview:
+    post:
+      summary: Preview topic rule
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RulePreviewRequest"
+      responses:
+        "200":
+          description: Preview result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRulePreviewResult"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /rule-language/spec:
+    get:
+      summary: Get rule language specification
+      responses:
+        "200":
+          description: Rule language spec
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRuleLanguageSpec"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /audit:
+    get:
+      summary: Get audit timeline
+      parameters:
+        - name: entityType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [REVIEW, TOPIC]
+        - name: entityId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: raw
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Audit timeline
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ApiResponseAuditEventList"
+                  - type: array
+                    items:
+                      $ref: "#/components/schemas/AuditEventDTO"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+          x-error-detail: "Invalid 'from'/'to' timestamp; expected ISO-8601 (e.g. 2024-01-01T00:00:00Z)."
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/{reviewId}/packet:
+    get:
+      summary: Get review packet (read model)
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/topic/{topicId}/submit:
+    post:
+      summary: Submit topic rule for review
+      deprecated: true
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitReviewRequest"
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_ALREADY_OPEN]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/topic/{topicId}:
+    get:
+      summary: List reviews for topic
+      deprecated: true
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Review list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewList"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /topics/{topicId}/reviews:
+    get:
+      summary: List reviews for topic (alias)
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Review list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewList"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    post:
+      summary: Submit topic rule for review (alias)
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubmitReviewRequest"
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_ALREADY_OPEN]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/{reviewId}/decide:
+    post:
+      summary: Decide review
+      deprecated: true
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionRequest"
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_STATUS_CONFLICT, REVIEW_CONTENT_CHANGED]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/{reviewId}/approve:
+    post:
+      summary: Approve review (alias)
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionRequest"
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_STATUS_CONFLICT, REVIEW_CONTENT_CHANGED]
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_STATUS_CONFLICT, REVIEW_CONTENT_CHANGED]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/{reviewId}/reject:
+    post:
+      summary: Reject review (alias)
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewDecisionRequest"
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "422":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_STATUS_CONFLICT, REVIEW_CONTENT_CHANGED]
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_STATUS_CONFLICT, REVIEW_CONTENT_CHANGED]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /reviews/{reviewId}/publish:
+    post:
+      summary: Publish approved review
+      parameters:
+        - name: reviewId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishReviewRequest"
+      responses:
+        "200":
+          description: Review packet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseReviewPacket"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "409":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [REVIEW_STATUS_CONFLICT, REVIEW_CONTENT_CHANGED]
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /topics/{topicId}/rule:
+    put:
+      summary: Update topic rule draft
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleUpdateRequest"
+      responses:
+        "200":
+          description: Topic detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseTopicDetailResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+          x-error-codes: [VALIDATION_ERROR]
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
