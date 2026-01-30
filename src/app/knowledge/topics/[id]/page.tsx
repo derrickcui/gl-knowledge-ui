@@ -824,11 +824,7 @@ export default function TopicDetailPage() {
                     return;
                   }
                   setSelectedOperatorId(item.id);
-                  if (
-                    (item.id.startsWith("where.") ||
-                      item.id.startsWith("score.")) &&
-                    activePath.length <= 1
-                  ) {
+                  if (item.id.startsWith("where.") && activePath.length <= 1) {
                     setActionFeedback({
                       type: "info",
                       title: t("topicDetail.tip.selectCondition"),

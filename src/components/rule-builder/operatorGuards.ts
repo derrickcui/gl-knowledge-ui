@@ -41,17 +41,6 @@ export function isOperatorEnabled(
       }
       return { enabled: true };
 
-    case "score.atLeast":
-    case "score.minCount":
-    case "score.weighted":
-      if (node.type !== "GROUP" && node.type !== "ACCUMULATE") {
-        return {
-          enabled: false,
-          reason: "\u8bc4\u5206\u65b9\u5f0f\u53ea\u80fd\u7528\u4e8e\u6761\u4ef6\u7ec4\u5408",
-        };
-      }
-      return { enabled: true };
-
     case "how.all":
     case "how.any":
     case "how.exclude":

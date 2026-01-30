@@ -1,6 +1,8 @@
 "use client";
 
-import { Trash2, CopyPlus } from "lucide-react";
+import { useEffect } from "react";
+
+import { Trash2, CopyPlus, Minus, Plus } from "lucide-react";
 
 import ConditionCard from "@/components/rule-builder/ConditionCard";
 import { RuleNode } from "@/components/rule-builder/astTypes";
@@ -231,37 +233,126 @@ function ScenarioCard({
 
   const scenarioPath: ActivePath = [index];
   const selectedScenario = activePath.length > 0 && activePath[0] === index;
-  const scenarioTitle =
+  const baseTitle =
     scenario.params?.title || t("scenario.title", { index: index + 1 });
   const rawScenarioOperator = scenario.params?.operator ?? "AND";
+  const legacyLogsum =
+    rawScenarioOperator === "ACCRUE" && scenario.params?.mode === "LOGSUM";
   const scenarioOperator =
     rawScenarioOperator === "ALL"
       ? "AND"
       : rawScenarioOperator === "ANY"
       ? "OR"
+      : rawScenarioOperator === "LOGSUM"
+      ? "LOGSUM"
+      : legacyLogsum
+      ? "LOGSUM"
+      : rawScenarioOperator === "ACCRUE"
+      ? "ACCRUE"
       : rawScenarioOperator;
   const scenarioOperatorLabel =
     scenarioOperator === "OR"
       ? t("scenario.operator.anyLabel")
+      : scenarioOperator === "ACCRUE"
+      ? t("scenario.operator.accrueSoftLabel")
+      : scenarioOperator === "LOGSUM"
+      ? t("scenario.operator.accrueLabel")
       : t("scenario.operator.allLabel");
+  const conditionCount = scenario.children?.length ?? 0;
+  const canUseLogsum = conditionCount >= 3;
+  const thresholdRaw = scenario.params?.threshold ?? 2;
+  const threshold = Math.max(2, Math.min(thresholdRaw, conditionCount));
+  const scenarioTitle =
+    scenarioOperator === "LOGSUM"
+      ? t("scenario.title.accrue", {
+          title: baseTitle,
+          threshold,
+        })
+      : scenarioOperator === "ACCRUE"
+      ? t("scenario.title.accrueSoft", { title: baseTitle })
+      : baseTitle;
   const scenarioSummary =
     scenarioOperator === "OR"
       ? t("scenario.summary.any")
+      : scenarioOperator === "LOGSUM"
+      ? t("scenario.summary.accrue", {
+          threshold,
+          count: conditionCount,
+        })
+      : scenarioOperator === "ACCRUE"
+      ? t("scenario.summary.accrueSoft")
       : t("scenario.summary.all");
 
-  const handleScenarioOperatorChange = (nextOperator: "AND" | "OR") => {
+  const handleScenarioOperatorChange = (
+    nextOperator: "AND" | "OR" | "LOGSUM" | "ACCRUE"
+  ) => {
     if (readOnly) return;
+    if (nextOperator === "LOGSUM" && !canUseLogsum) return;
     const nextScenario = {
       ...scenario,
       params: {
         ...scenario.params,
         operator: nextOperator,
+        mode: nextOperator === "ACCRUE" ? "ACCRUE" : undefined,
+        threshold:
+          nextOperator === "LOGSUM"
+            ? scenario.params?.threshold ?? 2
+            : undefined,
       },
     };
     onUpdate(nextScenario);
   };
 
+  const handleThresholdChange = (next: number) => {
+    if (readOnly) return;
+    const clamped = Math.max(2, Math.min(next, conditionCount));
+    onUpdate({
+      ...scenario,
+      params: {
+        ...scenario.params,
+        operator: "LOGSUM",
+        mode: undefined,
+        threshold: clamped,
+      },
+    });
+  };
+
   const isEmpty = !scenario.children || scenario.children.length === 0;
+
+  useEffect(() => {
+    if (readOnly) return;
+    if (scenarioOperator === "LOGSUM" && !canUseLogsum) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          operator: "AND",
+          mode: undefined,
+          threshold: undefined,
+        },
+      });
+      return;
+    }
+    if (scenarioOperator === "LOGSUM" && thresholdRaw !== threshold) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          operator: "LOGSUM",
+          mode: undefined,
+          threshold,
+        },
+      });
+    }
+  }, [
+    canUseLogsum,
+    readOnly,
+    scenario,
+    scenarioOperator,
+    threshold,
+    thresholdRaw,
+    onUpdate,
+  ]);
 
   return (
     <div
@@ -290,23 +381,36 @@ function ScenarioCard({
             <span className="text-[11px] font-medium text-slate-600">
               {t("scenario.conditionsLabel")}
             </span>
-            {(["AND", "OR"] as const).map((value) => (
-              <label
-                key={value}
-                className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-700"
-              >
-                <input
-                  type="radio"
-                  name={`scenario-${index}-operator`}
-                  value={value}
-                  checked={scenarioOperator === value}
-                  disabled={readOnly}
-                  onChange={() => handleScenarioOperatorChange(value)}
-                  className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
-                />
-                {value === "AND" ? t("scenario.and") : t("scenario.or")}
-              </label>
-            ))}
+            {(["AND", "OR", "LOGSUM", "ACCRUE"] as const)
+              .filter((value) => value !== "LOGSUM" || canUseLogsum)
+              .map((value) => {
+              const disabledOption = readOnly;
+              return (
+                <label
+                  key={value}
+                  className={`inline-flex items-center gap-1 text-[12px] font-medium ${
+                    disabledOption ? "text-slate-300" : "text-slate-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`scenario-${index}-operator`}
+                    value={value}
+                    checked={scenarioOperator === value}
+                    disabled={disabledOption}
+                    onChange={() => handleScenarioOperatorChange(value)}
+                    className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                  />
+                  {value === "AND"
+                    ? t("scenario.and")
+                    : value === "OR"
+                    ? t("scenario.or")
+                    : value === "LOGSUM"
+                    ? t("scenario.accrue")
+                    : t("scenario.accrueSoft")}
+                </label>
+              );
+            })}
           </div>
           <GroupPriorityEditor
             group={scenario}
@@ -335,6 +439,63 @@ function ScenarioCard({
       </div>
 
       <div className="mt-3">
+        {scenarioOperator === "LOGSUM" && (
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            <div className="text-[12px] font-semibold text-slate-700">
+              {t("scenario.accrue.panelTitle")}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-[12px] text-slate-600">
+                {t("scenario.accrue.panelLabel")}
+              </span>
+              <button
+                type="button"
+                disabled={readOnly || threshold <= 2}
+                onClick={() => handleThresholdChange(threshold - 1)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded border bg-white text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Decrease threshold"
+              >
+                <Minus className="h-3 w-3" />
+              </button>
+              <div className="min-w-[32px] rounded border bg-white px-2 py-0.5 text-center text-sm text-slate-900">
+                {threshold}
+              </div>
+              <button
+                type="button"
+                disabled={readOnly || threshold >= conditionCount}
+                onClick={() => handleThresholdChange(threshold + 1)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded border bg-white text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                aria-label="Increase threshold"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+              <span className="text-[12px] text-slate-600">
+                {t("scenario.accrue.panelSuffix", { count: conditionCount })}
+              </span>
+            </div>
+            <div className="mt-2 text-[11px] text-slate-500">
+              <div>{t("scenario.accrue.panelDesc.line1")}</div>
+              <div>
+                {t("scenario.accrue.panelDesc.line2", {
+                  count: conditionCount,
+                  threshold,
+                })}
+              </div>
+            </div>
+          </div>
+        )}
+        {scenarioOperator === "ACCRUE" && (
+          <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            <div className="text-[12px] font-semibold text-slate-700">
+              {t("scenario.accrueSoft.panelTitle")}
+            </div>
+            <div className="mt-2 text-[11px] text-slate-500">
+              <div>{t("scenario.accrueSoft.panelDesc.line1")}</div>
+              <div>{t("scenario.accrueSoft.panelDesc.line2")}</div>
+              <div>{t("scenario.accrueSoft.panelDesc.line3")}</div>
+            </div>
+          </div>
+        )}
         {isEmpty ? (
           <div
             className={`rounded-md border border-dashed p-3 text-sm text-slate-600 ${

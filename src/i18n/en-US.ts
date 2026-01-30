@@ -66,8 +66,6 @@ export const enUS = {
   "palette.addScenario": "Add scenario",
   "palette.addScenarioDesc": "Add an alternative condition group",
   "palette.baseTitle": "Basic",
-  "palette.advancedTitle": "Advanced (partial)",
-  "palette.advancedDesc": "Some features are available; others are in progress.",
   "palette.disabled.advanced": "Advanced features are not available yet",
   "palette.disabled.readOnly": "Read-only",
   "operator.what.concept.title": "Mention a business concept",
@@ -81,12 +79,6 @@ export const enUS = {
   "operator.how.all.title": "Match all conditions",
   "operator.how.any.title": "Match any condition",
   "operator.how.exclude.title": "Exclude the following",
-  "operator.score.atLeast.title": "Match if some conditions hold",
-  "operator.score.atLeast.desc": "At least a specified number of conditions",
-  "operator.score.minCount.title": "At least a specified count",
-  "operator.score.minCount.desc": "At least a specified number of conditions",
-  "operator.score.weighted.title": "Weighted decision by importance",
-  "operator.score.weighted.desc": "Different conditions carry different weights",
   "ruleBuilder.title": "Rule structure",
   "ruleBuilder.summary.all":
     "Each scenario is a valid path; all scenarios must match.",
@@ -103,11 +95,37 @@ export const enUS = {
   "scenario.title": "Scenario {index}",
   "scenario.operator.anyLabel": "Any",
   "scenario.operator.allLabel": "All",
+  "scenario.operator.accrueSoftLabel": "More matches make it more likely",
+  "scenario.operator.accrueLabel": "Partial match",
   "scenario.summary.any": "Within the same context, any condition can match.",
   "scenario.summary.all": "Within the same context, all conditions must match.",
+  "scenario.summary.accrue":
+    "At least {threshold} of the {count} conditions must match.",
+  "scenario.summary.accrueSoft":
+    "The more conditions match, the more likely the scenario holds.",
   "scenario.conditionsLabel": "Scenario conditions:",
-  "scenario.and": "All",
-  "scenario.or": "Any",
+  "scenario.and": "Must match all conditions",
+  "scenario.or": "Match any condition",
+  "scenario.accrue": "At least a subset of conditions",
+  "scenario.accrueSoft": "More matches make it more likely",
+  "scenario.accrue.disabledHint":
+    "Not enough conditions; reverted to the default mode.",
+  "scenario.accrue.panelTitle": "Mode: Partial match",
+  "scenario.accrue.panelLabel": "At least",
+  "scenario.accrue.panelSuffix": "conditions",
+  "scenario.accrue.panelDesc.line1": "Within the same context,",
+  "scenario.accrue.panelDesc.line2":
+    "if at least {threshold} of the {count} conditions match, this scenario holds.",
+  "scenario.title.accrue":
+    "{title} · At least {threshold} conditions",
+  "scenario.title.accrueSoft":
+    "{title} · More matches make it more likely",
+  "scenario.accrueSoft.panelTitle": "Mode: More matches make it more likely",
+  "scenario.accrueSoft.panelDesc.line1": "Within the same context,",
+  "scenario.accrueSoft.panelDesc.line2":
+    "the more conditions match, the more likely the scenario holds.",
+  "scenario.accrueSoft.panelDesc.line3":
+    "No fixed threshold is required.",
   "scenario.deleteMinTitle": "Keep at least one scenario",
   "scenario.deleteTitle": "Delete this scenario",
   "scenario.delete": "Delete",

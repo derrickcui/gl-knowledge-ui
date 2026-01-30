@@ -7,16 +7,13 @@ export type BusinessOperatorId =
   | "where.sentence"
   | "how.all"
   | "how.any"
-  | "how.exclude"
-  | "score.atLeast"
-  | "score.minCount"
-  | "score.weighted";
+  | "how.exclude";
 
 export interface PaletteItem {
   id: BusinessOperatorId;
   title: string;
   description?: string;
-  requires?: "concept" | "topic" | "number";
+  requires?: "concept" | "topic";
 }
 
 export interface PaletteGroup {
@@ -81,28 +78,6 @@ export const OPERATOR_PALETTE: PaletteGroup[] = [
       {
         id: "how.exclude",
         title: "排除以下情况",
-      },
-    ],
-  },
-  {
-    title: "命中与评分方式（高级）",
-    items: [
-      {
-        id: "score.atLeast",
-        title: "满足部分条件即可命中",
-        description: "至少满足指定数量的条件",
-        requires: "number",
-      },
-      {
-        id: "score.minCount",
-        title: "至少满足指定数量",
-        description: "至少满足指定数量的条件",
-        requires: "number",
-      },
-      {
-        id: "score.weighted",
-        title: "按条件重要性综合判断",
-        description: "不同条件的重要性不同",
       },
     ],
   },

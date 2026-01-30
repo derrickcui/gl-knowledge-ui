@@ -17,7 +17,22 @@ export type BusinessGroup = {
   priority: number;
   explain?: ExplainOverride;
   conditions: BusinessCondition[];
+  operator?: "AND" | "OR" | "ALL" | "ANY" | "EXCLUDE" | "ACCRUE" | "LOGSUM";
+  score?: BusinessScore;
+  mode?: "ACCRUE";
+  threshold?: number;
 };
+
+export type BusinessScore =
+  | {
+      type: "AT_LEAST";
+    }
+  | {
+      type: "WEIGHTED";
+      mode?: "LOGSUM";
+      threshold?: number;
+      weights?: Record<string, number>;
+    };
 
 export type BusinessCondition =
   | {
@@ -454,7 +469,36 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
         priority: group.priority ?? 100,
         explain: group.explain,
         conditions: conditions.filter(Boolean) as BusinessCondition[],
-        operator: normalizeScenarioOperator(group.params?.operator),
+        operator: (() => {
+          const rawOperator = group.params?.operator;
+          const legacyLogsum =
+            rawOperator === "ACCRUE" && group.params?.mode === "LOGSUM";
+          const isLogsum = rawOperator === "LOGSUM" || legacyLogsum;
+          const isAccrue = rawOperator === "ACCRUE" && !legacyLogsum;
+          if (isLogsum || isAccrue) return "AND";
+          return normalizeScenarioOperator(rawOperator);
+        })(),
+        score: (() => {
+          const rawOperator = group.params?.operator;
+          const legacyLogsum =
+            rawOperator === "ACCRUE" && group.params?.mode === "LOGSUM";
+          const isLogsum = rawOperator === "LOGSUM" || legacyLogsum;
+          if (isLogsum) {
+            return {
+              type: "WEIGHTED",
+              mode: "LOGSUM",
+              threshold: group.params?.threshold,
+            } as BusinessScore;
+          }
+          if (rawOperator === "ACCRUE") {
+            return {
+              type: "AT_LEAST",
+            } as BusinessScore;
+          }
+          return undefined;
+        })(),
+        mode: undefined,
+        threshold: undefined,
       };
     }),
   };
@@ -462,12 +506,34 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
 
 export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
   const groups = rule.groups.map((group, index) => {
-    const scenarioOperator =
-      group.operator === "ALL"
+    const scenarioOperator = (() => {
+      if (group.score?.type === "AT_LEAST") return "ACCRUE";
+      if (group.score?.type === "WEIGHTED" && group.score?.mode === "LOGSUM") {
+        return "LOGSUM";
+      }
+      const legacyOperator =
+        group.operator === "ACCRUE" && group.mode === "LOGSUM"
+          ? "LOGSUM"
+          : group.operator;
+      return legacyOperator === "ALL"
         ? "AND"
-        : group.operator === "ANY"
+        : legacyOperator === "ANY"
         ? "OR"
-        : group.operator ?? "AND";
+        : legacyOperator === "ACCRUE"
+        ? "ACCRUE"
+        : legacyOperator === "LOGSUM"
+        ? "LOGSUM"
+        : legacyOperator ?? "AND";
+    })();
+    const scenarioMode =
+      scenarioOperator === "ACCRUE" ? group.mode ?? "ACCRUE" : undefined;
+    const scenarioThreshold =
+      scenarioOperator === "LOGSUM"
+        ? group.score?.type === "WEIGHTED" &&
+          group.score.mode === "LOGSUM"
+          ? group.score.threshold ?? group.threshold ?? 2
+          : group.threshold ?? 2
+        : undefined;
     const children = group.conditions
       .map((condition) => {
         if (condition.kind === "CONCEPT") {
@@ -583,6 +649,8 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
       type: "GROUP",
       params: {
         operator: scenarioOperator,
+        mode: scenarioMode,
+        threshold: scenarioThreshold,
         role: "SCENARIO",
         sticky: true,
         title: `\u5224\u65ad\u573a\u666f ${index + 1}`,

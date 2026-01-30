@@ -168,25 +168,6 @@ export function operatorToAst(
         },
       };
 
-    case "score.atLeast":
-    case "score.minCount":
-      return {
-        root: {
-          type: "ACCUMULATE",
-          params: { threshold: payload?.threshold ?? 2 },
-          children: [],
-        },
-      };
-
-    case "score.weighted":
-      return {
-        root: {
-          type: "ACCUMULATE",
-          params: { mode: "WEIGHTED" },
-          children: [],
-        },
-      };
-
     default:
       return {};
   }

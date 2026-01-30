@@ -25,14 +25,6 @@ export default function OperatorPalette({
       (item) => item.id === "what.concept" || item.id === "what.topicRef"
     )
   );
-  const advancedItems = OPERATOR_PALETTE.flatMap((group) =>
-    group.items.filter(
-      (item) =>
-        item.id === "score.atLeast" ||
-        item.id === "score.minCount" ||
-        item.id === "score.weighted"
-    )
-  );
 
   const operatorText: Record<
     BusinessOperatorId,
@@ -45,18 +37,6 @@ export default function OperatorPalette({
     "what.topicRef": {
       titleKey: "operator.what.topicRef.title",
       descKey: "operator.what.topicRef.desc",
-    },
-    "score.atLeast": {
-      titleKey: "operator.score.atLeast.title",
-      descKey: "operator.score.atLeast.desc",
-    },
-    "score.minCount": {
-      titleKey: "operator.score.minCount.title",
-      descKey: "operator.score.minCount.desc",
-    },
-    "score.weighted": {
-      titleKey: "operator.score.weighted.title",
-      descKey: "operator.score.weighted.desc",
     },
     "where.body": { titleKey: "operator.where.body.title" },
     "where.title": { titleKey: "operator.where.title.title" },
@@ -120,47 +100,6 @@ export default function OperatorPalette({
           </ul>
         </details>
 
-        <details className="group rounded-md border border-dashed px-2 py-2" open>
-          <summary className="cursor-pointer select-none text-sm font-medium text-muted-foreground">
-            {t("palette.advancedTitle")}
-          </summary>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {t("palette.advancedDesc")}
-          </div>
-          <ul className="mt-2 space-y-1">
-            {advancedItems.map((item) => {
-              const guard = isOperatorEnabled(item.id, activeNode);
-              const isDisabled = disabled || !guard.enabled;
-              const title = disabled
-                ? t("palette.disabled.readOnly")
-                : guard.reason;
-              return (
-                <li key={item.id}>
-                  <button
-                    type="button"
-                    disabled={isDisabled}
-                    title={title}
-                    className={`w-full rounded-md px-2 py-1 text-left ${
-                      !isDisabled
-                        ? "hover:bg-muted/40"
-                        : "cursor-not-allowed opacity-40"
-                    }`}
-                    onClick={() => onSelect(item)}
-                  >
-                    <div className="text-sm text-foreground">
-                      {getOperatorTitle(item)}
-                    </div>
-                    {getOperatorDesc(item) && (
-                      <div className="text-xs text-muted-foreground">
-                        {getOperatorDesc(item)}
-                      </div>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </details>
       </div>
     </aside>
   );

@@ -36,6 +36,10 @@ function ensureScenario(node: RuleNode, index: number): RuleNode {
       ? "OR"
       : rawOperator === "EXCLUDE"
       ? "EXCLUDE"
+      : rawOperator === "ACCRUE"
+      ? "ACCRUE"
+      : rawOperator === "LOGSUM"
+      ? "LOGSUM"
       : rawOperator === "AND" || rawOperator === "OR"
       ? rawOperator
       : "AND";
@@ -45,6 +49,8 @@ function ensureScenario(node: RuleNode, index: number): RuleNode {
     (node.params?.operator === "ALL" ||
       node.params?.operator === "ANY" ||
       node.params?.operator === "EXCLUDE" ||
+      node.params?.operator === "ACCRUE" ||
+      node.params?.operator === "LOGSUM" ||
       node.params?.operator === "AND" ||
       node.params?.operator === "OR")
   ) {
