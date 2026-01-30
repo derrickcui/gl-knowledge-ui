@@ -1,30 +1,39 @@
-import { operatorToAst } from "../rule-palette/paletteToAst";
-import { BusinessOperatorId } from "../rule-palette/paletteDefinition";
-import { RuleNode } from "./astTypes";
+import { RuleNode, cloneRule } from "./astTypes";
 import { addNode, getNodeByPath, setRoot, wrapNode } from "./astEditor";
-import { isDuplicateWrap } from "./operatorGuards";
+
+export type RuleOperation = {
+  node?: RuleNode;
+  wrap?: (child: RuleNode) => RuleNode;
+  root?: RuleNode;
+};
 
 export function applyOperator(
   root: RuleNode,
   activePath: number[],
-  operatorId: BusinessOperatorId,
-  payload?: any
+  operation?: RuleOperation
 ): RuleNode {
-  const { node, wrap, root: newRoot } = operatorToAst(operatorId, payload);
+  if (!operation) return root;
+  const { node, wrap, root: newRoot } = operation;
 
   if (node) {
     return addNode(root, activePath, node);
   }
 
   if (wrap) {
-    const target = getNodeByPath(root, activePath);
-    if (isDuplicateWrap(operatorId, target)) {
-      return root;
-    }
     return wrapNode(root, activePath, wrap);
   }
 
   if (newRoot) {
+    const target = getNodeByPath(root, activePath);
+    if (target.type === "GROUP" && target.params?.role === "SCENARIO") {
+      const draft = cloneRule(root);
+      const nextTarget = getNodeByPath(draft, activePath);
+      nextTarget.params = {
+        ...nextTarget.params,
+        operator: newRoot.params?.operator ?? nextTarget.params?.operator,
+      };
+      return draft;
+    }
     return setRoot(root, activePath, newRoot);
   }
 

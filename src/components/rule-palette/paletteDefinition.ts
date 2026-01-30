@@ -9,6 +9,7 @@ export type BusinessOperatorId =
   | "how.any"
   | "how.exclude"
   | "score.atLeast"
+  | "score.minCount"
   | "score.weighted";
 
 export interface PaletteItem {
@@ -93,6 +94,12 @@ export const OPERATOR_PALETTE: PaletteGroup[] = [
         requires: "number",
       },
       {
+        id: "score.minCount",
+        title: "至少满足指定数量",
+        description: "至少满足指定数量的条件",
+        requires: "number",
+      },
+      {
         id: "score.weighted",
         title: "按条件重要性综合判断",
         description: "不同条件的重要性不同",
@@ -100,3 +107,4 @@ export const OPERATOR_PALETTE: PaletteGroup[] = [
     ],
   },
 ];
+

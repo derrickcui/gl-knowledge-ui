@@ -9,9 +9,15 @@ export type RuleType =
   | "TOPIC_REF";
 
 export interface RuleNode {
+  id?: string;
   type: RuleType;
   params?: Record<string, any>;
   children?: RuleNode[];
+  explain?: {
+    mode: "AUTO" | "CUSTOM";
+    text?: string;
+  };
+  priority?: number;
 }
 
 export function cloneRule<T>(rule: T): T {

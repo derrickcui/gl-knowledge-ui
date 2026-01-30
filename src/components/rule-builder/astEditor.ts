@@ -96,6 +96,20 @@ export function setRoot(
   return normalizeAst(draft);
 }
 
+export function removeNode(root: RuleNode, path: number[]): RuleNode {
+  if (path.length === 0) {
+    return normalizeAst(root);
+  }
+  const draft = cloneRule(root);
+  const parentInfo = getParentByPath(draft, path);
+  if (!parentInfo || !parentInfo.parent.children) {
+    return normalizeAst(draft);
+  }
+  const { parent, index } = parentInfo;
+  parent.children.splice(index, 1);
+  return normalizeAst(draft);
+}
+
 export function normalizeAst(root: RuleNode): RuleNode {
   if (!root.children || root.children.length === 0) {
     return root;
@@ -104,7 +118,16 @@ export function normalizeAst(root: RuleNode): RuleNode {
   const nextChildren = root.children.map(normalizeAst);
   const next = { ...root, children: nextChildren };
 
-  if (next.type === "GROUP" && next.children.length === 1) {
+  if (next.type === "GROUP" && next.params?.role === "RULE") {
+    next.params = { ...next.params, operator: "ANY", sticky: true };
+  }
+
+  if (next.type === "GROUP" && next.params?.role === "SCENARIO") {
+    next.params = { ...next.params, operator: "ALL", sticky: true };
+  }
+
+  const sticky = next.type === "GROUP" && !!next.params?.sticky;
+  if (!sticky && next.type === "GROUP" && next.children.length === 1) {
     return next.children[0];
   }
 

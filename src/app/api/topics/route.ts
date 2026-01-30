@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readUpstreamJsonBody } from "./proxyUtils";
 
 const TOPICS_API_BASE =
   process.env.NEXT_PUBLIC_TOPICS_API ??
@@ -10,13 +11,11 @@ export async function GET() {
       `${TOPICS_API_BASE}/api/topics`,
       { cache: "no-store" }
     );
-    const body = await upstream.text();
+    const body = await readUpstreamJsonBody(upstream);
     return new NextResponse(body, {
       status: upstream.status,
       headers: {
-        "content-type":
-          upstream.headers.get("content-type") ??
-          "application/json",
+        "content-type": "application/json; charset=utf-8",
       },
     });
   } catch {
@@ -46,13 +45,11 @@ export async function POST(request: Request) {
         body,
       }
     );
-    const responseBody = await upstream.text();
+    const responseBody = await readUpstreamJsonBody(upstream);
     return new NextResponse(responseBody, {
       status: upstream.status,
       headers: {
-        "content-type":
-          upstream.headers.get("content-type") ??
-          "application/json",
+        "content-type": "application/json; charset=utf-8",
       },
     });
   } catch {

@@ -47,10 +47,14 @@ export default function ReviewDetailPage() {
   const [actionError, setActionError] =
     useState<ReviewActionError | null>(null);
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [reviewHash, setReviewHash] = useState<string | undefined>(
+    undefined
+  );
 
   async function reload() {
     const data = await getReviewPacket(id);
     setPacket(data);
+    setReviewHash(data?.contentHash);
   }
 
   useEffect(() => {
@@ -125,7 +129,11 @@ export default function ReviewDetailPage() {
           try {
             setIsProcessing(true);
             setActionError(null);
-            await rejectReview(packet.reviewId, reason);
+            await rejectReview(
+              packet.reviewId,
+              reason,
+              reviewHash
+            );
             setRejectOpen(false);
             router.push(`/knowledge/topics?fromReview=${packet.reviewId}`);
           } catch (err: any) {
@@ -172,8 +180,8 @@ export default function ReviewDetailPage() {
         onApproveClick={() => {
           setIsProcessing(true);
           setActionError(null);
-          approveReview(packet.reviewId)
-            .then(() => publishReview(packet.reviewId))
+          approveReview(packet.reviewId, reviewHash)
+            .then(() => publishReview(packet.reviewId, reviewHash))
             .then(() =>
               router.push(`/knowledge/topics?fromReview=${packet.reviewId}`)
             )

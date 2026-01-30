@@ -5,9 +5,6 @@ export function isDuplicateWrap(
   operator: BusinessOperatorId,
   node: RuleNode
 ): boolean {
-  if (operator === "how.exclude") {
-    return node.type === "LOGIC" && node.params?.operator === "NOT";
-  }
   if (operator === "where.title") {
     return (
       node.type === "FIELD_CONDITION" && node.params?.field === "TITLE"
@@ -26,40 +23,63 @@ export function isOperatorEnabled(
   operator: BusinessOperatorId,
   node: RuleNode
 ): { enabled: boolean; reason?: string } {
+  const isScenarioGroup =
+    node.type === "GROUP" && node.params?.role === "SCENARIO";
+
   switch (operator) {
     case "where.title":
     case "where.paragraph":
     case "where.sentence":
-    case "how.exclude":
+      if (isScenarioGroup) {
+        return {
+          enabled: false,
+          reason: "\u8bf7\u5148\u9009\u4e2d\u4e00\u4e2a\u5177\u4f53\u6761\u4ef6",
+        };
+      }
       if (isDuplicateWrap(operator, node)) {
-        return { enabled: false, reason: "当前已存在该约束" };
+        return { enabled: false, reason: "\u6761\u4ef6\u5df2\u7ecf\u5305\u542b\u8fd9\u4e2a\u7ea6\u675f" };
       }
       return { enabled: true };
 
     case "score.atLeast":
+    case "score.minCount":
     case "score.weighted":
       if (node.type !== "GROUP" && node.type !== "ACCUMULATE") {
         return {
           enabled: false,
-          reason: "评分方式只能用于条件组合",
+          reason: "\u8bc4\u5206\u65b9\u5f0f\u53ea\u80fd\u7528\u4e8e\u6761\u4ef6\u7ec4\u5408",
         };
       }
       return { enabled: true };
 
     case "how.all":
-      if (node.type === "GROUP" && node.params?.operator === "ALL") {
-        return { enabled: false, reason: "当前已是该组合方式" };
-      }
-      return { enabled: true };
-
     case "how.any":
-      if (node.type === "GROUP" && node.params?.operator === "ANY") {
-        return { enabled: false, reason: "当前已是该组合方式" };
+    case "how.exclude":
+      if (!isScenarioGroup) {
+        return {
+          enabled: false,
+          reason: "\u8bf7\u9009\u4e2d\u4e00\u4e2a\u5224\u65ad\u573a\u666f",
+        };
+      }
+      if (
+        node.type === "GROUP" &&
+        (node.params?.operator === "ALL" || node.params?.operator === "AND")
+      ) {
+        return { enabled: false, reason: "\u5f53\u524d\u5df2\u662f\u5168\u90e8\u6ee1\u8db3" };
+      }
+      if (
+        node.type === "GROUP" &&
+        (node.params?.operator === "ANY" || node.params?.operator === "OR")
+      ) {
+        return { enabled: false, reason: "\u5f53\u524d\u5df2\u662f\u4efb\u4e00\u6ee1\u8db3" };
+      }
+      if (node.type === "GROUP" && node.params?.operator === "EXCLUDE") {
+        return { enabled: false, reason: "\u5f53\u524d\u5df2\u662f\u6392\u9664\u8be5\u573a\u666f" };
       }
       return { enabled: true };
 
     case "where.body":
-      return { enabled: false, reason: "默认已匹配正文" };
+      return { enabled: false, reason: "\u6b64\u6761\u4ef6\u9ed8\u8ba4\u4f5c\u7528\u4e8e\u6b63\u6587" };
 
     case "what.concept":
     case "what.topicRef":
