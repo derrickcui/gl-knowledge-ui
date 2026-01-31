@@ -17,6 +17,24 @@ function getConditionExplain(node: RuleNode): string {
   return "\u6ee1\u8db3\u6307\u5b9a\u4e1a\u52a1\u6761\u4ef6";
 }
 
+type ImportanceLevel = "HIGH" | "NORMAL" | "LOW";
+
+function normalizeImportance(raw: unknown): ImportanceLevel {
+  if (raw === "HIGH" || raw === "LOW") return raw;
+  return "NORMAL";
+}
+
+function hasTopicRef(node: RuleNode): boolean {
+  if (node.type === "TOPIC_REF") return true;
+  return (node.children ?? []).some((child) => hasTopicRef(child));
+}
+
+function hasImportanceOverride(group: RuleNode): boolean {
+  return (group.children ?? []).some(
+    (child) => normalizeImportance(child.params?.importance) !== "NORMAL"
+  );
+}
+
 export function buildGroupExplainModel(group: RuleNode): GroupExplainModel {
   if (!group.children || group.children.length === 0) {
     return {
@@ -33,6 +51,7 @@ export function buildGroupExplainModel(group: RuleNode): GroupExplainModel {
       : operator === "ANY"
       ? "OR"
       : operator;
+  const importanceMode = group.params?.importanceMode === "IMPORTANCE";
   const legacyLogsum =
     normalized === "ACCRUE" && group.params?.mode === "LOGSUM";
   const thresholdRaw =
@@ -43,11 +62,20 @@ export function buildGroupExplainModel(group: RuleNode): GroupExplainModel {
     thresholdRaw !== undefined
       ? Math.max(2, Math.min(thresholdRaw, group.children.length))
       : undefined;
+  const isTopicScene = hasTopicRef(group);
+  const importanceActive =
+    normalized === "LOGSUM" &&
+    importanceMode &&
+    !legacyLogsum &&
+    !isTopicScene &&
+    group.children.length >= 2;
   const header =
     normalized === "OR"
       ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u6ee1\u8db3\u4ee5\u4e0b\u4efb\u610f\u4e00\u6761\u6761\u4ef6\u5373\u53ef\uff1a"
       : normalized === "EXCLUDE"
       ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u82e5\u6ee1\u8db3\u4ee5\u4e0b\u6761\u4ef6\u5219\u6392\u9664\uff1a"
+      : importanceActive
+      ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u6ee1\u8db3\u4ee5\u4e0b\u6761\u4ef6\u5e76\u7efc\u5408\u91cd\u8981\u6027\u5224\u65ad\uff1a"
       : normalized === "ACCRUE" && !legacyLogsum
       ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u5f53\u6ee1\u8db3\u591a\u4e2a\u5224\u65ad\u6761\u4ef6\u65f6\uff0c\u8be5\u5224\u65ad\u573a\u666f\u66f4\u5bb9\u6613\u88ab\u8ba4\u4e3a\u6210\u7acb\u3002"
       : normalized === "LOGSUM" || legacyLogsum
@@ -68,7 +96,17 @@ export function generateGroupExplain(group: RuleNode): string {
   if (!model.lines.length) {
     return model.header;
   }
-  return `${model.header}\n${model.lines
+  const base = `${model.header}\n${model.lines
     .map((line) => `- ${line.text}`)
     .join("\n")}`;
+  const importanceMode = group.params?.importanceMode === "IMPORTANCE";
+  const importanceActive =
+    group.params?.operator === "LOGSUM" &&
+    importanceMode &&
+    !hasTopicRef(group) &&
+    (group.children?.length ?? 0) >= 2;
+  if (importanceActive && hasImportanceOverride(group)) {
+    return `${base}\n\n\u8bf4\u660e\uff1a\n\u5728\u8be5\u5224\u65ad\u573a\u666f\u4e2d\uff0c\u4e0d\u540c\u6761\u4ef6\u7684\u91cd\u8981\u6027\u4e0d\u540c\uff0c\n\u7cfb\u7edf\u5c06\u7efc\u5408\u5404\u6761\u4ef6\u7684\u91cd\u8981\u7a0b\u5ea6\u8fdb\u884c\u5224\u65ad\u3002`;
+  }
+  return base;
 }

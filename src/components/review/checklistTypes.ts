@@ -13,4 +13,14 @@ export interface ChecklistSummary {
     canApprove: boolean;
     reason?: string;
   };
+  importance?: {
+    scenarios: {
+      title: string;
+      counts: {
+        high: number;
+        normal: number;
+        low: number;
+      };
+    }[];
+  };
 }

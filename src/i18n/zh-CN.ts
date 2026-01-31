@@ -92,15 +92,19 @@ export const zhCN = {
   "scenario.operator.allLabel": "需全部满足",
   "scenario.operator.accrueSoftLabel": "满足越多越容易成立",
   "scenario.operator.accrueLabel": "满足部分条件",
+  "scenario.operator.importanceLabel": "综合重要性判断",
   "scenario.summary.any": "在同一内容语境中，满足以下任意一条条件即可。",
   "scenario.summary.all": "在同一内容语境中，同时满足以下条件。",
   "scenario.summary.accrue":
     "在同一内容语境中，只要满足以下条件中的至少 {threshold} 个，该判断场景成立。",
   "scenario.summary.accrueSoft":
     "在同一内容语境中，满足的条件越多，该判断场景越容易成立。",
+  "scenario.summary.importance":
+    "在同一内容语境中，系统将综合各条件的重要性进行判断。",
   "scenario.conditionsLabel": "场景内条件：",
   "scenario.and": "必须满足所有条件",
   "scenario.or": "满足任一条件",
+  "scenario.importance": "满足条件并综合重要性判断",
   "scenario.accrue": "至少满足指定数量的条件",
   "scenario.accrueSoft": "满足越多越容易成立",
   "scenario.accrue.disabledHint": "当前条件数量不足，已恢复为默认判断方式。",

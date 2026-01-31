@@ -97,15 +97,19 @@ export const enUS = {
   "scenario.operator.allLabel": "All",
   "scenario.operator.accrueSoftLabel": "More matches make it more likely",
   "scenario.operator.accrueLabel": "Partial match",
+  "scenario.operator.importanceLabel": "Importance-aware",
   "scenario.summary.any": "Within the same context, any condition can match.",
   "scenario.summary.all": "Within the same context, all conditions must match.",
   "scenario.summary.accrue":
     "At least {threshold} of the {count} conditions must match.",
   "scenario.summary.accrueSoft":
     "The more conditions match, the more likely the scenario holds.",
+  "scenario.summary.importance":
+    "Within the same context, the system evaluates conditions based on their importance.",
   "scenario.conditionsLabel": "Scenario conditions:",
   "scenario.and": "Must match all conditions",
   "scenario.or": "Match any condition",
+  "scenario.importance": "Match conditions and evaluate importance",
   "scenario.accrue": "At least a subset of conditions",
   "scenario.accrueSoft": "More matches make it more likely",
   "scenario.accrue.disabledHint":

@@ -19,6 +19,9 @@ type Props = {
   highlighted?: boolean;
   selected?: boolean;
   readOnly?: boolean;
+  showImportance?: boolean;
+  importance?: "HIGH" | "NORMAL" | "LOW";
+  onChangeImportance?: (next: "HIGH" | "NORMAL" | "LOW") => void;
   onSelect: (path: ActivePath) => void;
   onToggleNegation: (next: boolean) => void;
 };
@@ -153,6 +156,9 @@ export default function ConditionCard({
   path,
   onSelect,
   onToggleNegation,
+  showImportance = false,
+  importance,
+  onChangeImportance,
   selected = false,
   highlighted = false,
   readOnly = false,
@@ -176,6 +182,11 @@ export default function ConditionCard({
       )
     : buildExplainText(conceptNames, locations, !!node.params?.negated);
   const negated = !!node.params?.negated;
+  const selectedImportance =
+    (importance ?? node.params?.importance ?? "NORMAL") as
+      | "HIGH"
+      | "NORMAL"
+      | "LOW";
 
   const containerClass = containerClassFor(selected, highlighted);
   const topicStatus = topicNode?.params?.topicStatus;
@@ -241,6 +252,41 @@ export default function ConditionCard({
           );
         })}
       </div>
+
+      {showImportance && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-slate-700">
+          <span className="text-[11px] text-slate-500">
+            {"\u6761\u4ef6\u91cd\u8981\u6027\uff1a"}
+          </span>
+          {([
+            { id: "HIGH", label: "\u91cd\u8981" },
+            { id: "NORMAL", label: "\u4e00\u822c" },
+            { id: "LOW", label: "\u6b21\u8981" },
+          ] as const).map((option) => (
+            <label
+              key={option.id}
+              className={`inline-flex items-center gap-1 ${
+                readOnly ? "text-slate-300" : "text-slate-700"
+              }`}
+            >
+              <input
+                type="radio"
+                name={`importance-${node.id ?? path.join("-")}`}
+                value={option.id}
+                checked={selectedImportance === option.id}
+                disabled={readOnly}
+                onChange={(event) => {
+                  event.stopPropagation();
+                  if (readOnly) return;
+                  onChangeImportance?.(option.id);
+                }}
+                className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      )}
 
       <div className="mt-3 flex items-center justify-between">
         <label className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-700">

@@ -239,6 +239,31 @@ function normalizeScenarioOperator(operator?: string) {
   return operator;
 }
 
+type ImportanceLevel = "HIGH" | "NORMAL" | "LOW";
+
+function normalizeImportance(raw: unknown): ImportanceLevel {
+  if (raw === "HIGH" || raw === "LOW") return raw;
+  return "NORMAL";
+}
+
+function importanceToWeight(level: ImportanceLevel): number {
+  if (level === "HIGH") return 2.0;
+  if (level === "LOW") return 0.5;
+  return 1.0;
+}
+
+function weightToImportance(weight?: number): ImportanceLevel {
+  if (weight === undefined || weight === null) return "NORMAL";
+  if (weight >= 1.5) return "HIGH";
+  if (weight <= 0.75) return "LOW";
+  return "NORMAL";
+}
+
+function hasTopicRef(node: RuleNode): boolean {
+  if (node.type === "TOPIC_REF") return true;
+  return (node.children ?? []).some((child) => hasTopicRef(child));
+}
+
 function buildConceptCondition(
   node: RuleNode,
   fallbackId: string
@@ -483,11 +508,32 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
           const legacyLogsum =
             rawOperator === "ACCRUE" && group.params?.mode === "LOGSUM";
           const isLogsum = rawOperator === "LOGSUM" || legacyLogsum;
+          const importanceActive =
+            rawOperator === "LOGSUM" &&
+            group.params?.importanceMode === "IMPORTANCE" &&
+            !legacyLogsum &&
+            !hasTopicRef(group) &&
+            (group.children?.length ?? 0) >= 2;
+          const weights = importanceActive
+            ? (group.children ?? []).reduce<Record<string, number>>(
+                (acc, child, index) => {
+                  const fallbackId = `${group.id ?? groupIndex}-${index}`;
+                  const conditionId = child.id ?? fallbackId;
+                  const level = normalizeImportance(
+                    child.params?.importance
+                  );
+                  acc[conditionId] = importanceToWeight(level);
+                  return acc;
+                },
+                {}
+              )
+            : undefined;
           if (isLogsum) {
             return {
               type: "WEIGHTED",
               mode: "LOGSUM",
               threshold: group.params?.threshold,
+              weights,
             } as BusinessScore;
           }
           if (rawOperator === "ACCRUE") {
@@ -506,6 +552,10 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
 
 export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
   const groups = rule.groups.map((group, index) => {
+    const hasWeights =
+      group.score?.type === "WEIGHTED" &&
+      group.score.weights &&
+      Object.keys(group.score.weights).length > 0;
     const scenarioOperator = (() => {
       if (group.score?.type === "AT_LEAST") return "ACCRUE";
       if (group.score?.type === "WEIGHTED" && group.score?.mode === "LOGSUM") {
@@ -536,6 +586,9 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
         : undefined;
     const children = group.conditions
       .map((condition) => {
+        const importance = hasWeights
+          ? weightToImportance(group.score?.weights?.[condition.id])
+          : "NORMAL";
         if (condition.kind === "CONCEPT") {
           const payload = condition.payload;
           const fallbackExplain =
@@ -577,6 +630,12 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
             node.params = {
               ...node.params,
               negated: true,
+            };
+          }
+          if (importance !== "NORMAL") {
+            node.params = {
+              ...node.params,
+              importance,
             };
           }
           if (
@@ -638,6 +697,12 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
               negated: true,
             };
           }
+          if (importance !== "NORMAL") {
+            node.params = {
+              ...node.params,
+              importance,
+            };
+          }
           return node;
         }
         return null;
@@ -651,6 +716,7 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
         operator: scenarioOperator,
         mode: scenarioMode,
         threshold: scenarioThreshold,
+        importanceMode: hasWeights ? "IMPORTANCE" : undefined,
         role: "SCENARIO",
         sticky: true,
         title: `\u5224\u65ad\u573a\u666f ${index + 1}`,

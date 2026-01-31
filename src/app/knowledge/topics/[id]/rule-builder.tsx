@@ -211,6 +211,12 @@ function ScenarioCard({
   onUpdate: (nextScenario: RuleNode) => void;
   onEditCondition?: (scenarioIndex: number, conditionIndex: number) => void;
 }) {
+  const hasTopicRef = (node: RuleNode | undefined): boolean => {
+    if (!node) return false;
+    if (node.type === "TOPIC_REF") return true;
+    return (node.children ?? []).some((child) => hasTopicRef(child));
+  };
+
   const handleToggleNegation = (childIdx: number, next: boolean) => {
     if (readOnly) return;
     const child = scenario.children?.[childIdx];
@@ -231,11 +237,35 @@ function ScenarioCard({
     onUpdate(nextScenario);
   };
 
+  const handleImportanceChange = (
+    childIdx: number,
+    next: "HIGH" | "NORMAL" | "LOW"
+  ) => {
+    if (readOnly) return;
+    const child = scenario.children?.[childIdx];
+    if (!child) return;
+    const nextChild: RuleNode = {
+      ...child,
+      params: {
+        ...child.params,
+        importance: next,
+      },
+    };
+    const nextScenario = {
+      ...scenario,
+      children: (scenario.children ?? []).map((node, idx) =>
+        idx === childIdx ? nextChild : node
+      ),
+    };
+    onUpdate(nextScenario);
+  };
+
   const scenarioPath: ActivePath = [index];
   const selectedScenario = activePath.length > 0 && activePath[0] === index;
   const baseTitle =
     scenario.params?.title || t("scenario.title", { index: index + 1 });
   const rawScenarioOperator = scenario.params?.operator ?? "AND";
+  const importanceMode = scenario.params?.importanceMode === "IMPORTANCE";
   const legacyLogsum =
     rawScenarioOperator === "ACCRUE" && scenario.params?.mode === "LOGSUM";
   const scenarioOperator =
@@ -243,6 +273,8 @@ function ScenarioCard({
       ? "AND"
       : rawScenarioOperator === "ANY"
       ? "OR"
+      : rawScenarioOperator === "LOGSUM" && importanceMode
+      ? "WEIGHTED"
       : rawScenarioOperator === "LOGSUM"
       ? "LOGSUM"
       : legacyLogsum
@@ -255,11 +287,15 @@ function ScenarioCard({
       ? t("scenario.operator.anyLabel")
       : scenarioOperator === "ACCRUE"
       ? t("scenario.operator.accrueSoftLabel")
+      : scenarioOperator === "WEIGHTED"
+      ? t("scenario.operator.importanceLabel")
       : scenarioOperator === "LOGSUM"
       ? t("scenario.operator.accrueLabel")
       : t("scenario.operator.allLabel");
   const conditionCount = scenario.children?.length ?? 0;
+  const isTopicScene = hasTopicRef(scenario);
   const canUseLogsum = conditionCount >= 3;
+  const canUseImportance = conditionCount >= 2 && !isTopicScene;
   const thresholdRaw = scenario.params?.threshold ?? 2;
   const threshold = Math.max(2, Math.min(thresholdRaw, conditionCount));
   const scenarioTitle =
@@ -274,6 +310,8 @@ function ScenarioCard({
   const scenarioSummary =
     scenarioOperator === "OR"
       ? t("scenario.summary.any")
+      : scenarioOperator === "WEIGHTED"
+      ? t("scenario.summary.importance")
       : scenarioOperator === "LOGSUM"
       ? t("scenario.summary.accrue", {
           threshold,
@@ -284,20 +322,24 @@ function ScenarioCard({
       : t("scenario.summary.all");
 
   const handleScenarioOperatorChange = (
-    nextOperator: "AND" | "OR" | "LOGSUM" | "ACCRUE"
+    nextOperator: "AND" | "OR" | "LOGSUM" | "WEIGHTED" | "ACCRUE"
   ) => {
     if (readOnly) return;
     if (nextOperator === "LOGSUM" && !canUseLogsum) return;
+    if (nextOperator === "WEIGHTED" && !canUseImportance) return;
+    const isWeighted = nextOperator === "WEIGHTED";
+    const nextThreshold =
+      nextOperator === "LOGSUM" || isWeighted
+        ? scenario.params?.threshold ?? 2
+        : undefined;
     const nextScenario = {
       ...scenario,
       params: {
         ...scenario.params,
-        operator: nextOperator,
+        operator: isWeighted ? "LOGSUM" : nextOperator,
         mode: nextOperator === "ACCRUE" ? "ACCRUE" : undefined,
-        threshold:
-          nextOperator === "LOGSUM"
-            ? scenario.params?.threshold ?? 2
-            : undefined,
+        threshold: nextThreshold,
+        importanceMode: isWeighted ? "IMPORTANCE" : undefined,
       },
     };
     onUpdate(nextScenario);
@@ -313,6 +355,7 @@ function ScenarioCard({
         operator: "LOGSUM",
         mode: undefined,
         threshold: clamped,
+        importanceMode: undefined,
       },
     });
   };
@@ -329,6 +372,20 @@ function ScenarioCard({
           operator: "AND",
           mode: undefined,
           threshold: undefined,
+          importanceMode: undefined,
+        },
+      });
+      return;
+    }
+    if (scenarioOperator === "WEIGHTED" && !canUseImportance) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          operator: "AND",
+          mode: undefined,
+          threshold: undefined,
+          importanceMode: undefined,
         },
       });
       return;
@@ -341,11 +398,28 @@ function ScenarioCard({
           operator: "LOGSUM",
           mode: undefined,
           threshold,
+          importanceMode: undefined,
+        },
+      });
+    }
+    if (
+      scenarioOperator === "WEIGHTED" &&
+      scenario.params?.threshold !== 2
+    ) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          operator: "LOGSUM",
+          mode: undefined,
+          threshold: 2,
+          importanceMode: "IMPORTANCE",
         },
       });
     }
   }, [
     canUseLogsum,
+    canUseImportance,
     readOnly,
     scenario,
     scenarioOperator,
@@ -381,8 +455,21 @@ function ScenarioCard({
             <span className="text-[11px] font-medium text-slate-600">
               {t("scenario.conditionsLabel")}
             </span>
-            {(["AND", "OR", "LOGSUM", "ACCRUE"] as const)
-              .filter((value) => value !== "LOGSUM" || canUseLogsum)
+            {(
+              [
+                "AND",
+                "OR",
+                canUseLogsum ? "LOGSUM" : null,
+                canUseImportance ? "WEIGHTED" : null,
+                "ACCRUE",
+              ] as const
+            )
+              .filter(
+                (
+                  value
+                ): value is "AND" | "OR" | "LOGSUM" | "WEIGHTED" | "ACCRUE" =>
+                  Boolean(value)
+              )
               .map((value) => {
               const disabledOption = readOnly;
               return (
@@ -405,6 +492,8 @@ function ScenarioCard({
                     ? t("scenario.and")
                     : value === "OR"
                     ? t("scenario.or")
+                    : value === "WEIGHTED"
+                    ? t("scenario.importance")
                     : value === "LOGSUM"
                     ? t("scenario.accrue")
                     : t("scenario.accrueSoft")}
@@ -541,6 +630,13 @@ function ScenarioCard({
                       onSelect={readOnly ? () => {} : onSelect}
                       onToggleNegation={(next) =>
                         handleToggleNegation(childIdx, next)
+                      }
+                      showImportance={
+                        scenarioOperator === "WEIGHTED" && canUseImportance
+                      }
+                      importance={child.params?.importance ?? "NORMAL"}
+                      onChangeImportance={(next) =>
+                        handleImportanceChange(childIdx, next)
                       }
                       readOnly={readOnly}
                     />

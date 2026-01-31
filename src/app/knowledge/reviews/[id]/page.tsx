@@ -94,10 +94,6 @@ export default function ReviewDetailPage() {
   const normalizedAnti = normalizeAntiPatterns(packet.antiPatterns);
   const explainDiffForChecklist = normalizeExplainDiffForChecklist(packet);
   const explainDiffForUi = normalizeExplainDiffForUi(packet);
-  const checklist = buildChecklistSummary(
-    explainDiffForChecklist,
-    normalizedAnti
-  );
 
   const firstErrorPath =
     normalizedAnti.findings.find(
@@ -119,6 +115,11 @@ export default function ReviewDetailPage() {
   );
   const ruleTree =
     packet.afterAst ?? packet.draftRule ?? packet.baseRule ?? packet.rule;
+  const checklist = buildChecklistSummary(
+    explainDiffForChecklist,
+    normalizedAnti,
+    ruleTree
+  );
 
   return (
     <div className="space-y-4 p-6">
