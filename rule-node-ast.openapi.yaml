@@ -602,7 +602,7 @@ components:
         ordered: false
     GroupProximityMode:
       type: string
-      enum: [NEAR, SENTENCE, PARAGRAPH]
+      enum: [NEAR, SENTENCE, PARAGRAPH, DOCUMENT]
     BusinessCondition:
       type: object
       required: [id, kind, payload]

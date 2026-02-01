@@ -15,6 +15,83 @@ import { GroupExplainEditor } from "@/components/rule-builder/GroupExplainEditor
 import { GroupPriorityEditor } from "@/components/rule-builder/GroupPriorityEditor";
 import { t } from "@/i18n";
 
+type ProximityRelation = "NONE" | "NEAR" | "ORDER";
+type ProximityRange = "DOCUMENT" | "PARAGRAPH" | "SENTENCE";
+type ProximityDistancePreset = "TIGHT" | "NEAR" | "CUSTOM";
+
+type ScenarioProximityConfig = {
+  relation: ProximityRelation;
+  range: ProximityRange;
+  distance?: number;
+  distancePreset?: ProximityDistancePreset;
+};
+
+const DEFAULT_PROXIMITY: ScenarioProximityConfig = {
+  relation: "NONE",
+  range: "DOCUMENT",
+  distancePreset: "TIGHT",
+  distance: 3,
+};
+
+const clampDistance = (value: number) =>
+  Number.isFinite(value) ? Math.max(1, Math.round(value)) : 1;
+
+function normalizeProximityConfig(
+  raw?: ScenarioProximityConfig | null
+): ScenarioProximityConfig {
+  if (!raw) return { ...DEFAULT_PROXIMITY };
+  const relation = raw.relation ?? "NONE";
+  const range = raw.range ?? "DOCUMENT";
+  const distance = raw.distance ?? DEFAULT_PROXIMITY.distance;
+  const distancePreset = raw.distancePreset ?? (() => {
+    if (distance === 3) return "TIGHT";
+    if (distance === 8) return "NEAR";
+    return "CUSTOM";
+  })();
+  return {
+    relation,
+    range,
+    distance,
+    distancePreset,
+  };
+}
+
+function collectBaseTypes(node: RuleNode, acc: Set<RuleNode["type"]>) {
+  if (!node) return;
+  if (node.type === "PROXIMITY" || node.type === "FIELD_CONDITION") {
+    if (node.children && node.children.length > 0) {
+      node.children.forEach((child) => collectBaseTypes(child, acc));
+      return;
+    }
+  }
+  if (node.type === "LOGIC") {
+    node.children?.forEach((child) => collectBaseTypes(child, acc));
+    return;
+  }
+  if (node.type === "GROUP") {
+    node.children?.forEach((child) => collectBaseTypes(child, acc));
+    return;
+  }
+  acc.add(node.type);
+}
+
+function isScenarioProximityEligible(scenario: RuleNode): boolean {
+  const conditionCount = scenario.children?.length ?? 0;
+  if (conditionCount < 2) return false;
+  const baseTypes = new Set<RuleNode["type"]>();
+  scenario.children?.forEach((child) => collectBaseTypes(child, baseTypes));
+  if (baseTypes.has("TOPIC_REF")) return false;
+  const allowed = new Set<RuleNode["type"]>([
+    "CONCEPT_MATCH",
+    "TEXT_MATCH",
+    "FIELD_CONDITION",
+  ]);
+  for (const type of baseTypes) {
+    if (!allowed.has(type)) return false;
+  }
+  return baseTypes.size > 0;
+}
+
 interface Props {
   rule: RuleNode;
   activePath: ActivePath;
@@ -296,6 +373,8 @@ function ScenarioCard({
   const isTopicScene = hasTopicRef(scenario);
   const canUseLogsum = conditionCount >= 3;
   const canUseImportance = conditionCount >= 2 && !isTopicScene;
+  const proximityEligible =
+    !isTopicScene && isScenarioProximityEligible(scenario);
   const thresholdRaw = scenario.params?.threshold ?? 2;
   const threshold = Math.max(2, Math.min(thresholdRaw, conditionCount));
   const scenarioTitle =
@@ -428,6 +507,97 @@ function ScenarioCard({
     onUpdate,
   ]);
 
+  useEffect(() => {
+    if (readOnly) return;
+    if (!scenario.params?.proximity) return;
+    if (proximityEligible) return;
+    onUpdate({
+      ...scenario,
+      params: {
+        ...scenario.params,
+        proximity: undefined,
+      },
+    });
+  }, [proximityEligible, readOnly, scenario, onUpdate]);
+
+  const proximityConfig = normalizeProximityConfig(
+    scenario.params?.proximity as ScenarioProximityConfig | undefined
+  );
+  const proximityRelation = proximityConfig.relation ?? "NONE";
+
+  const handleProximityChange = (next?: ScenarioProximityConfig) => {
+    if (readOnly) return;
+    onUpdate({
+      ...scenario,
+      params: {
+        ...scenario.params,
+        proximity: next && next.relation !== "NONE" ? next : undefined,
+      },
+    });
+  };
+
+  const handleProximityRelationChange = (relation: ProximityRelation) => {
+    if (readOnly) return;
+    if (relation === "NONE") {
+      handleProximityChange(undefined);
+      return;
+    }
+    const hasExisting = !!scenario.params?.proximity;
+    const base = normalizeProximityConfig(
+      scenario.params?.proximity as ScenarioProximityConfig | undefined
+    );
+    const next: ScenarioProximityConfig = {
+      ...base,
+      relation,
+      range: hasExisting ? base.range ?? "SENTENCE" : "SENTENCE",
+    };
+    if (relation === "NEAR") {
+      const distance = clampDistance(
+        base.distance ?? DEFAULT_PROXIMITY.distance ?? 3
+      );
+      next.distance = distance;
+      next.distancePreset =
+        base.distancePreset ??
+        (distance === 3 ? "TIGHT" : distance === 8 ? "NEAR" : "CUSTOM");
+    } else {
+      delete next.distance;
+      delete next.distancePreset;
+    }
+    handleProximityChange(next);
+  };
+
+  const handleProximityRangeChange = (range: ProximityRange) => {
+    if (readOnly) return;
+    handleProximityChange({
+      ...proximityConfig,
+      relation: proximityRelation === "NONE" ? "NEAR" : proximityRelation,
+      range,
+    });
+  };
+
+  const handleDistancePresetChange = (preset: ProximityDistancePreset) => {
+    if (readOnly) return;
+    let distance = proximityConfig.distance ?? DEFAULT_PROXIMITY.distance ?? 3;
+    if (preset === "TIGHT") distance = 3;
+    if (preset === "NEAR") distance = 8;
+    handleProximityChange({
+      ...proximityConfig,
+      relation: "NEAR",
+      distancePreset: preset,
+      distance: clampDistance(distance),
+    });
+  };
+
+  const handleCustomDistanceChange = (value: number) => {
+    if (readOnly) return;
+    handleProximityChange({
+      ...proximityConfig,
+      relation: "NEAR",
+      distancePreset: "CUSTOM",
+      distance: clampDistance(value),
+    });
+  };
+
   return (
     <div
       className={`rounded-lg border p-3 ${
@@ -459,7 +629,7 @@ function ScenarioCard({
               [
                 "AND",
                 "OR",
-                canUseLogsum ? "LOGSUM" : null,
+                "LOGSUM",
                 canUseImportance ? "WEIGHTED" : null,
                 "ACCRUE",
               ] as const
@@ -471,7 +641,10 @@ function ScenarioCard({
                   Boolean(value)
               )
               .map((value) => {
-              const disabledOption = readOnly;
+              const disabledOption =
+                readOnly ||
+                (value === "LOGSUM" && !canUseLogsum) ||
+                (value === "WEIGHTED" && !canUseImportance);
               return (
                 <label
                   key={value}
@@ -495,7 +668,7 @@ function ScenarioCard({
                     : value === "WEIGHTED"
                     ? t("scenario.importance")
                     : value === "LOGSUM"
-                    ? t("scenario.accrue")
+                    ? t("scenario.operator.accrueLabel")
                     : t("scenario.accrueSoft")}
                 </label>
               );
@@ -676,6 +849,196 @@ function ScenarioCard({
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {proximityEligible && (
+          <div className="mt-3 rounded-md border border-dashed bg-white/70 px-3 py-2 text-xs text-slate-600">
+            <details
+              className="group"
+              open={proximityRelation !== "NONE"}
+            >
+              <summary className="cursor-pointer select-none text-sm font-medium text-slate-700">
+                {"\u51fa\u73b0\u4f4d\u7f6e\u5173\u7cfb\uff08\u9ad8\u7ea7\uff09"}{" "}
+                <span className="text-slate-400">{"\u25b8"}</span>
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div>
+                  <div className="text-[12px] font-semibold text-slate-700">
+                    {"\u8fd9\u4e9b\u6761\u4ef6\u5728\u6587\u6863\u4e2d\u9700\u8981\uff1a"}
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
+                    {([
+                      { id: "NONE", label: "\u65e0\u7279\u6b8a\u4f4d\u7f6e\u5173\u7cfb\uff08\u9ed8\u8ba4\uff09" },
+                      { id: "NEAR", label: "\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1" },
+                      { id: "ORDER", label: "\u6309\u987a\u5e8f\u51fa\u73b0" },
+                    ] as const).map((option) => (
+                      <label
+                        key={option.id}
+                        className={`inline-flex items-center gap-1 ${
+                          readOnly ? "text-slate-300" : "text-slate-700"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`scenario-${index}-proximity-relation`}
+                          value={option.id}
+                          checked={proximityRelation === option.id}
+                          disabled={readOnly}
+                          onChange={() =>
+                            handleProximityRelationChange(option.id)
+                          }
+                          className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                        />
+                        {option.label}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {proximityRelation === "NEAR"
+                      ? "\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1\uff1a\u6761\u4ef6\u4e4b\u95f4\u8ddd\u79bb\u8f83\u8fd1"
+                      : proximityRelation === "ORDER"
+                      ? "\u6309\u987a\u5e8f\u51fa\u73b0\uff1a\u6761\u4ef6\u51fa\u73b0\u7684\u5148\u540e\u987a\u5e8f\u9700\u4e00\u81f4"
+                      : "\u9ed8\u8ba4\u4e0d\u505a\u4f4d\u7f6e\u5173\u7cfb\u9650\u5236"}
+                  </div>
+                </div>
+
+                {proximityRelation === "NEAR" && (
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-[12px] font-semibold text-slate-700">
+                        {"\u8ddd\u79bb\u8981\u6c42\uff1a"}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
+                        {([
+                          { id: "TIGHT", label: "\u5f88\u8fd1", value: 3 },
+                          { id: "NEAR", label: "\u8f83\u8fd1", value: 8 },
+                          { id: "CUSTOM", label: "\u81ea\u5b9a\u4e49" },
+                        ] as const).map((option) => (
+                          <label
+                            key={option.id}
+                            className={`inline-flex items-center gap-1 ${
+                              readOnly ? "text-slate-300" : "text-slate-700"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`scenario-${index}-proximity-distance`}
+                              value={option.id}
+                              checked={
+                                proximityConfig.distancePreset === option.id
+                              }
+                              disabled={readOnly}
+                              onChange={() =>
+                                handleDistancePresetChange(option.id)
+                              }
+                              className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                        {proximityConfig.distancePreset === "CUSTOM" && (
+                          <label className="inline-flex items-center gap-1 text-[12px] text-slate-700">
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              className="w-16 rounded border px-1.5 py-0.5 text-[12px]"
+                              value={proximityConfig.distance ?? 1}
+                              disabled={readOnly}
+                              onChange={(event) =>
+                                handleCustomDistanceChange(
+                                  Number(event.target.value)
+                                )
+                              }
+                            />
+                            {"\u8ddd\u79bb\u503c"}
+                          </label>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="text-[12px] font-semibold text-slate-700">
+                        {"\u4f4d\u7f6e\u8303\u56f4\uff1a"}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
+                        {([
+                          { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" },
+                          { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" },
+                          { id: "DOCUMENT", label: "\u6574\u4e2a\u6587\u6863\u4e2d" },
+                        ] as const).map((option) => (
+                          <label
+                            key={option.id}
+                            className={`inline-flex items-center gap-1 ${
+                              readOnly ? "text-slate-300" : "text-slate-700"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`scenario-${index}-proximity-range`}
+                              value={option.id}
+                              checked={proximityConfig.range === option.id}
+                              disabled={readOnly}
+                              onChange={() =>
+                                handleProximityRangeChange(option.id)
+                              }
+                              className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {proximityRelation === "ORDER" && (
+                  <div className="space-y-3">
+                    <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] text-slate-600">
+                      <div className="text-[12px] font-semibold text-slate-700">
+                        {"\u987a\u5e8f\u8bf4\u660e\uff1a"}
+                      </div>
+                      <div className="mt-1">
+                        {"\u5c06\u6309\u6761\u4ef6\u5217\u8868\u4ece\u4e0a\u5230\u4e0b\u7684\u987a\u5e8f\u8fdb\u884c\u5224\u65ad"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[12px] font-semibold text-slate-700">
+                        {"\u4f4d\u7f6e\u8303\u56f4\uff1a"}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
+                        {([
+                          { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" },
+                          { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" },
+                          { id: "DOCUMENT", label: "\u6574\u4e2a\u6587\u6863\u4e2d" },
+                        ] as const).map((option) => (
+                          <label
+                            key={option.id}
+                            className={`inline-flex items-center gap-1 ${
+                              readOnly ? "text-slate-300" : "text-slate-700"
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name={`scenario-${index}-proximity-order-range`}
+                              value={option.id}
+                              checked={proximityConfig.range === option.id}
+                              disabled={readOnly}
+                              onChange={() =>
+                                handleProximityRangeChange(option.id)
+                              }
+                              className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                            />
+                            {option.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </details>
           </div>
         )}
 

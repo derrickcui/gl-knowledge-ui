@@ -21,6 +21,13 @@ export type BusinessGroup = {
   score?: BusinessScore;
   mode?: "ACCRUE";
   threshold?: number;
+  proximity?: GroupProximity;
+};
+
+export type GroupProximity = {
+  mode: "NEAR" | "SENTENCE" | "PARAGRAPH" | "DOCUMENT";
+  distance?: number;
+  ordered?: boolean;
 };
 
 export type BusinessScore =
@@ -259,6 +266,75 @@ function weightToImportance(weight?: number): ImportanceLevel {
   return "NORMAL";
 }
 
+type ScenarioProximityConfig = {
+  relation?: "NONE" | "NEAR" | "ORDER";
+  range?: "DOCUMENT" | "PARAGRAPH" | "SENTENCE";
+  distance?: number;
+  distancePreset?: "TIGHT" | "NEAR" | "CUSTOM";
+};
+
+function normalizeGroupProximity(
+  raw?: ScenarioProximityConfig | null
+): GroupProximity | undefined {
+  if (!raw || raw.relation === "NONE") return undefined;
+
+  // NEAR：距离关系
+  if (raw.relation === "NEAR") {
+    return {
+      type: "NEAR",
+      distance: Math.max(1, Math.round(Number(raw.distance ?? 3))),
+      scope: raw.range ?? "DOCUMENT",
+    };
+  }
+
+  // ORDER：顺序关系（不带距离）
+  if (raw.relation === "ORDER") {
+    return {
+      type: "ORDER",
+      scope: raw.range ?? "DOCUMENT",
+    };
+  }
+
+  return undefined;
+}
+
+
+function normalizeScenarioProximity(
+  raw?: GroupProximity | null
+): ScenarioProximityConfig | undefined {
+  if (!raw) return undefined;
+  if (raw.mode === "DOCUMENT" && !raw.ordered) return undefined;
+  const range =
+    raw.mode === "SENTENCE"
+      ? "SENTENCE"
+      : raw.mode === "PARAGRAPH"
+      ? "PARAGRAPH"
+      : raw.mode === "DOCUMENT"
+      ? "DOCUMENT"
+      : "DOCUMENT";
+  const relation =
+    raw.mode === "DOCUMENT"
+      ? "ORDER"
+      : raw.ordered
+      ? "ORDER"
+      : "NEAR";
+  const distance = relation === "NEAR" ? raw.distance ?? 3 : undefined;
+  const distancePreset =
+    relation === "NEAR"
+      ? distance === 3
+        ? "TIGHT"
+        : distance === 8
+        ? "NEAR"
+        : "CUSTOM"
+      : undefined;
+  return {
+    relation,
+    range,
+    distance,
+    distancePreset,
+  };
+}
+
 function hasTopicRef(node: RuleNode): boolean {
   if (node.type === "TOPIC_REF") return true;
   return (node.children ?? []).some((child) => hasTopicRef(child));
@@ -494,6 +570,9 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
         priority: group.priority ?? 100,
         explain: group.explain,
         conditions: conditions.filter(Boolean) as BusinessCondition[],
+        proximity: normalizeGroupProximity(
+          group.params?.proximity as ScenarioProximityConfig | undefined
+        ),
         operator: (() => {
           const rawOperator = group.params?.operator;
           const legacyLogsum =
@@ -720,6 +799,7 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
         role: "SCENARIO",
         sticky: true,
         title: `\u5224\u65ad\u573a\u666f ${index + 1}`,
+        proximity: normalizeScenarioProximity(group.proximity),
       },
       priority: group.priority ?? 100,
       explain: group.explain,
