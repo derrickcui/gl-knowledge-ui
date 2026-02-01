@@ -175,6 +175,87 @@ export const enUS = {
   "topicDetail.tip.selectCondition": "Select a condition to continue.",
   "topicDetail.tip.selectScenario": "Select a scenario to continue.",
   "topicDetail.rule.emptyHint": "No rules yet. Add a condition to start.",
+  "templates.list.title": "Rule Templates",
+  "templates.list.subtitle":
+    "Templates define the legal boundaries of business decisions, not the rules themselves.",
+  "templates.list.create": "+ Create Template",
+  "templates.list.columns.name": "Template Name",
+  "templates.list.columns.status": "Status",
+  "templates.list.columns.updatedAt": "Updated At",
+  "templates.list.empty": "No templates yet. Create one first.",
+  "templates.status.draft": "Draft",
+  "templates.status.published": "Published",
+  "templates.status.deprecated": "Deprecated",
+  "templates.create.title": "Create Rule Template",
+  "templates.create.subtitle":
+    "Template creation defines the legal boundary of business decisions, not rule writing.",
+  "templates.create.back": "Back to list",
+  "templates.create.steps.basic": "Basic info",
+  "templates.create.steps.mode": "Decision mode",
+  "templates.create.steps.advanced": "Advanced",
+  "templates.create.steps.explain": "Explain template",
+  "templates.create.step1.title": "Step 1 · Template basics",
+  "templates.create.step1.subtitle":
+    "Make the template feel like a business concept, not a rule.",
+  "templates.create.step1.nameLabel": "Template name *",
+  "templates.create.step1.namePlaceholder":
+    "Talent subsidy policy identification",
+  "templates.create.step1.purposeLabel": "Business description (required) *",
+  "templates.create.step1.purposePlaceholder":
+    "Identify documents related to district/city talent subsidy policies",
+  "templates.create.step1.typeLabel": "Template type (for governance)",
+  "templates.create.step1.customPlaceholder": "Enter a custom type",
+  "templates.create.type.policy": "Policy identification",
+  "templates.create.type.qualification": "Qualification determination",
+  "templates.create.type.process": "Process handling",
+  "templates.create.type.custom": "Other (custom)",
+  "templates.create.step2.title": "Step 2 · Allowed decision modes",
+  "templates.create.step2.subtitle":
+    "This is the core of the template—what decision modes are allowed.",
+  "templates.create.step2.all.title": "Must satisfy all conditions",
+  "templates.create.step2.all.desc": "All conditions must appear",
+  "templates.create.step2.partial.title": "Satisfy some conditions",
+  "templates.create.step2.partial.desc":
+    "More conditions matched makes it easier (LOGSUM)",
+  "templates.create.step2.weighted.title":
+    "Satisfy some conditions with importance",
+  "templates.create.step2.weighted.desc": "LOGSUM + weights",
+  "templates.create.step2.hint":
+    "Unchecked modes will be hidden in the rule editor.",
+  "templates.create.step3.title": "Step 3 · Advanced capability whitelist",
+  "templates.create.step3.subtitle":
+    "Decide which advanced capabilities are available under this template.",
+  "templates.create.step3.importance.title": "Condition importance (Phase 2)",
+  "templates.create.step3.importance.off":
+    "Not allowed (all conditions treated equally)",
+  "templates.create.step3.importance.on":
+    "Allowed (important / normal / minor)",
+  "templates.create.step3.importance.hint":
+    "Only effective in the weighted partial-match mode.",
+  "templates.create.step3.position.title": "Position / order (Phase 3)",
+  "templates.create.step3.position.any": "No restriction (anywhere)",
+  "templates.create.step3.position.paragraph": "Same paragraph",
+  "templates.create.step3.position.sentence": "Same sentence",
+  "templates.create.step3.position.order": "Allow “in order”",
+  "templates.create.step3.position.near": "Allow “near each other”",
+  "templates.create.step3.position.hint":
+    "Unchecked position abilities will not appear in the rule editor.",
+  "templates.create.step4.title": "Step 4 · Explain template",
+  "templates.create.step4.subtitle":
+    "Unify the explain wording; rule instances can only fill variables.",
+  "templates.create.step4.positiveLabel": "Positive explanation (required)",
+  "templates.create.step4.negativeLabel": "Negative explanation (optional)",
+  "templates.create.step4.hint":
+    "Rule instances can only fill variables and cannot change the template.",
+  "templates.create.prev": "Previous",
+  "templates.create.next": "Next",
+  "templates.create.publish": "Create & publish",
+  "templates.create.createdHint":
+    "Created. Default status is DRAFT; continue editing in the list.",
+  "templates.create.explain.positiveDefault":
+    "When the document meets the following conditions,\nwe consider it belongs to [________].",
+  "templates.create.explain.negativeDefault":
+    "When the minimum conditions are not met,\nthe document does not belong to [________].",
   "explain.concept.loc.body": "Body",
   "explain.concept.loc.title": "Title",
   "explain.concept.loc.paragraph": "Same paragraph",
@@ -228,6 +309,7 @@ export const enUS = {
   "drawer.knowledgeAssets": "Knowledge Assets",
   "drawer.glossary": "Glossary",
   "drawer.topics": "Topics",
+  "drawer.templates": "Rule Templates",
   "drawer.settings": "Settings",
   "drawer.language": "Language",
 } as const;

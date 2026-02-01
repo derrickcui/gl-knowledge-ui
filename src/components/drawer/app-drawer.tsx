@@ -99,6 +99,14 @@ export function AppDrawer() {
             collapsed={collapsed}
             nested
           />
+
+          <DrawerItem
+            href="/knowledge/templates"
+            label={t("drawer.templates")}
+            icon={<Layers className="h-4 w-4" />}
+            collapsed={collapsed}
+            nested
+          />
         </DrawerGroup>
 
         <DrawerItem
