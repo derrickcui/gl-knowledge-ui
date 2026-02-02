@@ -5,6 +5,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_GLOSSARY_API ??
   "http://localhost:8000";
 
+
 export const SERVICE_DOWN_MESSAGE =
   "concept-service 未启动或无法连接，请启动服务后重试。";
 const SERVICE_ERROR_MESSAGE =
@@ -397,6 +398,82 @@ export async function submitChange(
       body: JSON.stringify(params),
     }
   );
+}
+
+/* =========================
+ * Rule Templates
+ * ========================= */
+
+export type RuleTemplateCreateRequest = {
+  name: string;
+  purpose: string;
+  type?: string;
+  customType?: string;
+  allowedModes?: Record<string, boolean> | null;
+  importanceAllowed?: boolean;
+  positionRules?: Record<string, boolean> | null;
+  explainPositive?: string | null;
+  explainNegative?: string | null;
+};
+
+export type RuleTemplateCreateResponse = {
+  id: number;
+};
+
+export async function createTemplate(
+  payload: RuleTemplateCreateRequest
+): Promise<ApiResult<RuleTemplateCreateResponse>> {
+  return requestJson<RuleTemplateCreateResponse>(
+    `/api/templates`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function publishTemplate(
+  id: number
+): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(`/api/templates/${id}/publish`, {
+    method: "POST",
+  });
+}
+
+// Initial create shape expected by backend (step 1)
+export type RuleTemplateCreateInitialRequest = {
+  name: string;
+  description: string;
+  category: string;
+  createdBy: string;
+};
+
+export type RuleTemplateCreateInitialResponse = {
+  id: number;
+  status: string;
+};
+
+export async function createTemplateInitial(
+  payload: RuleTemplateCreateInitialRequest
+): Promise<ApiResult<RuleTemplateCreateInitialResponse>> {
+  return requestJson<RuleTemplateCreateInitialResponse>(`/api/templates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+// Configure template (called after initial create)
+export async function configureTemplate(
+  id: number,
+  payload: Record<string, any>
+): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(`/api/templates/${id}/config`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function decideChange(params: {

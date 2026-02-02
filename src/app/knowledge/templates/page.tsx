@@ -2,13 +2,16 @@
 
 import { useRouter } from "next/navigation";
 import { t } from "@/i18n";
+import { useEffect, useState } from "react";
 
-const MOCK_TEMPLATES: Array<{
-  id: string;
+type TemplateItem = {
+  id: number | string;
   name: string;
   status: "DRAFT" | "PUBLISHED" | "DEPRECATED";
   updatedAt: string;
-}> = [];
+};
+
+const MOCK_TEMPLATES: TemplateItem[] = [];
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: "bg-amber-100 text-amber-800",
@@ -18,6 +21,47 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function TemplatesPage() {
   const router = useRouter();
+  const [templates, setTemplates] = useState<TemplateItem[]>(MOCK_TEMPLATES);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadDrafts() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch("/api/templates?status=draft", {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          throw new Error(`fetch failed (${res.status})`);
+        }
+        const json = await res.json();
+        // upstream proxy may return: array OR { items: [...] } OR { success: true, data: { items: [...] } }
+        let items: any = [];
+        if (Array.isArray(json)) {
+          items = json;
+        } else if (json?.items) {
+          items = json.items;
+        } else if (json?.data?.items) {
+          items = json.data.items;
+        } else {
+          items = [];
+        }
+        if (mounted) setTemplates(items as TemplateItem[]);
+      } catch (e: any) {
+        if (mounted) setError(e?.message ?? "failed to load");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+
+    loadDrafts();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   return (
     <div className="space-y-4 p-6">
@@ -55,15 +99,29 @@ export default function TemplatesPage() {
             </tr>
           </thead>
           <tbody>
-            {MOCK_TEMPLATES.map((tpl) => (
-              <tr key={tpl.id} className="hover:bg-muted/60">
+            {loading && (
+              <tr>
+                <td colSpan={3} className="px-3 py-6 text-center text-sm opacity-70">
+                  {t("templates.list.loading")}
+                </td>
+              </tr>
+            )}
+            {error && (
+              <tr>
+                <td colSpan={3} className="px-3 py-6 text-center text-sm text-red-600">
+                  {error}
+                </td>
+              </tr>
+            )}
+            {!loading && !error && templates.map((tpl) => (
+              <tr key={String(tpl.id)} className="hover:bg-muted/60">
                 <td className="border-b px-3 py-2">
                   <button
                     type="button"
                     className="font-medium hover:underline"
                     onClick={() =>
                       router.push(
-                        `/knowledge/templates/${encodeURIComponent(tpl.id)}`
+                        `/knowledge/templates/${encodeURIComponent(String(tpl.id))}`
                       )
                     }
                   >
@@ -83,7 +141,7 @@ export default function TemplatesPage() {
                 <td className="border-b px-3 py-2">{tpl.updatedAt}</td>
               </tr>
             ))}
-            {!MOCK_TEMPLATES.length && (
+            {!loading && !error && !templates.length && (
               <tr>
                 <td
                   colSpan={3}

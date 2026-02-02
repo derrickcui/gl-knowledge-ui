@@ -3,10 +3,28 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/i18n";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import { createTemplate, publishTemplate, createTemplateInitial, configureTemplate } from "@/lib/api";
 
 type TemplateType = "policy" | "qualification" | "process" | "custom";
 
-export default function TemplateCreatePage() {
+type InitialTemplateData = {
+  id?: number;
+  name?: string;
+  description?: string;
+  category?: string;
+  status?: string;
+  // allow any other fields
+  [key: string]: any;
+};
+
+export default function TemplateCreatePage({
+  initialData,
+  initialTemplateId,
+}: {
+  initialData?: InitialTemplateData | null;
+  initialTemplateId?: number | null;
+}) {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
@@ -45,6 +63,34 @@ export default function TemplateCreatePage() {
     explainNegativeDefault
   );
   const [created, setCreated] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{
+    type: "info" | "success" | "error";
+    title: string;
+    message?: string;
+  } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [templateId, setTemplateId] = useState<number | null>(null);
+
+  // initialize from props when available
+  useEffect(() => {
+    if (initialTemplateId) {
+      setTemplateId(initialTemplateId);
+    }
+    if (initialData) {
+      if (initialData.name) setName(initialData.name);
+      if (initialData.description) setPurpose(initialData.description);
+      if (initialData.category) {
+        const cat = initialData.category as string;
+        if (cat === "policy" || cat === "qualification" || cat === "process") {
+          setType(cat as TemplateType);
+        } else {
+          setType("custom");
+          setCustomType(cat);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (explainPositive === "templates.create.explain.positiveDefault") {
@@ -101,16 +147,131 @@ export default function TemplateCreatePage() {
     explainPositive,
   ]);
 
-  function handleNext() {
+  async function handleNext() {
+    // If first step and template not created yet, create initial record
+    if (step === 0 && !templateId) {
+      try {
+        setSubmitting(true);
+        setStatusMessage({ type: "info", title: "正在保存第一步信息..." });
+        const category = type === "custom" ? customType || "custom" : type;
+        const res = await createTemplateInitial({
+          name,
+          description: purpose,
+          category,
+          createdBy: "ui-user",
+        });
+        if (!res.data) throw new Error(res.error ?? "create failed");
+        setTemplateId(res.data.id);
+        setStatusMessage({ type: "success", title: "第一步已保存" });
+      } catch (e: any) {
+        setStatusMessage({ type: "error", title: "保存失败", message: e?.message });
+        setSubmitting(false);
+        return; // abort moving to next step
+      } finally {
+        setSubmitting(false);
+      }
+    }
+
     setStep((prev) => Math.min(prev + 1, stepLabels.length - 1));
   }
 
   function handlePrev() {
     setStep((prev) => Math.max(prev - 1, 0));
   }
+  async function handleSaveCurrentStep() {
+    // Save current step: if step 0 -> create initial, else -> configure
+    try {
+      setSubmitting(true);
+      if (step === 0) {
+        setStatusMessage({ type: "info", title: "正在保存第一步..." });
+        const category = type === "custom" ? customType || "custom" : type;
+        const res = await createTemplateInitial({
+          name,
+          description: purpose,
+          category,
+          createdBy: "ui-user",
+        });
+        if (!res.data) throw new Error(res.error ?? "create failed");
+        setTemplateId(res.data.id);
+        setStatusMessage({ type: "success", title: "第一步已保存" });
+        return;
+      }
+
+      if (!templateId) {
+        setStatusMessage({ type: "error", title: "请先保存第一步以获取模板 ID" });
+        return;
+      }
+
+      setStatusMessage({ type: "info", title: "正在保存配置..." });
+      const payload = {
+        name,
+        purpose,
+        type: type === "custom" ? customType || "custom" : type,
+        customType: type === "custom" ? customType : undefined,
+        allowedModes,
+        importanceAllowed,
+        positionRules,
+        explainPositive,
+        explainNegative,
+      };
+      const cfg = await configureTemplate(templateId, payload as any);
+      if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
+      setStatusMessage({ type: "success", title: "已保存" });
+    } catch (e: any) {
+      setStatusMessage({ type: "error", title: "保存失败", message: e?.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   function handleCreate() {
-    setCreated(true);
+    (async () => {
+      try {
+        setSubmitting(true);
+        setStatusMessage({ type: "info", title: "正在发布模板，请稍后..." });
+
+        // Ensure initial create exists
+        let id = templateId;
+        if (!id) {
+          const category = type === "custom" ? customType || "custom" : type;
+          const res = await createTemplateInitial({
+            name,
+            description: purpose,
+            category,
+            createdBy: "ui-user",
+          });
+          if (!res.data) throw new Error(res.error ?? "create failed");
+          id = res.data.id;
+          setTemplateId(id);
+        }
+
+        // configure via /api/templates/{id}/config
+        const payload = {
+          name,
+          purpose,
+          type: type === "custom" ? customType || "custom" : type,
+          customType: type === "custom" ? customType : undefined,
+          allowedModes,
+          importanceAllowed,
+          positionRules,
+          explainPositive,
+          explainNegative,
+        };
+        const cfg = await configureTemplate(id, payload as any);
+        if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
+
+        setStatusMessage({ type: "info", title: "模板已配置，正在发布..." });
+        const pub = await publishTemplate(id);
+        if (!pub.data) throw new Error(pub.error ?? "Publish failed");
+
+        setStatusMessage({ type: "success", title: "模板已发布" });
+        setCreated(true);
+      } catch (e: any) {
+        setStatusMessage({ type: "error", title: "操作失败", message: e?.message });
+      } finally {
+        setSubmitting(false);
+      }
+    })();
   }
 
   return (
@@ -435,29 +596,59 @@ export default function TemplateCreatePage() {
           {t("templates.create.prev")}
         </button>
         <div className="flex items-center gap-3">
+            {statusMessage && (
+              <div className="mr-4 w-[360px]">
+                <FeedbackBanner
+                  type={statusMessage.type}
+                  title={statusMessage.title}
+                  message={statusMessage.message}
+                  onDismiss={() => setStatusMessage(null)}
+                />
+              </div>
+            )}
           {created && (
             <div className="text-xs text-emerald-700">
               {t("templates.create.createdHint")}
             </div>
           )}
-          {step < stepLabels.length - 1 ? (
-            <button
-              type="button"
-              className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
-              onClick={handleNext}
-              disabled={!canNext}
-            >
-              {t("templates.create.next")}
-            </button>
+            {step < stepLabels.length - 1 ? (
+            <>
+              <button
+                type="button"
+                className="h-9 rounded-md border px-3 text-sm"
+                onClick={handleSaveCurrentStep}
+                disabled={submitting}
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
+                onClick={handleNext}
+                disabled={!canNext}
+              >
+                {t("templates.create.next")}
+              </button>
+            </>
           ) : (
-            <button
-              type="button"
-              className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
-              onClick={handleCreate}
-              disabled={!canNext}
-            >
-              {t("templates.create.publish")}
-            </button>
+            <>
+              <button
+                type="button"
+                className="h-9 rounded-md border px-3 text-sm"
+                onClick={handleSaveCurrentStep}
+                disabled={submitting}
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
+                onClick={handleCreate}
+                disabled={!canNext || submitting}
+              >
+                {t("templates.create.publish")}
+              </button>
+            </>
           )}
         </div>
       </div>
