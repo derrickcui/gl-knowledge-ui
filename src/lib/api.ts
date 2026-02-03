@@ -16,6 +16,10 @@ export type ApiResult<T> = {
   error: string | null;
 };
 
+export type ApiResultWithStatus<T> = ApiResult<T> & {
+  status?: number;
+};
+
 export function isServiceDownError(error: string | null) {
   return error === SERVICE_DOWN_MESSAGE;
 }
@@ -48,6 +52,29 @@ export async function requestJson<T>(
       };
     }
     return { data: (await res.json()) as T, error: null };
+  } catch {
+    return { data: null, error: SERVICE_DOWN_MESSAGE };
+  }
+}
+
+async function requestJsonWithStatus<T>(
+  input: string,
+  init?: RequestInit
+): Promise<ApiResultWithStatus<T>> {
+  try {
+    const res = await fetch(input, init);
+    if (!res.ok) {
+      return {
+        data: null,
+        error: await buildErrorMessage(res, SERVICE_ERROR_MESSAGE),
+        status: res.status,
+      };
+    }
+    return {
+      data: (await res.json()) as T,
+      error: null,
+      status: res.status,
+    };
   } catch {
     return { data: null, error: SERVICE_DOWN_MESSAGE };
   }
@@ -420,6 +447,35 @@ export type RuleTemplateCreateResponse = {
   id: number;
 };
 
+export type RuleTemplateItem = {
+  id: number | string;
+  name: string;
+  status?: string;
+  updatedAt?: string;
+  purpose?: string;
+  description?: string;
+  category?: string;
+  [key: string]: any;
+};
+
+function normalizeTemplateList(payload: any): RuleTemplateItem[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
+function normalizeTemplatePayload(payload: any) {
+  if (!payload) return null;
+  return payload?.data?.data ?? payload?.data ?? payload;
+}
+
+function normalizeTemplateDetail(payload: any): RuleTemplateItem | null {
+  if (!payload) return null;
+  return normalizeTemplatePayload(payload);
+}
+
 export async function createTemplate(
   payload: RuleTemplateCreateRequest
 ): Promise<ApiResult<RuleTemplateCreateResponse>> {
@@ -431,6 +487,37 @@ export async function createTemplate(
       body: JSON.stringify(payload),
     }
   );
+}
+
+export async function fetchTemplatesList(params?: {
+  status?: string;
+}): Promise<ApiResult<RuleTemplateItem[]>> {
+  const search = new URLSearchParams();
+  if (params?.status) {
+    search.set("status", params.status);
+  }
+  const suffix = search.toString();
+  const res = await requestJson<unknown>(
+    `/api/templates${suffix ? `?${suffix}` : ""}`,
+    { cache: "no-store" }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  return { data: normalizeTemplateList(res.data), error: null };
+}
+
+export async function fetchTemplateById(
+  id: number | string
+): Promise<ApiResultWithStatus<RuleTemplateItem | null>> {
+  const res = await requestJsonWithStatus<unknown>(
+    `/api/templates/${id}`,
+    { cache: "no-store" }
+  );
+  if (!res.data) return { data: null, error: res.error, status: res.status };
+  return {
+    data: normalizeTemplateDetail(res.data),
+    error: null,
+    status: res.status,
+  };
 }
 
 export async function publishTemplate(
@@ -457,11 +544,16 @@ export type RuleTemplateCreateInitialResponse = {
 export async function createTemplateInitial(
   payload: RuleTemplateCreateInitialRequest
 ): Promise<ApiResult<RuleTemplateCreateInitialResponse>> {
-  return requestJson<RuleTemplateCreateInitialResponse>(`/api/templates`, {
+  const res = await requestJson<unknown>(`/api/templates`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (!res.data) return { data: null, error: res.error };
+  return {
+    data: normalizeTemplatePayload(res.data) as RuleTemplateCreateInitialResponse,
+    error: null,
+  };
 }
 
 // Configure template (called after initial create)

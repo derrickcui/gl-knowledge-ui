@@ -4,9 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/i18n";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-import { createTemplate, publishTemplate, createTemplateInitial, configureTemplate } from "@/lib/api";
-
-type TemplateType = "policy" | "qualification" | "process" | "custom";
+import {
+  configureTemplate,
+  createTemplateInitial,
+  publishTemplate,
+} from "@/lib/api";
+import {
+  TemplateCreateSteps,
+  TemplateType,
+} from "@/components/templates/template-create-steps";
 
 type InitialTemplateData = {
   id?: number;
@@ -14,7 +20,6 @@ type InitialTemplateData = {
   description?: string;
   category?: string;
   status?: string;
-  // allow any other fields
   [key: string]: any;
 };
 
@@ -47,13 +52,13 @@ export default function TemplateCreatePage({
   const explainPositiveDefault = useMemo(() => {
     const value = t("templates.create.explain.positiveDefault");
     return value === "templates.create.explain.positiveDefault"
-      ? "当文档中【满足以下条件】时，\n我们认为该文档属于【________】。"
+      ? "When the document meets the following conditions,\nwe consider it belongs to [________]."
       : value;
   }, []);
   const explainNegativeDefault = useMemo(() => {
     const value = t("templates.create.explain.negativeDefault");
     return value === "templates.create.explain.negativeDefault"
-      ? "当未满足最低条件时，\n该文档不属于【________】。"
+      ? "When the minimum conditions are not met,\nthe document does not belong to [________]."
       : value;
   }, []);
   const [explainPositive, setExplainPositive] = useState(
@@ -71,7 +76,6 @@ export default function TemplateCreatePage({
   const [submitting, setSubmitting] = useState(false);
   const [templateId, setTemplateId] = useState<number | null>(null);
 
-  // initialize from props when available
   useEffect(() => {
     if (initialTemplateId) {
       setTemplateId(initialTemplateId);
@@ -114,24 +118,12 @@ export default function TemplateCreatePage({
     []
   );
 
-  const templateTypeLabels: Record<TemplateType, string> = useMemo(
-    () => ({
-      policy: t("templates.create.type.policy"),
-      qualification: t("templates.create.type.qualification"),
-      process: t("templates.create.type.process"),
-      custom: t("templates.create.type.custom"),
-    }),
-    []
-  );
-
   const canNext = useMemo(() => {
     if (step === 0) {
       return name.trim().length > 0 && purpose.trim().length > 0;
     }
     if (step === 1) {
-      return (
-        allowedModes.all || allowedModes.partial || allowedModes.weighted
-      );
+      return allowedModes.all || allowedModes.partial || allowedModes.weighted;
     }
     if (step === 3) {
       return explainPositive.trim().length > 0;
@@ -148,11 +140,13 @@ export default function TemplateCreatePage({
   ]);
 
   async function handleNext() {
-    // If first step and template not created yet, create initial record
     if (step === 0 && !templateId) {
       try {
         setSubmitting(true);
-        setStatusMessage({ type: "info", title: "正在保存第一步信息..." });
+        setStatusMessage({
+          type: "info",
+          title: t("templates.create.status.savingStep1"),
+        });
         const category = type === "custom" ? customType || "custom" : type;
         const res = await createTemplateInitial({
           name,
@@ -162,11 +156,18 @@ export default function TemplateCreatePage({
         });
         if (!res.data) throw new Error(res.error ?? "create failed");
         setTemplateId(res.data.id);
-        setStatusMessage({ type: "success", title: "第一步已保存" });
+        setStatusMessage({
+          type: "success",
+          title: t("templates.create.status.step1Saved"),
+        });
       } catch (e: any) {
-        setStatusMessage({ type: "error", title: "保存失败", message: e?.message });
+        setStatusMessage({
+          type: "error",
+          title: t("templates.create.status.saveFailed"),
+          message: e?.message,
+        });
         setSubmitting(false);
-        return; // abort moving to next step
+        return;
       } finally {
         setSubmitting(false);
       }
@@ -178,12 +179,15 @@ export default function TemplateCreatePage({
   function handlePrev() {
     setStep((prev) => Math.max(prev - 1, 0));
   }
+
   async function handleSaveCurrentStep() {
-    // Save current step: if step 0 -> create initial, else -> configure
     try {
       setSubmitting(true);
       if (step === 0) {
-        setStatusMessage({ type: "info", title: "正在保存第一步..." });
+        setStatusMessage({
+          type: "info",
+          title: t("templates.create.status.savingStep1"),
+        });
         const category = type === "custom" ? customType || "custom" : type;
         const res = await createTemplateInitial({
           name,
@@ -193,16 +197,25 @@ export default function TemplateCreatePage({
         });
         if (!res.data) throw new Error(res.error ?? "create failed");
         setTemplateId(res.data.id);
-        setStatusMessage({ type: "success", title: "第一步已保存" });
+        setStatusMessage({
+          type: "success",
+          title: t("templates.create.status.step1Saved"),
+        });
         return;
       }
 
       if (!templateId) {
-        setStatusMessage({ type: "error", title: "请先保存第一步以获取模板 ID" });
+        setStatusMessage({
+          type: "error",
+          title: t("templates.create.status.needStep1"),
+        });
         return;
       }
 
-      setStatusMessage({ type: "info", title: "正在保存配置..." });
+      setStatusMessage({
+        type: "info",
+        title: t("templates.create.status.savingConfig"),
+      });
       const payload = {
         name,
         purpose,
@@ -216,9 +229,16 @@ export default function TemplateCreatePage({
       };
       const cfg = await configureTemplate(templateId, payload as any);
       if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
-      setStatusMessage({ type: "success", title: "已保存" });
+      setStatusMessage({
+        type: "success",
+        title: t("templates.create.status.saved"),
+      });
     } catch (e: any) {
-      setStatusMessage({ type: "error", title: "保存失败", message: e?.message });
+      setStatusMessage({
+        type: "error",
+        title: t("templates.create.status.saveFailed"),
+        message: e?.message,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -228,9 +248,11 @@ export default function TemplateCreatePage({
     (async () => {
       try {
         setSubmitting(true);
-        setStatusMessage({ type: "info", title: "正在发布模板，请稍后..." });
+        setStatusMessage({
+          type: "info",
+          title: t("templates.create.status.publishing"),
+        });
 
-        // Ensure initial create exists
         let id = templateId;
         if (!id) {
           const category = type === "custom" ? customType || "custom" : type;
@@ -245,7 +267,6 @@ export default function TemplateCreatePage({
           setTemplateId(id);
         }
 
-        // configure via /api/templates/{id}/config
         const payload = {
           name,
           purpose,
@@ -260,14 +281,24 @@ export default function TemplateCreatePage({
         const cfg = await configureTemplate(id, payload as any);
         if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
 
-        setStatusMessage({ type: "info", title: "模板已配置，正在发布..." });
+        setStatusMessage({
+          type: "info",
+          title: t("templates.create.status.configuredPublishing"),
+        });
         const pub = await publishTemplate(id);
         if (!pub.data) throw new Error(pub.error ?? "Publish failed");
 
-        setStatusMessage({ type: "success", title: "模板已发布" });
+        setStatusMessage({
+          type: "success",
+          title: t("templates.create.status.published"),
+        });
         setCreated(true);
       } catch (e: any) {
-        setStatusMessage({ type: "error", title: "操作失败", message: e?.message });
+        setStatusMessage({
+          type: "error",
+          title: t("templates.create.status.operationFailed"),
+          message: e?.message,
+        });
       } finally {
         setSubmitting(false);
       }
@@ -281,9 +312,7 @@ export default function TemplateCreatePage({
           <h1 className="text-xl font-semibold">
             {t("templates.create.title")}
           </h1>
-          <p className="text-sm opacity-70">
-            {t("templates.create.subtitle")}
-          </p>
+          <p className="text-sm opacity-70">{t("templates.create.subtitle")}</p>
         </div>
         <button
           type="button"
@@ -316,274 +345,37 @@ export default function TemplateCreatePage({
       </div>
 
       <div className="rounded-lg border bg-white p-6">
-        {step === 0 && (
-          <div className="space-y-6">
-            <div>
-              <div className="text-base font-semibold">
-                {t("templates.create.step1.title")}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t("templates.create.step1.subtitle")}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {t("templates.create.step1.nameLabel")}
-              </label>
-              <input
-                type="text"
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                placeholder={t("templates.create.step1.namePlaceholder")}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {t("templates.create.step1.purposeLabel")}
-              </label>
-              <textarea
-                className="min-h-[96px] w-full rounded-md border bg-background px-3 py-2 text-sm"
-                placeholder={t("templates.create.step1.purposePlaceholder")}
-                value={purpose}
-                onChange={(event) => setPurpose(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {t("templates.create.step1.typeLabel")}
-              </label>
-              <div className="grid gap-2 md:grid-cols-2">
-                {(
-                  ["policy", "qualification", "process", "custom"] as TemplateType[]
-                ).map((item) => (
-                  <label
-                    key={item}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm"
-                  >
-                    <input
-                      type="radio"
-                      name="templateType"
-                      checked={type === item}
-                      onChange={() => setType(item)}
-                    />
-                    <span>{templateTypeLabels[item]}</span>
-                  </label>
-                ))}
-              </div>
-              {type === "custom" && (
-                <input
-                  type="text"
-                  className="mt-2 h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  placeholder={t("templates.create.step1.customPlaceholder")}
-                  value={customType}
-                  onChange={(event) => setCustomType(event.target.value)}
-                />
-              )}
-            </div>
-          </div>
-        )}
-
-        {step === 1 && (
-          <div className="space-y-6">
-            <div>
-              <div className="text-base font-semibold">
-                {t("templates.create.step2.title")}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t("templates.create.step2.subtitle")}
-              </p>
-            </div>
-
-            <div className="space-y-3">
-              <label className="flex items-start gap-3 rounded-md border px-3 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={allowedModes.all}
-                  onChange={(event) =>
-                    setAllowedModes((prev) => ({
-                      ...prev,
-                      all: event.target.checked,
-                    }))
-                  }
-                />
-                <div>
-                  <div className="font-medium">
-                    {t("templates.create.step2.all.title")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {t("templates.create.step2.all.desc")}
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-md border px-3 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={allowedModes.partial}
-                  onChange={(event) =>
-                    setAllowedModes((prev) => ({
-                      ...prev,
-                      partial: event.target.checked,
-                    }))
-                  }
-                />
-                <div>
-                  <div className="font-medium">
-                    {t("templates.create.step2.partial.title")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {t("templates.create.step2.partial.desc")}
-                  </div>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 rounded-md border px-3 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={allowedModes.weighted}
-                  onChange={(event) =>
-                    setAllowedModes((prev) => ({
-                      ...prev,
-                      weighted: event.target.checked,
-                    }))
-                  }
-                />
-                <div>
-                  <div className="font-medium">
-                    {t("templates.create.step2.weighted.title")}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {t("templates.create.step2.weighted.desc")}
-                  </div>
-                </div>
-              </label>
-            </div>
-
-            <div className="text-xs text-muted-foreground">
-              {t("templates.create.step2.hint")}
-            </div>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="space-y-8">
-            <div>
-              <div className="text-base font-semibold">
-                {t("templates.create.step3.title")}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t("templates.create.step3.subtitle")}
-              </p>
-            </div>
-
-            <div className="rounded-md border p-4">
-              <div className="text-sm font-medium">
-                {t("templates.create.step3.importance.title")}
-              </div>
-              <div className="mt-3 space-y-2 text-sm">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="importanceAllowed"
-                    checked={!importanceAllowed}
-                    onChange={() => setImportanceAllowed(false)}
-                  />
-                  <span>{t("templates.create.step3.importance.off")}</span>
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="importanceAllowed"
-                    checked={importanceAllowed}
-                    onChange={() => setImportanceAllowed(true)}
-                  />
-                  <span>{t("templates.create.step3.importance.on")}</span>
-                </label>
-              </div>
-              <div className="mt-3 text-xs text-muted-foreground">
-                {t("templates.create.step3.importance.hint")}
-              </div>
-            </div>
-
-            <div className="rounded-md border p-4">
-              <div className="text-sm font-medium">
-                {t("templates.create.step3.position.title")}
-              </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-2 text-sm">
-                {[
-                  ["any", t("templates.create.step3.position.any")],
-                  ["paragraph", t("templates.create.step3.position.paragraph")],
-                  ["sentence", t("templates.create.step3.position.sentence")],
-                  ["order", t("templates.create.step3.position.order")],
-                  ["near", t("templates.create.step3.position.near")],
-                ].map(([key, label]) => (
-                  <label
-                    key={key}
-                    className="flex items-center gap-2 rounded-md border px-3 py-2"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={positionRules[key as keyof typeof positionRules]}
-                      onChange={(event) =>
-                        setPositionRules((prev) => ({
-                          ...prev,
-                          [key]: event.target.checked,
-                        }))
-                      }
-                    />
-                    <span>{label}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3 text-xs text-muted-foreground">
-                {t("templates.create.step3.position.hint")}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-6">
-            <div>
-              <div className="text-base font-semibold">
-                {t("templates.create.step4.title")}
-              </div>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t("templates.create.step4.subtitle")}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {t("templates.create.step4.positiveLabel")}
-              </label>
-              <textarea
-                className="min-h-[110px] w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={explainPositive}
-                onChange={(event) => setExplainPositive(event.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                {t("templates.create.step4.negativeLabel")}
-              </label>
-              <textarea
-                className="min-h-[110px] w-full rounded-md border bg-background px-3 py-2 text-sm"
-                value={explainNegative}
-                onChange={(event) => setExplainNegative(event.target.value)}
-              />
-            </div>
-
-            <div className="rounded-md border bg-muted/20 p-3 text-xs text-muted-foreground">
-              {t("templates.create.step4.hint")}
-            </div>
-          </div>
-        )}
+        <TemplateCreateSteps
+          step={step}
+          name={name}
+          purpose={purpose}
+          type={type}
+          customType={customType}
+          allowedModes={allowedModes}
+          importanceAllowed={importanceAllowed}
+          positionRules={positionRules}
+          explainPositive={explainPositive}
+          explainNegative={explainNegative}
+          onNameChange={setName}
+          onPurposeChange={setPurpose}
+          onTypeChange={setType}
+          onCustomTypeChange={setCustomType}
+          onAllowedModeChange={(key, value) =>
+            setAllowedModes((prev) => ({
+              ...prev,
+              [key]: value,
+            }))
+          }
+          onImportanceAllowedChange={setImportanceAllowed}
+          onPositionRuleChange={(key, value) =>
+            setPositionRules((prev) => ({
+              ...prev,
+              [key]: value,
+            }))
+          }
+          onExplainPositiveChange={setExplainPositive}
+          onExplainNegativeChange={setExplainNegative}
+        />
       </div>
 
       <div className="flex items-center justify-between rounded-lg border bg-white p-4">
@@ -596,22 +388,22 @@ export default function TemplateCreatePage({
           {t("templates.create.prev")}
         </button>
         <div className="flex items-center gap-3">
-            {statusMessage && (
-              <div className="mr-4 w-[360px]">
-                <FeedbackBanner
-                  type={statusMessage.type}
-                  title={statusMessage.title}
-                  message={statusMessage.message}
-                  onDismiss={() => setStatusMessage(null)}
-                />
-              </div>
-            )}
+          {statusMessage && (
+            <div className="mr-4 w-[360px]">
+              <FeedbackBanner
+                type={statusMessage.type}
+                title={statusMessage.title}
+                message={statusMessage.message}
+                onDismiss={() => setStatusMessage(null)}
+              />
+            </div>
+          )}
           {created && (
             <div className="text-xs text-emerald-700">
               {t("templates.create.createdHint")}
             </div>
           )}
-            {step < stepLabels.length - 1 ? (
+          {step < stepLabels.length - 1 ? (
             <>
               <button
                 type="button"
@@ -619,7 +411,7 @@ export default function TemplateCreatePage({
                 onClick={handleSaveCurrentStep}
                 disabled={submitting}
               >
-                保存
+                {t("templates.create.save")}
               </button>
               <button
                 type="button"
@@ -638,7 +430,7 @@ export default function TemplateCreatePage({
                 onClick={handleSaveCurrentStep}
                 disabled={submitting}
               >
-                保存
+                {t("templates.create.save")}
               </button>
               <button
                 type="button"

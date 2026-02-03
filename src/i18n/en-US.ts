@@ -312,4 +312,51 @@ export const enUS = {
   "drawer.templates": "Rule Templates",
   "drawer.settings": "Settings",
   "drawer.language": "Language",
+  "topics.create.selectTemplate.title": "Create Topic · Select Template",
+  "topics.create.selectTemplate.subtitle":
+    "Choose a standard template to start creating a topic (fewer configuration steps).",
+  "topics.create.selectTemplate.loading": "Loading...",
+  "topics.create.selectTemplate.empty": "No templates available.",
+  "topics.create.selectTemplate.cancel": "Cancel",
+  "topics.create.selectTemplate.next": "Next",
+  "templates.list.subtitle":
+    "Templates define the legal boundaries of business decisions, not the rules themselves.",
+  "templates.list.loading": "Loading...",
+  "templates.create.subtitle":
+    "Template creation defines the legal boundary of business decisions, not rule writing.",
+  "templates.create.step2.weighted.title":
+    "Satisfy some conditions with importance",
+  "templates.create.step2.hint":
+    "Unchecked modes will be hidden in the rule editor.",
+  "templates.create.step3.importance.off":
+    "Not allowed (all conditions treated equally)",
+  "templates.create.step3.importance.on":
+    "Allowed (important / normal / minor)",
+  "templates.create.step3.importance.hint":
+    "Only effective in the weighted partial-match mode.",
+  "templates.create.step3.position.hint":
+    "Unchecked position abilities will not appear in the rule editor.",
+  "templates.create.step4.subtitle":
+    "Unify the explain wording; rule instances can only fill variables.",
+  "templates.create.createdHint":
+    "Created. Default status is DRAFT; continue editing in the list.",
+  "templates.create.explain.positiveDefault":
+    "When the document meets the following conditions,\nwe consider it belongs to [________].",
+  "templates.create.explain.negativeDefault":
+    "When the minimum conditions are not met,\nthe document does not belong to [________].",
+  "templates.create.save": "Save",
+  "templates.create.status.savingStep1": "Saving step 1...",
+  "templates.create.status.step1Saved": "Step 1 saved",
+  "templates.create.status.saveFailed": "Save failed",
+  "templates.create.status.needStep1": "Save step 1 to get a template ID",
+  "templates.create.status.savingConfig": "Saving configuration...",
+  "templates.create.status.saved": "Saved",
+  "templates.create.status.publishing": "Publishing template...",
+  "templates.create.status.configuredPublishing":
+    "Template configured, publishing...",
+  "templates.create.status.published": "Template published",
+  "templates.create.status.operationFailed": "Operation failed",
+  "templates.detail.loading": "Loading...",
+  "templates.detail.notFound": "Template not found",
+  "templates.detail.loadFailed": "Failed to load",
 } as const;

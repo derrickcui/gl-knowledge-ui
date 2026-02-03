@@ -1,11 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { use, useEffect, useState } from "react";
+import { t } from "@/i18n";
+import { fetchTemplateById } from "@/lib/api";
 import TemplateCreatePage from "../create/page";
 
-export default function TemplateDetailPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
+export default function TemplateDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
   const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,32 +20,31 @@ export default function TemplateDetailPage({ params }: { params: { id: string } 
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/templates/${encodeURIComponent(params.id)}`, { cache: "no-store" });
+        const res = await fetchTemplateById(id);
         if (res.status === 404) {
-          if (mounted) setError("模板未找到");
+          if (mounted) setError(t("templates.detail.notFound"));
           return;
         }
-        if (!res.ok) throw new Error(`fetch failed (${res.status})`);
-        const json = await res.json();
-        // proxy returns raw body, may be { success, data } or { data } or raw object
-        const tpl = json?.data?.data ?? json?.data ?? json;
-        if (mounted) setData(tpl);
+        if (res.error) throw new Error(res.error);
+        if (mounted) setData(res.data);
       } catch (e: any) {
-        if (mounted) setError(e?.message ?? "加载失败");
+        if (mounted) setError(e?.message ?? t("templates.detail.loadFailed"));
       } finally {
         if (mounted) setLoading(false);
       }
     }
     load();
-    return () => { mounted = false; };
-  }, [params.id]);
+    return () => {
+      mounted = false;
+    };
+  }, [id]);
 
-  if (loading) return <div className="p-6">加载中...</div>;
+  if (loading) return <div className="p-6">{t("templates.detail.loading")}</div>;
   if (error) return <div className="p-6 text-red-600">{error}</div>;
 
   return (
     <div>
-      <TemplateCreatePage initialData={data} initialTemplateId={Number(params.id)} />
+      <TemplateCreatePage initialData={data} initialTemplateId={Number(id)} />
     </div>
   );
 }

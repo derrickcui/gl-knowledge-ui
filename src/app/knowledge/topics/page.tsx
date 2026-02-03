@@ -12,6 +12,7 @@ import {
   fetchTopicReviews,
   publishTopic,
 } from "@/lib/topic-api";
+import { fetchTemplatesList, RuleTemplateItem } from "@/lib/api";
 import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { normalizeForRuleBuilder, createScenario } from "@/components/rule-builder/ruleGroupOps";
@@ -55,6 +56,108 @@ function formatUpdatedAt(updatedAt?: string | null) {
   return parsed.toISOString().slice(0, 10);
 }
 
+function extractTemplateVersion(
+  template: RuleTemplateItem | null,
+  config?: any | null
+) {
+  if (!template && !config) return null;
+  const normalizedConfig = config?.config ?? config?.data ?? config;
+  return (
+    template?.version ??
+    template?.templateVersion ??
+    template?.revision ??
+    template?.rev ??
+    template?.publishedVersion ??
+    template?.configVersion ??
+    normalizedConfig?.version ??
+    null
+  );
+}
+
+function extractTemplateCapabilities(config: any): string {
+  if (!config) return "";
+  const normalized = config?.config ?? config?.data ?? config;
+  const caps = normalized.capabilities ?? normalized.features ?? null;
+  if (Array.isArray(caps)) {
+    return caps.filter(Boolean).join("、");
+  }
+  if (typeof caps === "string") return caps;
+
+  const allowedModes =
+    normalized.allowedModes ?? normalized.allowed_modes ?? null;
+  const importanceAllowed =
+    normalized.importanceAllowed ??
+    normalized.importance_allowed ??
+    normalized.allowImportance ??
+    false;
+  const positionRules =
+    normalized.positionRules ?? normalized.position_rules ?? null;
+
+  const parts: string[] = [];
+  if (allowedModes && typeof allowedModes === "object") {
+    const modeLabels: string[] = [];
+    if (allowedModes.all) modeLabels.push("全部满足/任一满足");
+    if (allowedModes.partial) modeLabels.push("满足部分条件");
+    if (allowedModes.weighted)
+      modeLabels.push("满足部分条件并综合重要性判断");
+    if (modeLabels.length === 1) {
+      parts.push(`仅支持“${modeLabels[0]}”`);
+    } else if (modeLabels.length > 1) {
+      parts.push(`支持“${modeLabels.join(" / ")}”`);
+    }
+  } else if (
+    "allowAll" in normalized ||
+    "allowAccrue" in normalized ||
+    "allowLogsum" in normalized
+  ) {
+    const modeLabels: string[] = [];
+    if (normalized.allowAll) modeLabels.push("全部满足/任一满足");
+    if (normalized.allowAccrue) modeLabels.push("满足部分条件");
+    if (normalized.allowLogsum)
+      modeLabels.push("满足部分条件并综合重要性判断");
+    if (modeLabels.length === 1) {
+      parts.push(`仅支持“${modeLabels[0]}”`);
+    } else if (modeLabels.length > 1) {
+      parts.push(`支持“${modeLabels.join(" / ")}”`);
+    }
+  }
+
+  if (importanceAllowed) {
+    parts.push("支持“条件重要性”");
+  }
+
+  if (positionRules && typeof positionRules === "object") {
+    const positionLabels: Record<string, string> = {
+      paragraph: "同一段",
+      sentence: "同一句",
+      order: "前后顺序",
+      near: "彼此附近",
+    };
+    const enabled = Object.entries(positionRules)
+      .filter(([key, value]) => key !== "any" && Boolean(value))
+      .map(([key]) => positionLabels[key] ?? key);
+    if (enabled.length) {
+      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+    }
+  } else if (
+    normalized.allowProximity ||
+    normalized.allowOrder ||
+    normalized.allowSentence ||
+    normalized.allowParagraph
+  ) {
+    const enabled: string[] = [];
+    if (normalized.allowSentence) enabled.push("同一句");
+    if (normalized.allowParagraph) enabled.push("同一段");
+    if (normalized.allowOrder) enabled.push("前后顺序");
+    if (normalized.allowProximity) enabled.push("彼此附近");
+    if (enabled.length) {
+      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+    }
+  }
+
+  return parts.join("；");
+}
+
 export default function TopicsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -68,6 +171,14 @@ export default function TopicsPage() {
     title: string;
     message?: string;
   } | null>(null);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<RuleTemplateItem | null>(null);
+  const [selectedTemplateVersion, setSelectedTemplateVersion] =
+    useState<number | string | null>(null);
+  const [templateConfigs, setTemplateConfigs] = useState<
+    Record<string, any | null>
+  >({});
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
@@ -233,7 +344,7 @@ export default function TopicsPage() {
         <button
           type="button"
           className="h-9 rounded-md border px-3 text-sm"
-          onClick={() => setCreateOpen(true)}
+          onClick={() => setTemplateDialogOpen(true)}
         >
           + New Topic
         </button>
@@ -430,21 +541,32 @@ export default function TopicsPage() {
         loading={createLoading}
         name={createName}
         description={createDescription}
+        template={selectedTemplate}
+        templateVersion={selectedTemplateVersion}
         onChangeName={setCreateName}
         onChangeDescription={setCreateDescription}
+        onBack={() => {
+          setCreateOpen(false);
+          setTemplateDialogOpen(true);
+        }}
         onCancel={() => {
           setCreateOpen(false);
           setCreateName("");
           setCreateDescription("");
           setCreateError(null);
+          setSelectedTemplate(null);
+          setSelectedTemplateVersion(null);
         }}
         onCreate={async () => {
-          if (!createName.trim()) return;
+          if (!createName.trim() || !createDescription.trim()) return;
+          if (!selectedTemplate) return;
           setCreateLoading(true);
           setCreateError(null);
           const result = await createTopic({
             name: createName.trim(),
             description: createDescription.trim() || undefined,
+            template_id: selectedTemplate.id,
+            template_version: selectedTemplateVersion,
           });
           if (result.data) {
             const draftRule = ruleNodeToBusinessRule(
@@ -467,6 +589,8 @@ export default function TopicsPage() {
             setCreateOpen(false);
             setCreateName("");
             setCreateDescription("");
+            setSelectedTemplate(null);
+            setSelectedTemplateVersion(null);
             router.push(
               `/knowledge/topics/${encodeURIComponent(
                 result.data.id
@@ -490,6 +614,26 @@ export default function TopicsPage() {
         }}
         onConfirm={handleReviewConfirm}
       />
+      <SelectTemplateDialog
+        open={templateDialogOpen}
+        templateConfigs={templateConfigs}
+        onConfigsLoaded={setTemplateConfigs}
+        onCancel={() => {
+          setTemplateDialogOpen(false);
+          setSelectedTemplate(null);
+        }}
+        onNext={(template) => {
+          setSelectedTemplate(template);
+          setSelectedTemplateVersion(
+            extractTemplateVersion(
+              template,
+              templateConfigs[String(template.id)]
+            )
+          );
+          setTemplateDialogOpen(false);
+          setCreateOpen(true);
+        }}
+      />
     </div>
   );
 }
@@ -499,8 +643,11 @@ function CreateTopicDialog({
   loading,
   name,
   description,
+  template,
+  templateVersion,
   onChangeName,
   onChangeDescription,
+  onBack,
   onCancel,
   onCreate,
   error,
@@ -509,20 +656,34 @@ function CreateTopicDialog({
   loading: boolean;
   name: string;
   description: string;
+  template: RuleTemplateItem | null;
+  templateVersion: number | string | null;
   onChangeName: (value: string) => void;
   onChangeDescription: (value: string) => void;
+  onBack: () => void;
   onCancel: () => void;
   onCreate: () => void;
   error: string | null;
 }) {
   if (!open) return null;
 
-  const canCreate = name.trim().length > 0 && !loading;
+  const canCreate =
+    !!template &&
+    !!templateVersion &&
+    name.trim().length > 0 &&
+    description.trim().length > 0 &&
+    !loading;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[520px] rounded-lg bg-white p-6 shadow-xl">
-        <div className="text-base font-semibold">Create Topic</div>
+        <div className="text-base font-semibold">新建主题 · 基本信息</div>
+        <div className="mt-2 text-sm text-muted-foreground">
+          已选模板：{template ? template.name : "（无）"}
+          {template && templateVersion
+            ? ` · 版本 ${templateVersion}`
+            : ""}
+        </div>
         {error && (
           <div className="mt-3">
             <FeedbackBanner type="error" title={error} />
@@ -530,24 +691,20 @@ function CreateTopicDialog({
         )}
         <div className="mt-4 space-y-4 text-sm">
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Topic Name *
-            </label>
+            <label className="text-sm font-medium">主题名称*</label>
             <input
               type="text"
               className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              placeholder="Topic name"
+              placeholder="填写主题名称"
               value={name}
               onChange={(event) => onChangeName(event.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Description (optional)
-            </label>
+            <label className="text-sm font-medium">业务说明*</label>
             <textarea
               className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
-              placeholder="What this topic is for"
+              placeholder="说明这个主题用于什么"
               value={description}
               onChange={(event) =>
                 onChangeDescription(event.target.value)
@@ -556,6 +713,14 @@ function CreateTopicDialog({
           </div>
         </div>
         <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-md border px-3 py-1 text-sm"
+            onClick={onBack}
+            disabled={loading}
+          >
+            上一步
+          </button>
           <button
             type="button"
             className="rounded-md border px-3 py-1 text-sm"
@@ -570,7 +735,7 @@ function CreateTopicDialog({
             onClick={onCreate}
             disabled={!canCreate}
           >
-            {loading ? "Creating..." : "Create"}
+            {loading ? "创建中..." : "创建并进入"}
           </button>
         </div>
       </div>
@@ -621,6 +786,188 @@ function SubmitReviewDialog({
             onClick={onConfirm}
           >
             确认提交
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectTemplateDialog({
+  open,
+  templateConfigs,
+  onConfigsLoaded,
+  onCancel,
+  onNext,
+}: {
+  open: boolean;
+  templateConfigs: Record<string, any | null>;
+  onConfigsLoaded: (next: Record<string, any | null>) => void;
+  onCancel: () => void;
+  onNext: (template: RuleTemplateItem) => void;
+}) {
+  const [templates, setTemplates] = useState<RuleTemplateItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [selectedId, setSelectedId] = useState<number | string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    async function loadPublished() {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetchTemplatesList({ status: "PUBLISHED" });
+        if (res.error) throw new Error(res.error);
+        if (!mounted) return;
+        const list = res.data ?? [];
+        setTemplates(list);
+        const configEntries = await Promise.all(
+          list.map(async (tpl) => {
+            try {
+              const resp = await fetch(
+                `/api/templates/${encodeURIComponent(
+                  String(tpl.id)
+                )}/config`,
+                { cache: "no-store" }
+              );
+              if (!resp.ok) return [String(tpl.id), null] as const;
+              const json = await resp.json();
+              return [String(tpl.id), json?.data ?? json] as const;
+            } catch {
+              return [String(tpl.id), null] as const;
+            }
+          })
+        );
+        if (!mounted) return;
+        const nextConfigs: Record<string, any | null> = {};
+        configEntries.forEach(([id, cfg]) => {
+          nextConfigs[id] = cfg ?? null;
+        });
+        onConfigsLoaded(nextConfigs);
+      } catch (e: any) {
+        if (mounted) setError(e?.message ?? "Unable to load templates.");
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    }
+    loadPublished();
+    return () => {
+      mounted = false;
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  const filtered = templates.filter((tpl) => {
+    const text = `${tpl.name ?? ""} ${tpl.purpose ?? ""} ${tpl.description ?? ""}`
+      .toLowerCase()
+      .trim();
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    return text.includes(needle);
+  });
+
+  const selectedTemplate =
+    templates.find((tpl) => String(tpl.id) === String(selectedId)) ?? null;
+  const selectedVersion = extractTemplateVersion(
+    selectedTemplate,
+    templateConfigs[String(selectedTemplate?.id ?? "")]
+  );
+  const canProceed = !!selectedTemplate && !!selectedVersion && !loading;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="w-[640px] rounded-lg bg-white p-6 shadow-xl">
+        <div className="text-base font-semibold">新建主题 · 选择模板</div>
+        <div className="mt-2 text-sm text-muted-foreground">
+          选择一个标准模板开始创建主题（可减少配置步骤）
+        </div>
+
+        <div className="mt-4">
+          <input
+            type="text"
+            className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+            placeholder="搜索模板…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {loading && (
+            <div className="text-sm opacity-60">加载中...</div>
+          )}
+          {error && (
+            <div className="text-sm text-red-600">{error}</div>
+          )}
+          {!loading && !error && filtered.length === 0 && (
+            <div className="text-sm opacity-60">暂无已发布模板</div>
+          )}
+          {!loading &&
+            !error &&
+            filtered.map((tpl) => (
+              <button
+                key={String(tpl.id)}
+                className={`w-full text-left rounded-md border p-3 ${
+                  selectedId === tpl.id ? "ring-2 ring-black" : ""
+                }`}
+                onClick={() => setSelectedId(tpl.id)}
+              >
+                <div className="font-medium">{tpl.name}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {tpl.purpose ?? tpl.description ?? ""}
+                </div>
+                {extractTemplateCapabilities(
+                  templateConfigs[String(tpl.id)]
+                ) && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    能力：
+                    {extractTemplateCapabilities(
+                      templateConfigs[String(tpl.id)]
+                    )}
+                  </div>
+                )}
+                {extractTemplateVersion(
+                  tpl,
+                  templateConfigs[String(tpl.id)]
+                ) && (
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    版本{" "}
+                    {extractTemplateVersion(
+                      tpl,
+                      templateConfigs[String(tpl.id)]
+                    )}
+                  </div>
+                )}
+              </button>
+            ))}
+        </div>
+
+        {selectedTemplate && !selectedVersion && (
+          <div className="mt-3 text-xs text-amber-600">
+            该模板缺少版本信息，无法用于创建主题。
+          </div>
+        )}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            className="h-9 rounded-md border px-3 text-sm"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
+            onClick={() => selectedTemplate && onNext(selectedTemplate)}
+            disabled={!canProceed}
+          >
+            下一步
           </button>
         </div>
       </div>

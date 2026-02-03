@@ -7,9 +7,9 @@ const TEMPLATE_API_BASE =
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const id = params.id;
+  const { id } = await params;
   try {
     const upstream = await fetch(
       `${TEMPLATE_API_BASE}/api/templates/${id}/publish`,
