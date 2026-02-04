@@ -32,18 +32,32 @@ function extractTemplateCapabilities(config: any): string {
   }
   if (typeof caps === "string") return caps;
 
+  const allowModes =
+    normalized.allowModes ?? normalized.allow_modes ?? null;
   const allowedModes =
     normalized.allowedModes ?? normalized.allowed_modes ?? null;
   const importanceAllowed =
+    normalized.importance?.enabled ??
     normalized.importanceAllowed ??
     normalized.importance_allowed ??
     normalized.allowImportance ??
     false;
   const positionRules =
     normalized.positionRules ?? normalized.position_rules ?? null;
+  const proximity = normalized.proximity ?? null;
 
   const parts: string[] = [];
-  if (allowedModes && typeof allowedModes === "object") {
+  if (allowModes && typeof allowModes === "object") {
+    const modeLabels: string[] = [];
+    if (allowModes.ALL) modeLabels.push("全部满足/任一满足");
+    if (allowModes.ACCRUE) modeLabels.push("满足越多越容易成立");
+    if (allowModes.LOGSUM) modeLabels.push("满足部分条件");
+    if (modeLabels.length === 1) {
+      parts.push(`仅支持“${modeLabels[0]}”`);
+    } else if (modeLabels.length > 1) {
+      parts.push(`支持“${modeLabels.join(" / ")}”`);
+    }
+  } else if (allowedModes && typeof allowedModes === "object") {
     const modeLabels: string[] = [];
     if (allowedModes.all) modeLabels.push("全部满足/任一满足");
     if (allowedModes.partial) modeLabels.push("满足部分条件");
@@ -61,9 +75,8 @@ function extractTemplateCapabilities(config: any): string {
   ) {
     const modeLabels: string[] = [];
     if (normalized.allowAll) modeLabels.push("全部满足/任一满足");
-    if (normalized.allowAccrue) modeLabels.push("满足部分条件");
-    if (normalized.allowLogsum)
-      modeLabels.push("满足部分条件并综合重要性判断");
+    if (normalized.allowAccrue) modeLabels.push("满足越多越容易成立");
+    if (normalized.allowLogsum) modeLabels.push("满足部分条件");
     if (modeLabels.length === 1) {
       parts.push(`仅支持“${modeLabels[0]}”`);
     } else if (modeLabels.length > 1) {
@@ -75,7 +88,20 @@ function extractTemplateCapabilities(config: any): string {
     parts.push("支持“条件重要性”");
   }
 
-  if (positionRules && typeof positionRules === "object") {
+  if (proximity && typeof proximity === "object") {
+    const positionLabels: Record<string, string> = {
+      paragraph: "同一段",
+      sentence: "同一句",
+      order: "前后顺序",
+      enabled: "彼此附近",
+    };
+    const enabled = Object.entries(proximity)
+      .filter(([key, value]) => key !== "any" && Boolean(value))
+      .map(([key]) => positionLabels[key] ?? key);
+    if (enabled.length) {
+      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+    }
+  } else if (positionRules && typeof positionRules === "object") {
     const positionLabels: Record<string, string> = {
       paragraph: "同一段",
       sentence: "同一句",

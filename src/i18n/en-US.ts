@@ -192,6 +192,8 @@ export const enUS = {
   "templates.create.title": "Create Rule Template",
   "templates.create.subtitle":
     "Template creation defines the legal boundary of business decisions, not rule writing.",
+  "templates.create.configSubtitle":
+    "Configure capabilities and explanations, then publish.",
   "templates.create.back": "Back to list",
   "templates.create.steps.basic": "Basic info",
   "templates.create.steps.mode": "Decision mode",
@@ -223,8 +225,12 @@ export const enUS = {
   "templates.create.step2.weighted.title":
     "Satisfy some conditions with importance",
   "templates.create.step2.weighted.desc": "LOGSUM + weights",
+  "templates.create.step2.accrue.title": "The more, the easier to satisfy",
+  "templates.create.step2.accrue.desc": "More conditions, higher score (ACCRUE)",
   "templates.create.step2.hint":
     "Unchecked modes will be hidden in the rule editor.",
+  "templates.create.step2.weightedHint":
+    "Enabling importance will automatically turn on Step 3 condition importance.",
   "templates.create.step3.title": "Step 3 · Advanced capability whitelist",
   "templates.create.step3.subtitle":
     "Decide which advanced capabilities are available under this template.",
@@ -362,4 +368,6 @@ export const enUS = {
   "templates.detail.loading": "Loading...",
   "templates.detail.notFound": "Template not found",
   "templates.detail.loadFailed": "Failed to load",
+  "templates.detail.readOnly":
+    "Published templates are read-only and cannot be saved or published.",
 } as const;

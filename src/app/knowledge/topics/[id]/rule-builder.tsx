@@ -349,9 +349,6 @@ function ScenarioCard({
   const allowAll = hasTemplate
     ? templateCapabilities?.allowAll === true
     : true;
-  const allowAny = hasTemplate
-    ? templateCapabilities?.allowAny === true
-    : true;
   const allowAccrue = hasTemplate
     ? templateCapabilities?.allowAccrue === true
     : true;
@@ -364,6 +361,12 @@ function ScenarioCard({
   const allowImportance = hasTemplate
     ? templateCapabilities?.allowImportance === true
     : true;
+  const allowSentence = hasTemplate
+    ? templateCapabilities?.allowLocationSentence === true
+    : true;
+  const allowParagraph = hasTemplate
+    ? templateCapabilities?.allowLocationParagraph === true
+    : true;
   const allowNegate = templateCapabilities?.allowNegate !== false;
   const allowNear = hasTemplate
     ? templateCapabilities?.allowNear === true
@@ -373,13 +376,7 @@ function ScenarioCard({
     : true;
   // When template only allows ALL: scenario header degrades to read-only,
   // operator fixed to AND, and scoring/threshold/importance/accrue UI hidden.
-  const onlyAllowAll =
-    allowAll &&
-    !allowAny &&
-    !allowAccrue &&
-    !allowLogsum &&
-    !allowThreshold &&
-    !allowImportance;
+  const onlyAllowAll = allowAll && !allowAccrue && !allowLogsum;
   const baseTitle =
     scenario.params?.title || t("scenario.title", { index: index + 1 });
   const rawScenarioOperator = scenario.params?.operator ?? "AND";
@@ -410,11 +407,11 @@ function ScenarioCard({
   const thresholdRaw = scenario.params?.threshold ?? 2;
   const threshold = Math.max(2, Math.min(thresholdRaw, conditionCount));
   const allowedOperators = ([
+    "OR",
     allowAll ? "AND" : null,
-    allowAny ? "OR" : null,
+    allowAccrue ? "ACCRUE" : null,
     allowLogsum ? "LOGSUM" : null,
     allowLogsum && allowImportance ? "WEIGHTED" : null,
-    allowAccrue ? "ACCRUE" : null,
   ] as const)
     .filter(
       (
@@ -584,7 +581,6 @@ function ScenarioCard({
     allowLogsum,
     allowImportance,
     allowAll,
-    allowAny,
     allowAccrue,
     readOnly,
     scenario,
@@ -666,9 +662,29 @@ function ScenarioCard({
     });
   }, [readOnly, allowNegate, scenario, onUpdate]);
 
-  const proximityConfig = normalizeProximityConfig(
+  const defaultProximityRange: ProximityRange = allowSentence
+    ? "SENTENCE"
+    : allowParagraph
+    ? "PARAGRAPH"
+    : "DOCUMENT";
+  const rawProximityConfig = normalizeProximityConfig(
     scenario.params?.proximity as ScenarioProximityConfig | undefined
   );
+  const resolvedRange =
+    rawProximityConfig.range === "SENTENCE" && !allowSentence
+      ? allowParagraph
+        ? "PARAGRAPH"
+        : "DOCUMENT"
+      : rawProximityConfig.range === "PARAGRAPH" && !allowParagraph
+      ? "DOCUMENT"
+      : rawProximityConfig.range;
+  const proximityConfig =
+    resolvedRange === rawProximityConfig.range
+      ? rawProximityConfig
+      : {
+          ...rawProximityConfig,
+          range: resolvedRange,
+        };
   const proximityRelation = proximityConfig.relation ?? "NONE";
 
   const handleProximityChange = (next?: ScenarioProximityConfig) => {
@@ -692,10 +708,18 @@ function ScenarioCard({
     const base = normalizeProximityConfig(
       scenario.params?.proximity as ScenarioProximityConfig | undefined
     );
+    const baseRange =
+      base.range === "SENTENCE" && !allowSentence
+        ? allowParagraph
+          ? "PARAGRAPH"
+          : "DOCUMENT"
+        : base.range === "PARAGRAPH" && !allowParagraph
+        ? "DOCUMENT"
+        : base.range;
     const next: ScenarioProximityConfig = {
       ...base,
       relation,
-      range: hasExisting ? base.range ?? "SENTENCE" : "SENTENCE",
+      range: hasExisting ? baseRange ?? defaultProximityRange : defaultProximityRange,
     };
     if (relation === "NEAR") {
       const distance = clampDistance(
@@ -1117,10 +1141,15 @@ function ScenarioCard({
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                         {([
-                          { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" },
-                          { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" },
+                          allowSentence
+                            ? { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" }
+                            : null,
+                          allowParagraph
+                            ? { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" }
+                            : null,
                           { id: "DOCUMENT", label: "\u6574\u4e2a\u6587\u6863\u4e2d" },
-                        ] as const).map((option) => (
+                        ] as const).map((option) =>
+                          option ? (
                           <label
                             key={option.id}
                             className={`inline-flex items-center gap-1 ${
@@ -1136,11 +1165,12 @@ function ScenarioCard({
                               onChange={() =>
                                 handleProximityRangeChange(option.id)
                               }
-                              className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
-                            />
-                            {option.label}
-                          </label>
-                        ))}
+                            className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                          />
+                          {option.label}
+                        </label>
+                          ) : null
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1162,10 +1192,15 @@ function ScenarioCard({
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                         {([
-                          { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" },
-                          { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" },
+                          allowSentence
+                            ? { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" }
+                            : null,
+                          allowParagraph
+                            ? { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" }
+                            : null,
                           { id: "DOCUMENT", label: "\u6574\u4e2a\u6587\u6863\u4e2d" },
-                        ] as const).map((option) => (
+                        ] as const).map((option) =>
+                          option ? (
                           <label
                             key={option.id}
                             className={`inline-flex items-center gap-1 ${
@@ -1181,11 +1216,12 @@ function ScenarioCard({
                               onChange={() =>
                                 handleProximityRangeChange(option.id)
                               }
-                              className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
-                            />
-                            {option.label}
-                          </label>
-                        ))}
+                            className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                          />
+                          {option.label}
+                        </label>
+                          ) : null
+                        )}
                       </div>
                     </div>
                   </div>

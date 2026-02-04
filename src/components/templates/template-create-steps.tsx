@@ -4,6 +4,7 @@ type TemplateType = "policy" | "qualification" | "process" | "custom";
 
 type AllowedModes = {
   all: boolean;
+  accrue: boolean;
   partial: boolean;
   weighted: boolean;
 };
@@ -207,10 +208,31 @@ export function TemplateCreateSteps(props: TemplateCreateStepsProps) {
               </div>
             </div>
           </label>
+
+          <label className="flex items-start gap-3 rounded-md border px-3 py-3 text-sm">
+            <input
+              type="checkbox"
+              checked={allowedModes.accrue}
+              onChange={(event) =>
+                onAllowedModeChange("accrue", event.target.checked)
+              }
+            />
+            <div>
+              <div className="font-medium">
+                {t("templates.create.step2.accrue.title")}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {t("templates.create.step2.accrue.desc")}
+              </div>
+            </div>
+          </label>
         </div>
 
         <div className="text-xs text-muted-foreground">
           {t("templates.create.step2.hint")}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          {t("templates.create.step2.weightedHint")}
         </div>
       </div>
     );
@@ -239,6 +261,7 @@ export function TemplateCreateSteps(props: TemplateCreateStepsProps) {
                 name="importanceAllowed"
                 checked={!importanceAllowed}
                 onChange={() => onImportanceAllowedChange(false)}
+                disabled={allowedModes.weighted}
               />
               <span>{t("templates.create.step3.importance.off")}</span>
             </label>

@@ -41,6 +41,7 @@ export default function TemplateCreatePage({
   const [customType, setCustomType] = useState("");
   const [allowedModes, setAllowedModes] = useState({
     all: true,
+    accrue: false,
     partial: false,
     weighted: false,
   });
@@ -78,6 +79,44 @@ export default function TemplateCreatePage({
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [templateId, setTemplateId] = useState<number | null>(null);
+  const isPublished =
+    String(initialData?.status ?? "").toUpperCase() === "PUBLISHED";
+  const showTemplateName =
+    (step > 0 || !!initialTemplateId || !!initialData?.name) &&
+    name.trim().length > 0;
+
+  useEffect(() => {
+    if (allowedModes.weighted && !allowedModes.partial) {
+      setAllowedModes((prev) => ({ ...prev, partial: true }));
+    }
+    if (allowedModes.weighted && !importanceAllowed) {
+      setImportanceAllowed(true);
+    }
+  }, [allowedModes.weighted, allowedModes.partial, importanceAllowed]);
+
+  function buildConfigPayload() {
+    const allowLogsum = allowedModes.partial || allowedModes.weighted;
+    return {
+      allowModes: {
+        ALL: allowedModes.all,
+        ACCRUE: allowedModes.accrue,
+        LOGSUM: allowLogsum,
+      },
+      importance: {
+        enabled: importanceAllowed || allowedModes.weighted,
+      },
+      proximity: {
+        enabled: positionRules.near,
+        sentence: positionRules.sentence,
+        paragraph: positionRules.paragraph,
+        order: positionRules.order,
+      },
+      explain: {
+        success: explainPositive,
+        fail: explainNegative,
+      },
+    };
+  }
 
   useEffect(() => {
     if (initRef.current) return;
@@ -121,10 +160,36 @@ export default function TemplateCreatePage({
         setType("custom");
         setCustomType(String(normalized.customType));
       }
+      const allowModes =
+        (normalized.allowModes ?? normalized.allow_modes) &&
+        typeof (normalized.allowModes ?? normalized.allow_modes) === "object"
+          ? (normalized.allowModes ?? normalized.allow_modes)
+          : null;
       const hasAllowedModes =
         normalized.allowedModes &&
         typeof normalized.allowedModes === "object";
-      if (hasAllowedModes) {
+      const allowLogsum =
+        allowModes && "LOGSUM" in allowModes
+          ? Boolean(allowModes.LOGSUM)
+          : undefined;
+      const importanceEnabled =
+        normalized.importance?.enabled ?? normalized.importanceEnabled;
+      if (allowModes) {
+        setAllowedModes((prev) => ({
+          ...prev,
+          all:
+            "ALL" in allowModes ? Boolean(allowModes.ALL) : prev.all,
+          accrue:
+            "ACCRUE" in allowModes
+              ? Boolean(allowModes.ACCRUE)
+              : prev.accrue,
+          partial: allowLogsum !== undefined ? allowLogsum : prev.partial,
+          weighted:
+            allowLogsum && importanceEnabled !== undefined
+              ? Boolean(importanceEnabled)
+              : prev.weighted,
+        }));
+      } else if (hasAllowedModes) {
         setAllowedModes((prev) => ({
           ...prev,
           all:
@@ -151,25 +216,65 @@ export default function TemplateCreatePage({
             "allowAll" in normalized
               ? Boolean(normalized.allowAll)
               : prev.all,
-          partial:
+          accrue:
             "allowAccrue" in normalized
               ? Boolean(normalized.allowAccrue)
+              : prev.accrue,
+          partial:
+            "allowLogsum" in normalized
+              ? Boolean(normalized.allowLogsum)
               : prev.partial,
           weighted:
             "allowLogsum" in normalized
-              ? Boolean(normalized.allowLogsum)
+              ? Boolean(normalized.allowLogsum) &&
+                Boolean(
+                  normalized.allowImportance ??
+                    normalized.importance?.enabled
+                )
               : prev.weighted,
         }));
       }
-      if (typeof normalized.importanceAllowed === "boolean") {
+      if (typeof importanceEnabled === "boolean") {
+        setImportanceAllowed(Boolean(importanceEnabled));
+      } else if (typeof normalized.importanceAllowed === "boolean") {
         setImportanceAllowed(normalized.importanceAllowed);
       } else if ("allowImportance" in normalized) {
         setImportanceAllowed(Boolean(normalized.allowImportance));
       }
+      const proximity =
+        normalized.proximity && typeof normalized.proximity === "object"
+          ? normalized.proximity
+          : null;
       const hasPositionRules =
         normalized.positionRules &&
         typeof normalized.positionRules === "object";
-      if (hasPositionRules) {
+      if (proximity) {
+        setPositionRules((prev) => {
+          const paragraph =
+            "paragraph" in proximity
+              ? Boolean(proximity.paragraph)
+              : prev.paragraph;
+          const sentence =
+            "sentence" in proximity
+              ? Boolean(proximity.sentence)
+              : prev.sentence;
+          const order =
+            "order" in proximity ? Boolean(proximity.order) : prev.order;
+          const near =
+            "enabled" in proximity
+              ? Boolean(proximity.enabled)
+              : prev.near;
+          const any = !(paragraph || sentence || order || near);
+          return {
+            ...prev,
+            any,
+            paragraph,
+            sentence,
+            order,
+            near,
+          };
+        });
+      } else if (hasPositionRules) {
         setPositionRules((prev) => ({
           ...prev,
           any:
@@ -234,9 +339,13 @@ export default function TemplateCreatePage({
         });
       }
       const explainPositiveValue =
-        normalized.explainPositive ?? normalized.explainSuccess;
+        normalized.explain?.success ??
+        normalized.explainPositive ??
+        normalized.explainSuccess;
       const explainNegativeValue =
-        normalized.explainNegative ?? normalized.explainFail;
+        normalized.explain?.fail ??
+        normalized.explainNegative ??
+        normalized.explainFail;
       if (explainPositiveValue) {
         setExplainPositive(String(explainPositiveValue));
       }
@@ -275,7 +384,12 @@ export default function TemplateCreatePage({
       return name.trim().length > 0 && purpose.trim().length > 0;
     }
     if (step === 1) {
-      return allowedModes.all || allowedModes.partial || allowedModes.weighted;
+      return (
+        allowedModes.all ||
+        allowedModes.accrue ||
+        allowedModes.partial ||
+        allowedModes.weighted
+      );
     }
     if (step === 3) {
       return explainPositive.trim().length > 0;
@@ -334,6 +448,13 @@ export default function TemplateCreatePage({
 
   async function handleSaveCurrentStep() {
     try {
+      if (isPublished) {
+        setStatusMessage({
+          type: "info",
+          title: t("templates.detail.readOnly"),
+        });
+        return;
+      }
       setSubmitting(true);
       if (step === 0) {
         setStatusMessage({
@@ -368,18 +489,8 @@ export default function TemplateCreatePage({
         type: "info",
         title: t("templates.create.status.savingConfig"),
       });
-      const payload = {
-        name,
-        purpose,
-        type: type === "custom" ? customType || "custom" : type,
-        customType: type === "custom" ? customType : undefined,
-        allowedModes,
-        importanceAllowed,
-        positionRules,
-        explainPositive,
-        explainNegative,
-      };
-      const cfg = await configureTemplate(templateId, payload as any);
+      const payload = buildConfigPayload();
+      const cfg = await configureTemplate(templateId, payload);
       if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
       setStatusMessage({
         type: "success",
@@ -399,6 +510,13 @@ export default function TemplateCreatePage({
   function handleCreate() {
     (async () => {
       try {
+        if (isPublished) {
+          setStatusMessage({
+            type: "info",
+            title: t("templates.detail.readOnly"),
+          });
+          return;
+        }
         setSubmitting(true);
         setStatusMessage({
           type: "info",
@@ -419,18 +537,8 @@ export default function TemplateCreatePage({
           setTemplateId(id);
         }
 
-        const payload = {
-          name,
-          purpose,
-          type: type === "custom" ? customType || "custom" : type,
-          customType: type === "custom" ? customType : undefined,
-          allowedModes,
-          importanceAllowed,
-          positionRules,
-          explainPositive,
-          explainNegative,
-        };
-        const cfg = await configureTemplate(id, payload as any);
+        const payload = buildConfigPayload();
+        const cfg = await configureTemplate(id, payload);
         if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
 
         setStatusMessage({
@@ -462,9 +570,13 @@ export default function TemplateCreatePage({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">
-            {t("templates.create.title")}
+            {showTemplateName ? name : t("templates.create.title")}
           </h1>
-          <p className="text-sm opacity-70">{t("templates.create.subtitle")}</p>
+          <p className="text-sm opacity-70">
+            {showTemplateName
+              ? t("templates.create.configSubtitle")
+              : t("templates.create.subtitle")}
+          </p>
         </div>
         <button
           type="button"
@@ -561,7 +673,7 @@ export default function TemplateCreatePage({
                 type="button"
                 className="h-9 rounded-md border px-3 text-sm"
                 onClick={handleSaveCurrentStep}
-                disabled={submitting}
+                disabled={submitting || isPublished}
               >
                 {t("templates.create.save")}
               </button>
@@ -580,7 +692,7 @@ export default function TemplateCreatePage({
                 type="button"
                 className="h-9 rounded-md border px-3 text-sm"
                 onClick={handleSaveCurrentStep}
-                disabled={submitting}
+                disabled={submitting || isPublished}
               >
                 {t("templates.create.save")}
               </button>
@@ -588,7 +700,7 @@ export default function TemplateCreatePage({
                 type="button"
                 className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
                 onClick={handleCreate}
-                disabled={!canNext || submitting}
+                disabled={!canNext || submitting || isPublished}
               >
                 {t("templates.create.publish")}
               </button>
