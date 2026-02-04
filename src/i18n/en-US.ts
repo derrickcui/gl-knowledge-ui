@@ -107,6 +107,9 @@ export const enUS = {
   "scenario.summary.importance":
     "Within the same context, the system evaluates conditions based on their importance.",
   "scenario.conditionsLabel": "Scenario conditions:",
+  "scenario.conditions.lockedTitle": "Mode: Must satisfy all conditions",
+  "scenario.conditions.lockedDesc":
+    "This template requires all conditions to be met.",
   "scenario.and": "Must match all conditions",
   "scenario.or": "Match any condition",
   "scenario.importance": "Match conditions and evaluate importance",

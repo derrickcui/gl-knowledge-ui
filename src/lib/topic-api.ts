@@ -106,6 +106,8 @@ type ExplainPreviewViewModel = {
 
 type TopicDraftBusinessRequest = {
   rule: BusinessRule;
+  templateId?: number | string | null;
+  templateVersion?: number | string | null;
   updatedBy?: string | null;
 };
 
@@ -313,8 +315,8 @@ export async function searchTopics(params?: {
 export async function createTopic(params: {
   name: string;
   description?: string;
-  template_id?: number | string | null;
-  template_version?: number | string | null;
+  templateId?: number | string | null;
+  templateVersion?: number | string | null;
 }): Promise<ApiResult<CreateTopicResponse>> {
   const result = await requestJson<CreateTopicApiResponse>(
     TOPICS_API_PROXY,

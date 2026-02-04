@@ -13,6 +13,7 @@ import {
 } from "@/components/rule-builder/ruleGroupOps";
 import { GroupExplainEditor } from "@/components/rule-builder/GroupExplainEditor";
 import { GroupPriorityEditor } from "@/components/rule-builder/GroupPriorityEditor";
+import type { RuleTemplateCapability } from "@/components/rule-builder/templateCapabilities";
 import { t } from "@/i18n";
 
 type ProximityRelation = "NONE" | "NEAR" | "ORDER";
@@ -102,6 +103,7 @@ interface Props {
   onAddScenario: () => void;
   onEditCondition?: (scenarioIndex: number, conditionIndex: number) => void;
   readOnly?: boolean;
+  templateCapabilities?: RuleTemplateCapability | null;
 }
 
 export function RuleBuilder({
@@ -114,6 +116,7 @@ export function RuleBuilder({
   onAddScenario,
   onEditCondition,
   readOnly = false,
+  templateCapabilities,
 }: Props) {
   const root = normalizeForRuleBuilder(rule);
   const scenarios = root.children ?? [];
@@ -234,6 +237,7 @@ export function RuleBuilder({
               hoverPath={hoverPath}
               highlightedConditionId={highlightedConditionId}
               readOnly={readOnly}
+              templateCapabilities={templateCapabilities}
               onSelect={onSelect}
               onUpdate={(nextScenario) => {
                 const nextRule = {
@@ -271,6 +275,7 @@ function ScenarioCard({
   hoverPath,
   highlightedConditionId,
   readOnly,
+  templateCapabilities,
   onSelect,
   onDelete,
   onUpdate,
@@ -283,6 +288,7 @@ function ScenarioCard({
   hoverPath?: ActivePath | null;
   highlightedConditionId?: string;
   readOnly: boolean;
+  templateCapabilities?: RuleTemplateCapability | null;
   onSelect: (path: ActivePath) => void;
   onDelete: () => void;
   onUpdate: (nextScenario: RuleNode) => void;
@@ -339,6 +345,41 @@ function ScenarioCard({
 
   const scenarioPath: ActivePath = [index];
   const selectedScenario = activePath.length > 0 && activePath[0] === index;
+  const hasTemplate = !!templateCapabilities;
+  const allowAll = hasTemplate
+    ? templateCapabilities?.allowAll === true
+    : true;
+  const allowAny = hasTemplate
+    ? templateCapabilities?.allowAny === true
+    : true;
+  const allowAccrue = hasTemplate
+    ? templateCapabilities?.allowAccrue === true
+    : true;
+  const allowLogsum = hasTemplate
+    ? templateCapabilities?.allowLogsum === true
+    : true;
+  const allowThreshold = hasTemplate
+    ? templateCapabilities?.allowThreshold === true
+    : true;
+  const allowImportance = hasTemplate
+    ? templateCapabilities?.allowImportance === true
+    : true;
+  const allowNegate = templateCapabilities?.allowNegate !== false;
+  const allowNear = hasTemplate
+    ? templateCapabilities?.allowNear === true
+    : true;
+  const allowOrder = hasTemplate
+    ? templateCapabilities?.allowOrder === true
+    : true;
+  // When template only allows ALL: scenario header degrades to read-only,
+  // operator fixed to AND, and scoring/threshold/importance/accrue UI hidden.
+  const onlyAllowAll =
+    allowAll &&
+    !allowAny &&
+    !allowAccrue &&
+    !allowLogsum &&
+    !allowThreshold &&
+    !allowImportance;
   const baseTitle =
     scenario.params?.title || t("scenario.title", { index: index + 1 });
   const rawScenarioOperator = scenario.params?.operator ?? "AND";
@@ -359,51 +400,73 @@ function ScenarioCard({
       : rawScenarioOperator === "ACCRUE"
       ? "ACCRUE"
       : rawScenarioOperator;
-  const scenarioOperatorLabel =
-    scenarioOperator === "OR"
-      ? t("scenario.operator.anyLabel")
-      : scenarioOperator === "ACCRUE"
-      ? t("scenario.operator.accrueSoftLabel")
-      : scenarioOperator === "WEIGHTED"
-      ? t("scenario.operator.importanceLabel")
-      : scenarioOperator === "LOGSUM"
-      ? t("scenario.operator.accrueLabel")
-      : t("scenario.operator.allLabel");
   const conditionCount = scenario.children?.length ?? 0;
   const isTopicScene = hasTopicRef(scenario);
   const canUseLogsum = conditionCount >= 3;
-  const canUseImportance = conditionCount >= 2 && !isTopicScene;
+  const canUseImportance =
+    conditionCount >= 2 && !isTopicScene && allowImportance;
   const proximityEligible =
     !isTopicScene && isScenarioProximityEligible(scenario);
   const thresholdRaw = scenario.params?.threshold ?? 2;
   const threshold = Math.max(2, Math.min(thresholdRaw, conditionCount));
-  const scenarioTitle =
-    scenarioOperator === "LOGSUM"
-      ? t("scenario.title.accrue", {
-          title: baseTitle,
-          threshold,
-        })
-      : scenarioOperator === "ACCRUE"
-      ? t("scenario.title.accrueSoft", { title: baseTitle })
-      : baseTitle;
-  const scenarioSummary =
-    scenarioOperator === "OR"
-      ? t("scenario.summary.any")
-      : scenarioOperator === "WEIGHTED"
-      ? t("scenario.summary.importance")
-      : scenarioOperator === "LOGSUM"
-      ? t("scenario.summary.accrue", {
-          threshold,
-          count: conditionCount,
-        })
-      : scenarioOperator === "ACCRUE"
-      ? t("scenario.summary.accrueSoft")
-      : t("scenario.summary.all");
+  const allowedOperators = ([
+    allowAll ? "AND" : null,
+    allowAny ? "OR" : null,
+    allowLogsum ? "LOGSUM" : null,
+    allowLogsum && allowImportance ? "WEIGHTED" : null,
+    allowAccrue ? "ACCRUE" : null,
+  ] as const)
+    .filter(
+      (
+        value
+      ): value is "AND" | "OR" | "LOGSUM" | "WEIGHTED" | "ACCRUE" =>
+        Boolean(value)
+    );
+  const fallbackOperator = allowedOperators[0] ?? "AND";
+  const effectiveOperator = allowedOperators.includes(scenarioOperator)
+    ? scenarioOperator
+    : fallbackOperator;
+  const scenarioOperatorLabel = onlyAllowAll
+    ? t("scenario.operator.allLabel")
+    : effectiveOperator === "OR"
+    ? t("scenario.operator.anyLabel")
+    : effectiveOperator === "ACCRUE"
+    ? t("scenario.operator.accrueSoftLabel")
+    : effectiveOperator === "WEIGHTED"
+    ? t("scenario.operator.importanceLabel")
+    : effectiveOperator === "LOGSUM"
+    ? t("scenario.operator.accrueLabel")
+    : t("scenario.operator.allLabel");
+  const scenarioTitle = onlyAllowAll
+    ? baseTitle
+    : effectiveOperator === "LOGSUM"
+    ? t("scenario.title.accrue", {
+        title: baseTitle,
+        threshold,
+      })
+    : effectiveOperator === "ACCRUE"
+    ? t("scenario.title.accrueSoft", { title: baseTitle })
+    : baseTitle;
+  const scenarioSummary = onlyAllowAll
+    ? t("scenario.summary.all")
+    : effectiveOperator === "OR"
+    ? t("scenario.summary.any")
+    : effectiveOperator === "WEIGHTED"
+    ? t("scenario.summary.importance")
+    : effectiveOperator === "LOGSUM"
+    ? t("scenario.summary.accrue", {
+        threshold,
+        count: conditionCount,
+      })
+    : effectiveOperator === "ACCRUE"
+    ? t("scenario.summary.accrueSoft")
+    : t("scenario.summary.all");
 
   const handleScenarioOperatorChange = (
     nextOperator: "AND" | "OR" | "LOGSUM" | "WEIGHTED" | "ACCRUE"
   ) => {
     if (readOnly) return;
+    if (!allowedOperators.includes(nextOperator)) return;
     if (nextOperator === "LOGSUM" && !canUseLogsum) return;
     if (nextOperator === "WEIGHTED" && !canUseImportance) return;
     const isWeighted = nextOperator === "WEIGHTED";
@@ -442,7 +505,26 @@ function ScenarioCard({
   const isEmpty = !scenario.children || scenario.children.length === 0;
 
   useEffect(() => {
+    if (!onlyAllowAll) return;
+    if (scenario.params?.operator === "AND") return;
+    onUpdate({
+      ...scenario,
+      params: {
+        ...scenario.params,
+        operator: "AND",
+        mode: undefined,
+        threshold: undefined,
+        importanceMode: undefined,
+      },
+    });
+  }, [onlyAllowAll, scenario, onUpdate]);
+
+  useEffect(() => {
     if (readOnly) return;
+    if (!allowedOperators.includes(scenarioOperator)) {
+      handleScenarioOperatorChange(fallbackOperator);
+      return;
+    }
     if (scenarioOperator === "LOGSUM" && !canUseLogsum) {
       onUpdate({
         ...scenario,
@@ -499,26 +581,90 @@ function ScenarioCard({
   }, [
     canUseLogsum,
     canUseImportance,
+    allowLogsum,
+    allowImportance,
+    allowAll,
+    allowAny,
+    allowAccrue,
     readOnly,
     scenario,
     scenarioOperator,
     threshold,
     thresholdRaw,
     onUpdate,
+    allowedOperators,
+    fallbackOperator,
+    handleScenarioOperatorChange,
   ]);
 
   useEffect(() => {
     if (readOnly) return;
     if (!scenario.params?.proximity) return;
-    if (proximityEligible) return;
+    if (!proximityEligible) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          proximity: undefined,
+        },
+      });
+      return;
+    }
+    if (!allowNear && !allowOrder) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          proximity: undefined,
+        },
+      });
+      return;
+    }
+    const relation =
+      (scenario.params?.proximity as ScenarioProximityConfig | undefined)
+        ?.relation ?? "NONE";
+    if (relation === "NEAR" && !allowNear) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          proximity: undefined,
+        },
+      });
+      return;
+    }
+    if (relation === "ORDER" && !allowOrder) {
+      onUpdate({
+        ...scenario,
+        params: {
+          ...scenario.params,
+          proximity: undefined,
+        },
+      });
+    }
+  }, [proximityEligible, readOnly, scenario, onUpdate, allowNear, allowOrder]);
+
+  useEffect(() => {
+    if (readOnly) return;
+    if (allowNegate) return;
+    const children = scenario.children ?? [];
+    const hasNegated = children.some((child) => child?.params?.negated);
+    if (!hasNegated) return;
     onUpdate({
       ...scenario,
-      params: {
-        ...scenario.params,
-        proximity: undefined,
-      },
+      children: children.map((child) =>
+        child
+          ? {
+              ...child,
+              params: {
+                ...child.params,
+                negated: false,
+              },
+            }
+          : child
+      ),
     });
-  }, [proximityEligible, readOnly, scenario, onUpdate]);
+  }, [readOnly, allowNegate, scenario, onUpdate]);
 
   const proximityConfig = normalizeProximityConfig(
     scenario.params?.proximity as ScenarioProximityConfig | undefined
@@ -621,59 +767,55 @@ function ScenarioCard({
           <div className="mt-1 text-xs text-muted-foreground">
             {scenarioSummary}
           </div>
-          <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-            <span className="text-[11px] font-medium text-slate-600">
-              {t("scenario.conditionsLabel")}
-            </span>
-            {(
-              [
-                "AND",
-                "OR",
-                "LOGSUM",
-                canUseImportance ? "WEIGHTED" : null,
-                "ACCRUE",
-              ] as const
-            )
-              .filter(
-                (
-                  value
-                ): value is "AND" | "OR" | "LOGSUM" | "WEIGHTED" | "ACCRUE" =>
-                  Boolean(value)
-              )
-              .map((value) => {
-              const disabledOption =
-                readOnly ||
-                (value === "LOGSUM" && !canUseLogsum) ||
-                (value === "WEIGHTED" && !canUseImportance);
-              return (
-                <label
-                  key={value}
-                  className={`inline-flex items-center gap-1 text-[12px] font-medium ${
-                    disabledOption ? "text-slate-300" : "text-slate-700"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name={`scenario-${index}-operator`}
-                    value={value}
-                    checked={scenarioOperator === value}
-                    disabled={disabledOption}
-                    onChange={() => handleScenarioOperatorChange(value)}
-                    className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
-                  />
-                  {value === "AND"
-                    ? t("scenario.and")
-                    : value === "OR"
-                    ? t("scenario.or")
-                    : value === "WEIGHTED"
-                    ? t("scenario.importance")
-                    : value === "LOGSUM"
-                    ? t("scenario.operator.accrueLabel")
-                    : t("scenario.accrueSoft")}
-                </label>
-              );
-            })}
-          </div>
+          {onlyAllowAll ? (
+            <div className="mt-2 text-xs text-slate-500">
+              <div className="text-[12px] font-medium text-slate-700">
+                {"\u5224\u65ad\u65b9\u5f0f\uff1a\u5fc5\u987b\u6ee1\u8db3\u6240\u6709\u6761\u4ef6"}
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {"\u8be5\u4e3b\u9898\u6a21\u677f\u9650\u5b9a\u4e3a\u300c\u6240\u6709\u6761\u4ef6\u540c\u65f6\u6210\u7acb\u300d\u3002"}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+              <span className="text-[11px] font-medium text-slate-600">
+                {t("scenario.conditionsLabel")}
+              </span>
+              {allowedOperators.map((value) => {
+                const disabledOption =
+                  readOnly ||
+                  (value === "LOGSUM" && !canUseLogsum) ||
+                  (value === "WEIGHTED" && !canUseImportance);
+                return (
+                  <label
+                    key={value}
+                    className={`inline-flex items-center gap-1 text-[12px] font-medium ${
+                      disabledOption ? "text-slate-300" : "text-slate-700"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name={`scenario-${index}-operator`}
+                      value={value}
+                      checked={effectiveOperator === value}
+                      disabled={disabledOption}
+                      onChange={() => handleScenarioOperatorChange(value)}
+                      className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                    />
+                    {value === "AND"
+                      ? t("scenario.and")
+                      : value === "OR"
+                      ? t("scenario.or")
+                      : value === "WEIGHTED"
+                      ? t("scenario.importance")
+                      : value === "LOGSUM"
+                      ? t("scenario.operator.accrueLabel")
+                      : t("scenario.accrueSoft")}
+                  </label>
+                );
+              })}
+            </div>
+          )}
           <GroupPriorityEditor
             group={scenario}
             readOnly={readOnly}
@@ -701,7 +843,9 @@ function ScenarioCard({
       </div>
 
       <div className="mt-3">
-        {scenarioOperator === "LOGSUM" && (
+        {effectiveOperator === "LOGSUM" &&
+          allowThreshold &&
+          !onlyAllowAll && (
           <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             <div className="text-[12px] font-semibold text-slate-700">
               {t("scenario.accrue.panelTitle")}
@@ -746,7 +890,7 @@ function ScenarioCard({
             </div>
           </div>
         )}
-        {scenarioOperator === "ACCRUE" && (
+        {effectiveOperator === "ACCRUE" && !onlyAllowAll && (
           <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             <div className="text-[12px] font-semibold text-slate-700">
               {t("scenario.accrueSoft.panelTitle")}
@@ -805,8 +949,11 @@ function ScenarioCard({
                         handleToggleNegation(childIdx, next)
                       }
                       showImportance={
-                        scenarioOperator === "WEIGHTED" && canUseImportance
+                        effectiveOperator === "WEIGHTED" &&
+                        canUseImportance &&
+                        allowImportance
                       }
+                      allowNegate={allowNegate}
                       importance={child.params?.importance ?? "NORMAL"}
                       onChangeImportance={(next) =>
                         handleImportanceChange(childIdx, next)
@@ -852,7 +999,7 @@ function ScenarioCard({
           </div>
         )}
 
-        {proximityEligible && (
+        {proximityEligible && (allowNear || allowOrder) && (
           <div className="mt-3 rounded-md border border-dashed bg-white/70 px-3 py-2 text-xs text-slate-600">
             <details
               className="group"
@@ -870,29 +1017,35 @@ function ScenarioCard({
                   <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                     {([
                       { id: "NONE", label: "\u65e0\u7279\u6b8a\u4f4d\u7f6e\u5173\u7cfb\uff08\u9ed8\u8ba4\uff09" },
-                      { id: "NEAR", label: "\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1" },
-                      { id: "ORDER", label: "\u6309\u987a\u5e8f\u51fa\u73b0" },
-                    ] as const).map((option) => (
-                      <label
-                        key={option.id}
-                        className={`inline-flex items-center gap-1 ${
-                          readOnly ? "text-slate-300" : "text-slate-700"
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name={`scenario-${index}-proximity-relation`}
-                          value={option.id}
-                          checked={proximityRelation === option.id}
-                          disabled={readOnly}
-                          onChange={() =>
-                            handleProximityRelationChange(option.id)
-                          }
-                          className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
-                        />
-                        {option.label}
-                      </label>
-                    ))}
+                      allowNear
+                        ? { id: "NEAR", label: "\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1" }
+                        : null,
+                      allowOrder
+                        ? { id: "ORDER", label: "\u6309\u987a\u5e8f\u51fa\u73b0" }
+                        : null,
+                    ] as const).map((option) =>
+                      option ? (
+                        <label
+                          key={option.id}
+                          className={`inline-flex items-center gap-1 ${
+                            readOnly ? "text-slate-300" : "text-slate-700"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name={`scenario-${index}-proximity-relation`}
+                            value={option.id}
+                            checked={proximityRelation === option.id}
+                            disabled={readOnly}
+                            onChange={() =>
+                              handleProximityRelationChange(option.id)
+                            }
+                            className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                          />
+                          {option.label}
+                        </label>
+                      ) : null
+                    )}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-500">
                     {proximityRelation === "NEAR"

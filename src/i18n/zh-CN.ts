@@ -102,6 +102,8 @@ export const zhCN = {
   "scenario.summary.importance":
     "在同一内容语境中，系统将综合各条件的重要性进行判断。",
   "scenario.conditionsLabel": "场景内条件：",
+  "scenario.conditions.lockedTitle": "判断方式：必须满足所有条件",
+  "scenario.conditions.lockedDesc": "该主题模板限定为「所有条件同时成立」。",
   "scenario.and": "必须满足所有条件",
   "scenario.or": "满足任一条件",
   "scenario.importance": "满足条件并综合重要性判断",

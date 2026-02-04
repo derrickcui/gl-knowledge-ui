@@ -19,6 +19,53 @@ import { normalizeForRuleBuilder, createScenario } from "@/components/rule-build
 import { ruleNodeToBusinessRule } from "@/lib/business-rule";
 import { RuleNode } from "@/components/rule-builder/astTypes";
 
+const TOPIC_LIST_TTL_MS = 30_000;
+const topicListCache: {
+  data: TopicDTO[] | null;
+  error: string | null;
+  ts: number;
+  promise: Promise<{ data: TopicDTO[]; error: string | null }> | null;
+} = {
+  data: null,
+  error: null,
+  ts: 0,
+  promise: null,
+};
+
+async function fetchTopicsCached() {
+  const now = Date.now();
+  const fresh =
+    topicListCache.data && now - topicListCache.ts < TOPIC_LIST_TTL_MS;
+  if (fresh) {
+    return {
+      data: topicListCache.data ?? [],
+      error: topicListCache.error,
+    };
+  }
+  if (topicListCache.promise) {
+    return topicListCache.promise;
+  }
+  topicListCache.promise = (async () => {
+    const res = await fetchTopics();
+    if (res.error) {
+      const payload = { data: [], error: res.error };
+      topicListCache.error = res.error;
+      topicListCache.ts = now;
+      return payload;
+    }
+    const data = res.data?.items ?? [];
+    topicListCache.data = data;
+    topicListCache.error = null;
+    topicListCache.ts = now;
+    return { data, error: null };
+  })();
+  try {
+    return await topicListCache.promise;
+  } finally {
+    topicListCache.promise = null;
+  }
+}
+
 const STATUS_STYLES: Record<string, string> = {
   PUBLISHED: "bg-green-100 text-green-800",
   DRAFT: "bg-amber-100 text-amber-800",
@@ -201,10 +248,10 @@ export default function TopicsPage() {
       setLoading(true);
     }
     setError(null);
-    const result = await fetchTopics();
+    const result = await fetchTopicsCached();
     if (!mountedRef.current) return;
     if (result.data) {
-      setTopics(result.data.items);
+      setTopics(result.data);
     } else {
       setError(result.error ?? "Unable to load topics.");
     }
@@ -565,8 +612,8 @@ export default function TopicsPage() {
           const result = await createTopic({
             name: createName.trim(),
             description: createDescription.trim() || undefined,
-            template_id: selectedTemplate.id,
-            template_version: selectedTemplateVersion,
+            templateId: selectedTemplate.id,
+            templateVersion: selectedTemplateVersion,
           });
           if (result.data) {
             const draftRule = ruleNodeToBusinessRule(

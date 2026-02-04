@@ -8,6 +8,7 @@ import {
   searchGlossaryConcepts,
 } from "@/lib/glossary-api";
 import { ConceptConditionDraft } from "./conceptConditionDraft";
+import type { RuleTemplateCapability } from "@/components/rule-builder/templateCapabilities";
 
 type RelationMode = "SELF" | "DESCENDANT" | "SUBSET";
 
@@ -17,6 +18,7 @@ interface Props {
   onConfirm: (draft: ConceptConditionDraft) => void;
   initialQuery?: string;
   initialDraft?: ConceptConditionDraft | null;
+  templateCapabilities?: RuleTemplateCapability | null;
 }
 
 export default function ConceptPickerModal({
@@ -25,6 +27,7 @@ export default function ConceptPickerModal({
   onConfirm,
   initialQuery = "",
   initialDraft = null,
+  templateCapabilities,
 }: Props) {
   const initialConceptId = initialDraft?.concept.id ?? null;
   const [query, setQuery] = useState(initialQuery);
@@ -43,6 +46,12 @@ export default function ConceptPickerModal({
     inParagraph: false,
     inSentence: false,
   });
+  const allowLocationTitle =
+    templateCapabilities?.allowLocationTitle !== false;
+  const allowLocationParagraph =
+    templateCapabilities?.allowLocationParagraph !== false;
+  const allowLocationSentence =
+    templateCapabilities?.allowLocationSentence !== false;
 
   function normalizeLocation(loc?: {
     inBody: boolean;
@@ -58,7 +67,7 @@ export default function ConceptPickerModal({
         inSentence: false,
       };
     }
-    if (loc.inParagraph) {
+    if (loc.inParagraph && allowLocationParagraph) {
       return {
         inBody: false,
         inTitle: false,
@@ -66,7 +75,7 @@ export default function ConceptPickerModal({
         inSentence: false,
       };
     }
-    if (loc.inSentence) {
+    if (loc.inSentence && allowLocationSentence) {
       return {
         inBody: false,
         inTitle: false,
@@ -74,7 +83,7 @@ export default function ConceptPickerModal({
         inSentence: true,
       };
     }
-    if (loc.inTitle) {
+    if (loc.inTitle && allowLocationTitle) {
       return {
         inBody: false,
         inTitle: true,
@@ -93,6 +102,9 @@ export default function ConceptPickerModal({
   function setExclusiveLocation(
     key: "inBody" | "inTitle" | "inParagraph" | "inSentence"
   ) {
+    if (key === "inTitle" && !allowLocationTitle) return;
+    if (key === "inParagraph" && !allowLocationParagraph) return;
+    if (key === "inSentence" && !allowLocationSentence) return;
     setLocation({
       inBody: key === "inBody",
       inTitle: key === "inTitle",
@@ -164,7 +176,15 @@ export default function ConceptPickerModal({
         .catch(() => setResults([]))
         .finally(() => setLoading(false));
     }
-  }, [open, initialQuery, initialDraft, initialConceptId]);
+  }, [
+    open,
+    initialQuery,
+    initialDraft,
+    initialConceptId,
+    allowLocationTitle,
+    allowLocationParagraph,
+    allowLocationSentence,
+  ]);
 
   useEffect(() => {
     if (!open) return;
@@ -464,33 +484,39 @@ export default function ConceptPickerModal({
                     />
                     出现在文档正文中（默认）
                   </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="concept-location"
-                      checked={location.inTitle}
-                      onChange={() => setExclusiveLocation("inTitle")}
-                    />
-                    出现在标题中（高级）
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="concept-location"
-                      checked={location.inParagraph}
-                      onChange={() => setExclusiveLocation("inParagraph")}
-                    />
-                    出现在同一段落中（高级）
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="concept-location"
-                      checked={location.inSentence}
-                      onChange={() => setExclusiveLocation("inSentence")}
-                    />
-                    出现在同一句话中（高级）
-                  </label>
+                  {allowLocationTitle && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="concept-location"
+                        checked={location.inTitle}
+                        onChange={() => setExclusiveLocation("inTitle")}
+                      />
+                      出现在标题中（高级）
+                    </label>
+                  )}
+                  {allowLocationParagraph && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="concept-location"
+                        checked={location.inParagraph}
+                        onChange={() => setExclusiveLocation("inParagraph")}
+                      />
+                      出现在同一段落中（高级）
+                    </label>
+                  )}
+                  {allowLocationSentence && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="concept-location"
+                        checked={location.inSentence}
+                        onChange={() => setExclusiveLocation("inSentence")}
+                      />
+                      出现在同一句话中（高级）
+                    </label>
+                  )}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-800">

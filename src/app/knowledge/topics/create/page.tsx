@@ -37,8 +37,8 @@ export default function TopicCreateWithTemplatePage() {
       const res = await createTopic({
         name: name.trim(),
         description: description.trim() || undefined,
-        template_id: templateId,
-        template_version: templateVersion,
+        templateId: templateId,
+        templateVersion: templateVersion,
       });
       if (res.data) {
         // apply template to draft when available
@@ -57,7 +57,11 @@ export default function TopicCreateWithTemplatePage() {
                 // attempt to save draft using template rule
                 // ignore result if fails
                 try {
-                  await saveTopicDraft(res.data.id, { rule } as any);
+                  await saveTopicDraft(res.data.id, {
+                    rule,
+                    templateId,
+                    templateVersion,
+                  });
                 } catch {
                   // swallow
                 }

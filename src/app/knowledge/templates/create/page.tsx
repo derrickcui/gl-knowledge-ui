@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/i18n";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
@@ -26,11 +26,14 @@ type InitialTemplateData = {
 export default function TemplateCreatePage({
   initialData,
   initialTemplateId,
+  initialConfig,
 }: {
   initialData?: InitialTemplateData | null;
   initialTemplateId?: number | null;
+  initialConfig?: any | null;
 }) {
   const router = useRouter();
+  const initRef = useRef(false);
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
@@ -77,9 +80,8 @@ export default function TemplateCreatePage({
   const [templateId, setTemplateId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (initialTemplateId) {
-      setTemplateId(initialTemplateId);
-    }
+    if (initRef.current) return;
+    if (initialTemplateId) setTemplateId(initialTemplateId);
     if (initialData) {
       if (initialData.name) setName(initialData.name);
       if (initialData.description) setPurpose(initialData.description);
@@ -93,6 +95,156 @@ export default function TemplateCreatePage({
         }
       }
     }
+    if (initialConfig) {
+      const normalized =
+        initialConfig?.config ?? initialConfig?.data ?? initialConfig;
+      if (normalized.name && !initialData?.name) {
+        setName(normalized.name);
+      }
+      if (normalized.purpose && !initialData?.description) {
+        setPurpose(normalized.purpose);
+      }
+      if (normalized.type) {
+        const rawType = String(normalized.type);
+        if (
+          rawType === "policy" ||
+          rawType === "qualification" ||
+          rawType === "process"
+        ) {
+          setType(rawType as TemplateType);
+        } else {
+          setType("custom");
+          setCustomType(rawType);
+        }
+      }
+      if (normalized.customType) {
+        setType("custom");
+        setCustomType(String(normalized.customType));
+      }
+      const hasAllowedModes =
+        normalized.allowedModes &&
+        typeof normalized.allowedModes === "object";
+      if (hasAllowedModes) {
+        setAllowedModes((prev) => ({
+          ...prev,
+          all:
+            "all" in normalized.allowedModes
+              ? Boolean(normalized.allowedModes.all)
+              : prev.all,
+          partial:
+            "partial" in normalized.allowedModes
+              ? Boolean(normalized.allowedModes.partial)
+              : prev.partial,
+          weighted:
+            "weighted" in normalized.allowedModes
+              ? Boolean(normalized.allowedModes.weighted)
+              : prev.weighted,
+        }));
+      } else if (
+        "allowAll" in normalized ||
+        "allowAccrue" in normalized ||
+        "allowLogsum" in normalized
+      ) {
+        setAllowedModes((prev) => ({
+          ...prev,
+          all:
+            "allowAll" in normalized
+              ? Boolean(normalized.allowAll)
+              : prev.all,
+          partial:
+            "allowAccrue" in normalized
+              ? Boolean(normalized.allowAccrue)
+              : prev.partial,
+          weighted:
+            "allowLogsum" in normalized
+              ? Boolean(normalized.allowLogsum)
+              : prev.weighted,
+        }));
+      }
+      if (typeof normalized.importanceAllowed === "boolean") {
+        setImportanceAllowed(normalized.importanceAllowed);
+      } else if ("allowImportance" in normalized) {
+        setImportanceAllowed(Boolean(normalized.allowImportance));
+      }
+      const hasPositionRules =
+        normalized.positionRules &&
+        typeof normalized.positionRules === "object";
+      if (hasPositionRules) {
+        setPositionRules((prev) => ({
+          ...prev,
+          any:
+            "any" in normalized.positionRules
+              ? Boolean(normalized.positionRules.any)
+              : prev.any,
+          paragraph:
+            "paragraph" in normalized.positionRules
+              ? Boolean(normalized.positionRules.paragraph)
+              : prev.paragraph,
+          sentence:
+            "sentence" in normalized.positionRules
+              ? Boolean(normalized.positionRules.sentence)
+              : prev.sentence,
+          order:
+            "order" in normalized.positionRules
+              ? Boolean(normalized.positionRules.order)
+              : prev.order,
+          near:
+            "near" in normalized.positionRules
+              ? Boolean(normalized.positionRules.near)
+              : prev.near,
+        }));
+      } else if (
+        "allowProximity" in normalized ||
+        "allowOrder" in normalized ||
+        "allowSentence" in normalized ||
+        "allowParagraph" in normalized
+      ) {
+        const nextParagraph =
+          "allowParagraph" in normalized
+            ? Boolean(normalized.allowParagraph)
+            : undefined;
+        const nextSentence =
+          "allowSentence" in normalized
+            ? Boolean(normalized.allowSentence)
+            : undefined;
+        const nextOrder =
+          "allowOrder" in normalized
+            ? Boolean(normalized.allowOrder)
+            : undefined;
+        const nextNear =
+          "allowProximity" in normalized
+            ? Boolean(normalized.allowProximity)
+            : undefined;
+        setPositionRules((prev) => {
+          const paragraph =
+            nextParagraph !== undefined ? nextParagraph : prev.paragraph;
+          const sentence =
+            nextSentence !== undefined ? nextSentence : prev.sentence;
+          const order = nextOrder !== undefined ? nextOrder : prev.order;
+          const near = nextNear !== undefined ? nextNear : prev.near;
+          const any = !(paragraph || sentence || order || near);
+          return {
+            ...prev,
+            any,
+            paragraph,
+            sentence,
+            order,
+            near,
+          };
+        });
+      }
+      const explainPositiveValue =
+        normalized.explainPositive ?? normalized.explainSuccess;
+      const explainNegativeValue =
+        normalized.explainNegative ?? normalized.explainFail;
+      if (explainPositiveValue) {
+        setExplainPositive(String(explainPositiveValue));
+      }
+      if (explainNegativeValue) {
+        setExplainNegative(String(explainNegativeValue));
+      }
+    }
+    initRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

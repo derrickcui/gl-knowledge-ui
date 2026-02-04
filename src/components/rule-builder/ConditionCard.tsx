@@ -24,6 +24,7 @@ type Props = {
   onChangeImportance?: (next: "HIGH" | "NORMAL" | "LOW") => void;
   onSelect: (path: ActivePath) => void;
   onToggleNegation: (next: boolean) => void;
+  allowNegate?: boolean;
 };
 
 function collectConceptNames(node: RuleNode, list: string[] = []): string[] {
@@ -162,6 +163,7 @@ export default function ConditionCard({
   selected = false,
   highlighted = false,
   readOnly = false,
+  allowNegate = true,
 }: Props) {
   const conceptNames = collectConceptNames(node);
   const topicNames = collectTopicNames(node);
@@ -288,25 +290,27 @@ export default function ConditionCard({
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between">
-        <label className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-700">
-          <input
-            type="checkbox"
-            className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-0"
-            checked={negated}
-            disabled={readOnly}
-            onChange={(event) => {
-              event.stopPropagation();
-              if (readOnly) return;
-              onToggleNegation(!negated);
-            }}
-          />
-          {"\u6392\u9664\u8be5\u6761\u4ef6"}
-        </label>
-        <span className="text-[10px] text-slate-500">
-          {negated ? "\u4e0d\u5e94\u547d\u4e2d" : "\u547d\u4e2d\u65f6\u6210\u7acb"}
-        </span>
-      </div>
+      {allowNegate && (
+        <div className="mt-3 flex items-center justify-between">
+          <label className="inline-flex items-center gap-1 text-[12px] font-medium text-slate-700">
+            <input
+              type="checkbox"
+              className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-0"
+              checked={negated}
+              disabled={readOnly}
+              onChange={(event) => {
+                event.stopPropagation();
+                if (readOnly) return;
+                onToggleNegation(!negated);
+              }}
+            />
+            {"\u6392\u9664\u8be5\u6761\u4ef6"}
+          </label>
+          <span className="text-[10px] text-slate-500">
+            {negated ? "\u4e0d\u5e94\u547d\u4e2d" : "\u547d\u4e2d\u65f6\u6210\u7acb"}
+          </span>
+        </div>
+      )}
 
       <div className="mt-3 text-[11px] text-slate-500">
         {"\u8bf4\u660e"}

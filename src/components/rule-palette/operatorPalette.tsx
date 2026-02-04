@@ -7,24 +7,56 @@ import {
 } from "./paletteDefinition";
 import { RuleNode } from "../rule-builder/astTypes";
 import { isOperatorEnabled } from "../rule-builder/operatorGuards";
+import type { RuleTemplateCapability } from "../rule-builder/templateCapabilities";
 import { t } from "@/i18n";
 
 interface Props {
   onSelect: (item: PaletteItem) => void;
   activeNode: RuleNode;
   disabled?: boolean;
+  templateCapabilities?: RuleTemplateCapability | null;
+  selectedId?: string | null;
+  mode?: string;
+  featureFlags?: Record<string, boolean> | null;
+  onAddScenario?: () => void;
 }
 
 export default function OperatorPalette({
   onSelect,
   activeNode,
   disabled = false,
+  templateCapabilities,
 }: Props) {
+  const hasTemplate = !!templateCapabilities;
+  const allowTopicAsCondition =
+    templateCapabilities?.allowTopicAsCondition !== false;
+  const allowLocationTitle =
+    templateCapabilities?.allowLocationTitle !== false;
+  const allowLocationParagraph =
+    templateCapabilities?.allowLocationParagraph !== false;
+  const allowLocationSentence =
+    templateCapabilities?.allowLocationSentence !== false;
+  const allowAll = hasTemplate
+    ? templateCapabilities?.allowAll === true
+    : true;
+  const allowAny = hasTemplate
+    ? templateCapabilities?.allowAny === true
+    : true;
+
   const baseItems = OPERATOR_PALETTE.flatMap((group) =>
     group.items.filter(
       (item) => item.id === "what.concept" || item.id === "what.topicRef"
     )
   );
+  const filteredItems = baseItems.filter((item) => {
+    if (item.id === "what.topicRef" && !allowTopicAsCondition) return false;
+    if (item.id === "where.title" && !allowLocationTitle) return false;
+    if (item.id === "where.paragraph" && !allowLocationParagraph) return false;
+    if (item.id === "where.sentence" && !allowLocationSentence) return false;
+    if (item.id === "how.all" && !allowAll) return false;
+    if (item.id === "how.any" && !allowAny) return false;
+    return true;
+  });
 
   const operatorText: Record<
     BusinessOperatorId,
@@ -66,7 +98,7 @@ export default function OperatorPalette({
             {t("palette.baseTitle")}
           </summary>
           <ul className="mt-2 space-y-1">
-            {baseItems.map((item) => {
+            {filteredItems.map((item) => {
               const guard = isOperatorEnabled(item.id, activeNode);
               const isDisabled = disabled || !guard.enabled;
               const title = disabled

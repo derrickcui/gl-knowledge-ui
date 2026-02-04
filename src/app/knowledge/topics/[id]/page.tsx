@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
@@ -45,6 +45,10 @@ import { RuleBuilder } from "./rule-builder";
 import { ExplainPreview } from "./explain-preview";
 import { TopicActions } from "./topic-actions";
 import { t } from "@/i18n";
+import {
+  extractRuleTemplateCapability,
+  RuleTemplateCapability,
+} from "@/components/rule-builder/templateCapabilities";
 
 export default function TopicDetailPage() {
   const params = useParams<{ id: string }>();
@@ -90,6 +94,13 @@ export default function TopicDetailPage() {
     string | undefined
   >(undefined);
   const [reviewReason, setReviewReason] = useState<string | null>(null);
+  const [templateId, setTemplateId] = useState<number | string | null>(
+    null
+  );
+  const [templateVersion, setTemplateVersion] = useState<
+    number | string | null
+  >(null);
+  const [templateConfig, setTemplateConfig] = useState<any | null>(null);
   const [conceptPickerOpen, setConceptPickerOpen] = useState(false);
   const [topicPickerOpen, setTopicPickerOpen] = useState(false);
   const [pendingOperatorId, setPendingOperatorId] = useState<string | null>(
@@ -122,6 +133,10 @@ export default function TopicDetailPage() {
     topicPickerOpen ||
     editingDraft !== null ||
     editingTopicDraft !== null;
+  const templateCapabilities: RuleTemplateCapability | null = useMemo(
+    () => extractRuleTemplateCapability(templateConfig),
+    [templateConfig]
+  );
   const clamp = (value: number, min: number, max: number) =>
     Math.min(max, Math.max(min, value));
 
@@ -163,6 +178,25 @@ export default function TopicDetailPage() {
       loc,
       topic: safeTopicName,
     });
+  }
+  function extractTemplateRef(data: any): {
+    templateId?: string | number | null;
+    templateVersion?: string | number | null;
+  } {
+    if (!data) return {};
+    const templateId =
+      data.template_id ??
+      data.templateId ??
+      data.template?.id ??
+      data.template?.templateId ??
+      null;
+    const templateVersion =
+      data.template_version ??
+      data.templateVersion ??
+      data.template?.version ??
+      data.template?.templateVersion ??
+      null;
+    return { templateId, templateVersion };
   }
   function buildDraftFromPath(scenarioIndex: number, conditionIndex: number) {
     const business = ruleNodeToBusinessRule(rule);
@@ -374,6 +408,8 @@ export default function TopicDetailPage() {
     const businessRule = ruleNodeToBusinessRule(rule);
     const result = await saveTopicDraft(topicId, {
       rule: businessRule,
+      templateId: templateId ?? undefined,
+      templateVersion: templateVersion ?? undefined,
     });
 
     if (result.data) {
@@ -597,6 +633,9 @@ export default function TopicDetailPage() {
         setTopicDescription(
           result.data.description ?? t("topicDetail.description.empty")
         );
+        const templateRef = extractTemplateRef(result.data);
+        setTemplateId(templateRef.templateId ?? null);
+        setTemplateVersion(templateRef.templateVersion ?? null);
       } else {
         setError(result.error ?? t("topicDetail.loadFailed"));
       }
@@ -631,6 +670,32 @@ export default function TopicDetailPage() {
       active = false;
     };
   }, [topicId]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadTemplateConfig() {
+      if (!templateId) {
+        setTemplateConfig(null);
+        return;
+      }
+      try {
+        const resp = await fetch(
+          `/api/templates/${encodeURIComponent(String(templateId))}/config`,
+          { cache: "no-store" }
+        );
+        if (!resp.ok) throw new Error("template config load failed");
+        const json = await resp.json();
+        if (!active) return;
+        setTemplateConfig(json?.data ?? json);
+      } catch {
+        if (active) setTemplateConfig(null);
+      }
+    }
+    loadTemplateConfig();
+    return () => {
+      active = false;
+    };
+  }, [templateId]);
   return (
     <div className="space-y-6 p-6">
       {error && <FeedbackBanner type="error" title={error} />}
@@ -709,6 +774,7 @@ export default function TopicDetailPage() {
               setEditingDraft(null);
             }}
             initialDraft={editingDraft?.initialDraft ?? null}
+            templateCapabilities={templateCapabilities}
           />
           <TopicPickerModal
             open={topicPickerOpen}
@@ -775,6 +841,7 @@ export default function TopicDetailPage() {
               setEditingTopicDraft(null);
             }}
             initialDraft={editingTopicDraft?.initialDraft ?? null}
+            templateCapabilities={templateCapabilities}
           />
           <Link
             className="text-sm text-muted-foreground hover:text-foreground"
@@ -813,6 +880,7 @@ export default function TopicDetailPage() {
                 selectedId={selectedOperatorId}
                 mode="advanced"
                 featureFlags={{ showAdvanced: true, how: true, topicRef: true }}
+                templateCapabilities={templateCapabilities}
                 onAddScenario={handleAddScenario}
                 onSelect={(item) => {
                   if (topicStatus === "IN_REVIEW") return;
@@ -913,6 +981,7 @@ export default function TopicDetailPage() {
                 onSelect={setActivePath}
                 onChange={(next) => setRule(normalizeForRuleBuilder(next))}
                 onAddScenario={handleAddScenario}
+                templateCapabilities={templateCapabilities}
                 onEditCondition={(scenarioIndex, conditionIndex) => {
                   const scenario = rule.children?.[scenarioIndex];
                   const node = scenario?.children?.[conditionIndex];

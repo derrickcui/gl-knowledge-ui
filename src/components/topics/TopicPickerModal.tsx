@@ -5,6 +5,7 @@ import { searchTopics, TopicDTO } from "@/lib/topic-api";
 import { TopicConditionDraft } from "./topicConditionDraft";
 import { decodeUnicodeEscapes } from "@/lib/text-utils";
 import { t } from "@/i18n";
+import type { RuleTemplateCapability } from "@/components/rule-builder/templateCapabilities";
 
 type RangeMode = "ORIGINAL" | "ALL" | "LIMITED";
 
@@ -15,13 +16,17 @@ interface Props {
   initialQuery?: string;
   initialDraft?: TopicConditionDraft | null;
   lockTopicSelection?: boolean;
+  templateCapabilities?: RuleTemplateCapability | null;
 }
 
-function normalizeLocation(loc?: TopicConditionDraft["location"]) {
+function normalizeLocation(
+  loc?: TopicConditionDraft["location"],
+  allowLocationTitle: boolean = true
+) {
   if (!loc) {
     return {
       inBody: true,
-      inTitle: true,
+      inTitle: allowLocationTitle,
       inParagraph: false,
       inSentence: false,
     };
@@ -30,14 +35,14 @@ function normalizeLocation(loc?: TopicConditionDraft["location"]) {
   if (!hasAny) {
     return {
       inBody: true,
-      inTitle: true,
+      inTitle: allowLocationTitle,
       inParagraph: false,
       inSentence: false,
     };
   }
   return {
     inBody: !!loc.inBody,
-    inTitle: !!loc.inTitle,
+    inTitle: allowLocationTitle ? !!loc.inTitle : false,
     inParagraph: false,
     inSentence: false,
   };
@@ -89,7 +94,10 @@ export default function TopicPickerModal({
   initialQuery = "",
   initialDraft = null,
   lockTopicSelection = false,
+  templateCapabilities,
 }: Props) {
+  const allowLocationTitle =
+    templateCapabilities?.allowLocationTitle !== false;
   const [query, setQuery] = useState(initialQuery);
   const [loading, setLoading] = useState(false);
   const [topics, setTopics] = useState<TopicDTO[]>([]);
@@ -104,11 +112,11 @@ export default function TopicPickerModal({
           inParagraph: false,
           inSentence: false,
         }
-      : normalizeLocation(initialDraft?.location)
+      : normalizeLocation(initialDraft?.location, allowLocationTitle)
   );
   const [rangeMode, setRangeMode] = useState<RangeMode>(
     normalizeRangeMode(
-      normalizeLocation(initialDraft?.location),
+      normalizeLocation(initialDraft?.location, allowLocationTitle),
       initialUseOriginal
     )
   );
@@ -137,11 +145,11 @@ export default function TopicPickerModal({
             inParagraph: false,
             inSentence: false,
           }
-        : normalizeLocation(initialDraft?.location)
+        : normalizeLocation(initialDraft?.location, allowLocationTitle)
     );
     setRangeMode(
       normalizeRangeMode(
-        normalizeLocation(initialDraft?.location),
+        normalizeLocation(initialDraft?.location, allowLocationTitle),
         nextUseOriginal
       )
     );
@@ -157,7 +165,7 @@ export default function TopicPickerModal({
     } else {
       setSelected(null);
     }
-  }, [open, initialQuery, initialDraft]);
+  }, [open, initialQuery, initialDraft, allowLocationTitle]);
 
   useEffect(() => {
     if (!open) return;
@@ -335,24 +343,26 @@ export default function TopicPickerModal({
                     />
                     {t("topicPicker.rangeOriginal")}
                   </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="topic-range"
-                      checked={rangeMode === "ALL"}
-                      onChange={() => {
-                        setRangeMode("ALL");
-                        setUseOriginalRule(false);
-                        setLocation({
-                          inBody: true,
-                          inTitle: true,
-                          inParagraph: false,
-                          inSentence: false,
-                        });
-                      }}
-                    />
-                    {t("topicPicker.rangeAll")}
-                  </label>
+                  {allowLocationTitle && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="radio"
+                        name="topic-range"
+                        checked={rangeMode === "ALL"}
+                        onChange={() => {
+                          setRangeMode("ALL");
+                          setUseOriginalRule(false);
+                          setLocation({
+                            inBody: true,
+                            inTitle: true,
+                            inParagraph: false,
+                            inSentence: false,
+                          });
+                        }}
+                      />
+                      {t("topicPicker.rangeAll")}
+                    </label>
+                  )}
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="radio"
@@ -375,22 +385,24 @@ export default function TopicPickerModal({
 
                 {rangeMode === "LIMITED" && !useOriginalRule && (
                   <div className="space-y-2 text-sm">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="radio"
-                        name="topic-location"
-                        checked={location.inTitle}
-                        onChange={() =>
-                          setLocation({
-                            inBody: false,
-                            inTitle: true,
-                            inParagraph: false,
-                            inSentence: false,
-                          })
-                        }
-                      />
-                      {t("topicPicker.rangeTitleOnly")}
-                    </label>
+                    {allowLocationTitle && (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="topic-location"
+                          checked={location.inTitle}
+                          onChange={() =>
+                            setLocation({
+                              inBody: false,
+                              inTitle: true,
+                              inParagraph: false,
+                              inSentence: false,
+                            })
+                          }
+                        />
+                        {t("topicPicker.rangeTitleOnly")}
+                      </label>
+                    )}
                     <label className="flex items-center gap-2 text-sm">
                       <input
                         type="radio"

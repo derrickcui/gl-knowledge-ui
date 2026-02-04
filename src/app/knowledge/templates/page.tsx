@@ -5,6 +5,54 @@ import { t } from "@/i18n";
 import { useEffect, useState } from "react";
 import { fetchTemplatesList, RuleTemplateItem } from "@/lib/api";
 
+const TEMPLATE_LIST_TTL_MS = 30_000;
+const templateListCache: {
+  data: RuleTemplateItem[] | null;
+  error: string | null;
+  ts: number;
+  promise: Promise<{ data: RuleTemplateItem[]; error: string | null }> | null;
+} = {
+  data: null,
+  error: null,
+  ts: 0,
+  promise: null,
+};
+
+async function fetchTemplatesListCached() {
+  const now = Date.now();
+  const fresh =
+    templateListCache.data &&
+    now - templateListCache.ts < TEMPLATE_LIST_TTL_MS;
+  if (fresh) {
+    return {
+      data: templateListCache.data ?? [],
+      error: templateListCache.error,
+    };
+  }
+  if (templateListCache.promise) {
+    return templateListCache.promise;
+  }
+  templateListCache.promise = (async () => {
+    const res = await fetchTemplatesList();
+    if (res.error) {
+      const payload = { data: [], error: res.error };
+      templateListCache.error = res.error;
+      templateListCache.ts = now;
+      return payload;
+    }
+    const data = res.data ?? [];
+    templateListCache.data = data;
+    templateListCache.error = null;
+    templateListCache.ts = now;
+    return { data, error: null };
+  })();
+  try {
+    return await templateListCache.promise;
+  } finally {
+    templateListCache.promise = null;
+  }
+}
+
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: "bg-amber-100 text-amber-800",
   PUBLISHED: "bg-emerald-100 text-emerald-800",
@@ -29,7 +77,7 @@ export default function TemplatesPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetchTemplatesList();
+        const res = await fetchTemplatesListCached();
         if (res.error) throw new Error(res.error);
         if (mounted) setTemplates(res.data ?? []);
       } catch (e: any) {
