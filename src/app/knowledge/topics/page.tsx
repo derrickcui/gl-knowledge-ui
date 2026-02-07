@@ -178,14 +178,15 @@ function extractTemplateCapabilities(config: any): string {
   } else if (
     "allowAll" in normalized ||
     "allowAccrue" in normalized ||
-    "allowLogsum" in normalized
+    "allowLogsum" in normalized ||
+    "allowThreshold" in normalized
   ) {
     const modeLabels: string[] = [];
     if (normalized.allowAll)
       modeLabels.push(t("topics.capabilities.mode.allAny"));
     if (normalized.allowAccrue)
       modeLabels.push(t("topics.capabilities.mode.accrue"));
-    if (normalized.allowLogsum)
+    if (normalized.allowLogsum || normalized.allowThreshold)
       modeLabels.push(t("topics.capabilities.mode.partial"));
     if (modeLabels.length === 1) {
       parts.push(

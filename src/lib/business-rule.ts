@@ -594,7 +594,8 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
             rawOperator === "ACCRUE" && group.params?.mode === "LOGSUM";
           const isLogsum = rawOperator === "LOGSUM" || legacyLogsum;
           const isAccrue = rawOperator === "ACCRUE" && !legacyLogsum;
-          if (isLogsum || isAccrue) return "AND";
+          if (isAccrue) return "ACCRUE";
+          if (isLogsum) return "AND";
           return normalizeScenarioOperator(rawOperator);
         })(),
         score: (() => {
@@ -631,9 +632,7 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
             } as BusinessScore;
           }
           if (rawOperator === "ACCRUE") {
-            return {
-              type: "AT_LEAST",
-            } as BusinessScore;
+            return undefined;
           }
           return undefined;
         })(),

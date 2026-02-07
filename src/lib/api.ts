@@ -443,6 +443,35 @@ export type RuleTemplateCreateRequest = {
   explainNegative?: string | null;
 };
 
+export type RuleTemplateTypeCreateRequest = {
+  name: string;
+  description?: string | null;
+  createdBy?: string | null;
+};
+
+export type RuleTemplateTypeUpdateRequest = {
+  name?: string | null;
+  description?: string | null;
+  status?: string | null;
+  enabled?: boolean | null;
+  disabled?: boolean | null;
+};
+
+export type RuleTemplateTypeListItem = {
+  id: string;
+  name: string;
+  description?: string | null;
+  createdBy?: string | null;
+  createdAt?: string | null;
+  status?: string | null;
+  enabled?: boolean | null;
+  disabled?: boolean | null;
+  templateCount?: number | null;
+  templatesCount?: number | null;
+  usageCount?: number | null;
+  [key: string]: any;
+};
+
 export type RuleTemplateCreateResponse = {
   id: number;
 };
@@ -482,6 +511,14 @@ function normalizeTemplateDetail(payload: any): RuleTemplateItem | null {
   return normalizeTemplatePayload(payload);
 }
 
+function normalizeRuleTemplateTypeList(payload: any): RuleTemplateTypeListItem[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+}
+
 export async function createTemplate(
   payload: RuleTemplateCreateRequest
 ): Promise<ApiResult<RuleTemplateCreateResponse>> {
@@ -492,6 +529,55 @@ export async function createTemplate(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }
+  );
+}
+
+export async function fetchRuleTemplateTypes(params?: {
+  search?: string;
+}): Promise<ApiResult<RuleTemplateTypeListItem[]>> {
+  const search = new URLSearchParams();
+  if (params?.search) {
+    search.set("search", params.search);
+  }
+  const suffix = search.toString();
+  const res = await requestJson<unknown>(
+    `/api/rule-template-types${suffix ? `?${suffix}` : ""}`,
+    { cache: "no-store" }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  return { data: normalizeRuleTemplateTypeList(res.data), error: null };
+}
+
+export async function createRuleTemplateType(
+  payload: RuleTemplateTypeCreateRequest
+): Promise<ApiResult<{ id: string }>> {
+  return requestJson<{ id: string }>(`/api/rule-template-types`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateRuleTemplateType(
+  id: string,
+  payload: RuleTemplateTypeUpdateRequest
+): Promise<ApiResult<RuleTemplateTypeListItem>> {
+  return requestJson<RuleTemplateTypeListItem>(
+    `/api/rule-template-types/${encodeURIComponent(id)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export async function deleteRuleTemplateType(
+  id: string
+): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(
+    `/api/rule-template-types/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
   );
 }
 

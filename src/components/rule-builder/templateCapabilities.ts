@@ -229,5 +229,9 @@ export function extractRuleTemplateCapability(
     }
   }
 
+  if (caps.allowLogsum && !hasOwn(caps, "allowThreshold")) {
+    caps.allowThreshold = true;
+  }
+
   return Object.keys(caps).length ? caps : null;
 }

@@ -1119,6 +1119,70 @@ components:
         explainFail:
           type: string
           nullable: true
+    RuleTemplateTypeCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+    RuleTemplateTypeUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+    RuleTemplateTypeCreateResponse:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+    RuleTemplateTypeListItem:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    RuleTemplateTypeDetailResponse:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
     ApiResponseRuleTemplateConfigResponse:
       type: object
       required: [success]
@@ -1179,6 +1243,36 @@ components:
           type: boolean
         data:
           $ref: "#/components/schemas/PageResponseRuleTemplateListItem"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseRuleTemplateTypeCreateResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RuleTemplateTypeCreateResponse"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseRuleTemplateTypeDetailResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RuleTemplateTypeDetailResponse"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponsePageResponseRuleTemplateTypeListItem:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/PageResponseRuleTemplateTypeListItem"
         error:
           $ref: "#/components/schemas/ApiError"
     RulePreviewResult:
@@ -1394,6 +1488,21 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TopicListItem"
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+    PageResponseRuleTemplateTypeListItem:
+      type: object
+      required: [items, page, size, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleTemplateTypeListItem"
         page:
           type: integer
         size:
@@ -2358,6 +2467,118 @@ paths:
       responses:
         "200":
           description: Config applied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseVoid"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/rule-template-types:
+    post:
+      summary: Create rule template type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleTemplateTypeCreateRequest"
+      responses:
+        "200":
+          description: Template type created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRuleTemplateTypeCreateResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    get:
+      summary: List rule template types
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Template type list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponsePageResponseRuleTemplateTypeListItem"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/rule-template-types/{id}:
+    get:
+      summary: Get rule template type by id
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Template type detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRuleTemplateTypeDetailResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      summary: Update rule template type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuleTemplateTypeUpdateRequest"
+      responses:
+        "200":
+          description: Template type updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRuleTemplateTypeDetailResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    delete:
+      summary: Delete rule template type
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Template type deleted
           content:
             application/json:
               schema:

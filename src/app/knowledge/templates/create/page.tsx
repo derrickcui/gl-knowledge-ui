@@ -39,8 +39,7 @@ export default function TemplateCreatePage({
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
-  const [type, setType] = useState<TemplateType>("policy");
-  const [customType, setCustomType] = useState("");
+  const [type, setType] = useState<TemplateType>("");
   const [allowedModes, setAllowedModes] = useState({
     all: true,
     accrue: false,
@@ -140,6 +139,7 @@ export default function TemplateCreatePage({
         ACCRUE: allowedModes.accrue,
         LOGSUM: allowLogsum,
       },
+      allowThreshold: allowLogsum,
       importance: {
         enabled: importanceAllowed || allowedModes.weighted,
       },
@@ -163,13 +163,7 @@ export default function TemplateCreatePage({
       if (initialData.name) setName(initialData.name);
       if (initialData.description) setPurpose(initialData.description);
       if (initialData.category) {
-        const cat = initialData.category as string;
-        if (cat === "policy" || cat === "qualification" || cat === "process") {
-          setType(cat as TemplateType);
-        } else {
-          setType("custom");
-          setCustomType(cat);
-        }
+        setType(String(initialData.category));
       }
     }
     if (initialConfig) {
@@ -182,21 +176,10 @@ export default function TemplateCreatePage({
         setPurpose(normalized.purpose);
       }
       if (normalized.type) {
-        const rawType = String(normalized.type);
-        if (
-          rawType === "policy" ||
-          rawType === "qualification" ||
-          rawType === "process"
-        ) {
-          setType(rawType as TemplateType);
-        } else {
-          setType("custom");
-          setCustomType(rawType);
-        }
+        setType(String(normalized.type));
       }
       if (normalized.customType) {
-        setType("custom");
-        setCustomType(String(normalized.customType));
+        setType(String(normalized.customType));
       }
       const allowModes =
         (normalized.allowModes ?? normalized.allow_modes) &&
@@ -210,6 +193,10 @@ export default function TemplateCreatePage({
         allowModes && "LOGSUM" in allowModes
           ? Boolean(allowModes.LOGSUM)
           : undefined;
+      const allowThreshold =
+        "allowThreshold" in normalized
+          ? Boolean(normalized.allowThreshold)
+          : undefined;
       const importanceEnabled =
         normalized.importance?.enabled ?? normalized.importanceEnabled;
       if (allowModes) {
@@ -221,7 +208,12 @@ export default function TemplateCreatePage({
             "ACCRUE" in allowModes
               ? Boolean(allowModes.ACCRUE)
               : prev.accrue,
-          partial: allowLogsum !== undefined ? allowLogsum : prev.partial,
+          partial:
+            allowLogsum !== undefined
+              ? allowLogsum
+              : allowThreshold !== undefined
+              ? allowThreshold
+              : prev.partial,
           weighted:
             allowLogsum && importanceEnabled !== undefined
               ? Boolean(importanceEnabled)
@@ -261,6 +253,8 @@ export default function TemplateCreatePage({
           partial:
             "allowLogsum" in normalized
               ? Boolean(normalized.allowLogsum)
+              : "allowThreshold" in normalized
+              ? Boolean(normalized.allowThreshold)
               : prev.partial,
           weighted:
             "allowLogsum" in normalized
@@ -419,7 +413,11 @@ export default function TemplateCreatePage({
 
   const canNext = useMemo(() => {
     if (step === 0) {
-      return name.trim().length > 0 && purpose.trim().length > 0;
+      return (
+        name.trim().length > 0 &&
+        purpose.trim().length > 0 &&
+        type.trim().length > 0
+      );
     }
     if (step === 1) {
       return (
@@ -437,7 +435,9 @@ export default function TemplateCreatePage({
     step,
     name,
     purpose,
+    type,
     allowedModes.all,
+    allowedModes.accrue,
     allowedModes.partial,
     allowedModes.weighted,
     explainPositive,
@@ -447,11 +447,19 @@ export default function TemplateCreatePage({
     if (step === 0 && !templateId) {
       try {
         setSubmitting(true);
+        const category = type.trim();
+        if (!category) {
+          setStatusMessage({
+            type: "error",
+            title: t("templates.typeManage.required"),
+          });
+          setSubmitting(false);
+          return;
+        }
         setStatusMessage({
           type: "info",
           title: t("templates.create.status.savingStep1"),
         });
-        const category = type === "custom" ? customType || "custom" : type;
         const res = await createTemplateInitial({
           name,
           description: purpose,
@@ -495,11 +503,18 @@ export default function TemplateCreatePage({
       }
       setSubmitting(true);
       if (step === 0) {
+        const category = type.trim();
+        if (!category) {
+          setStatusMessage({
+            type: "error",
+            title: t("templates.typeManage.required"),
+          });
+          return;
+        }
         setStatusMessage({
           type: "info",
           title: t("templates.create.status.savingStep1"),
         });
-        const category = type === "custom" ? customType || "custom" : type;
         const res = await createTemplateInitial({
           name,
           description: purpose,
@@ -621,7 +636,15 @@ export default function TemplateCreatePage({
 
         let id = templateId;
         if (!id) {
-          const category = type === "custom" ? customType || "custom" : type;
+          const category = type.trim();
+          if (!category) {
+            setStatusMessage({
+              type: "error",
+              title: t("templates.typeManage.required"),
+            });
+            setSubmitting(false);
+            return;
+          }
           const res = await createTemplateInitial({
             name,
             description: purpose,
@@ -710,7 +733,6 @@ export default function TemplateCreatePage({
           name={name}
           purpose={purpose}
           type={type}
-          customType={customType}
           allowedModes={allowedModes}
           importanceAllowed={importanceAllowed}
           positionRules={positionRules}
@@ -719,7 +741,6 @@ export default function TemplateCreatePage({
           onNameChange={setName}
           onPurposeChange={setPurpose}
           onTypeChange={setType}
-          onCustomTypeChange={setCustomType}
           onAllowedModeChange={(key, value) =>
             setAllowedModes((prev) => ({
               ...prev,
