@@ -9,6 +9,7 @@ import {
 } from "@/lib/api";
 import { ApproveDialog } from "./approve-dialog";
 import { RejectDialog } from "./reject-dialog";
+import { t } from "@/i18n";
 
 const CURRENT_REVIEWER = "ui-user";
 
@@ -50,10 +51,10 @@ export function ApprovalActionPanel({
       setLoadingAction("approve");
       onFeedback({
         type: "info",
-        title: "正在执行审批通过操作，请稍后...",
+        title: t("glossary.approvalAction.approving"),
       });
       if (!candidate.changeId) {
-        throw new Error("Missing change id");
+        throw new Error(t("glossary.approvalAction.missingChangeId"));
       }
       const result = await decideChange({
         changeId: candidate.changeId,
@@ -68,9 +69,8 @@ export function ApprovalActionPanel({
       }
       onFeedback({
         type: "success",
-        title: "Approved",
-        message:
-          "Request closed and lifecycle updated to Published.",
+        title: t("glossary.approvalAction.approvedTitle"),
+        message: t("glossary.approvalAction.approvedMessage"),
       });
       setApproveOpen(false);
       router.push("/knowledge/glossary/approvals");
@@ -78,7 +78,7 @@ export function ApprovalActionPanel({
     } catch (e: any) {
       onFeedback({
         type: "error",
-        title: "Approve failed",
+        title: t("glossary.approvalAction.approveFailed"),
         message: e?.message,
       });
     } finally {
@@ -94,10 +94,10 @@ export function ApprovalActionPanel({
       setLoadingAction("reject");
       onFeedback({
         type: "info",
-        title: "正在执行审批拒绝操作，请稍后...",
+        title: t("glossary.approvalAction.rejecting"),
       });
       if (!candidate.changeId) {
-        throw new Error("Missing change id");
+        throw new Error(t("glossary.approvalAction.missingChangeId"));
       }
       const result = await decideChange({
         changeId: candidate.changeId,
@@ -112,9 +112,8 @@ export function ApprovalActionPanel({
       }
       onFeedback({
         type: "success",
-        title: "Rejected",
-        message:
-          "Request closed and lifecycle updated to Rejected.",
+        title: t("glossary.approvalAction.rejectedTitle"),
+        message: t("glossary.approvalAction.rejectedMessage"),
       });
       setRejectOpen(false);
       router.push("/knowledge/glossary/approvals");
@@ -122,7 +121,7 @@ export function ApprovalActionPanel({
     } catch (e: any) {
       onFeedback({
         type: "error",
-        title: "Reject failed",
+        title: t("glossary.approvalAction.rejectFailed"),
         message: e?.message,
       });
     } finally {
@@ -133,10 +132,10 @@ export function ApprovalActionPanel({
   return (
     <div className="rounded-md border p-4">
       <div className="text-sm font-medium">
-        Governance Action
+        {t("glossary.approvalAction.title")}
       </div>
       <div className="mt-1 text-xs text-muted-foreground">
-        Assigned to you · Under Review
+        {t("glossary.approvalAction.subtitle")}
       </div>
 
       <div className="mt-4 flex gap-2">
@@ -144,13 +143,13 @@ export function ApprovalActionPanel({
           className="rounded-md bg-black px-3 py-1 text-sm text-white"
           onClick={() => setApproveOpen(true)}
         >
-          Approve
+          {t("glossary.common.approve")}
         </button>
         <button
           className="rounded-md border px-3 py-1 text-sm"
           onClick={() => setRejectOpen(true)}
         >
-          Reject
+          {t("glossary.common.reject")}
         </button>
       </div>
 

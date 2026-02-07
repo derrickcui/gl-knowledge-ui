@@ -2,6 +2,7 @@
 
 import { RuleNode } from "./astTypes";
 import { ActivePath, isSamePath } from "./pathUtils";
+import { t } from "@/i18n";
 
 interface Props {
   node: RuleNode;
@@ -53,7 +54,7 @@ export default function RuleNodeView({
         <NodeLabel node={node} />
         {compact && (
           <div className="mt-1 text-xs text-slate-500">
-            {"\u70b9\u51fb\u53ef\u7f16\u8f91"}
+            {t("ruleNodeView.hint.edit")}
           </div>
         )}
       </div>
@@ -81,28 +82,28 @@ function NodeLabel({ node }: { node: RuleNode }) {
   }
   switch (node.type) {
     case "GROUP":
-      return <span>{"\u6761\u4ef6\u7ec4\u5408"}</span>;
+      return <span>{t("ruleNodeView.label.group")}</span>;
     case "ACCUMULATE":
-      return <span>{"\u547d\u4e2d\u4e0e\u8bc4\u5206"}</span>;
+      return <span>{t("ruleNodeView.label.accumulate")}</span>;
     case "CONCEPT_MATCH":
       return (
         <span>
-          {"\u6d89\u53ca\u5185\u5bb9\uff1a"}
-          {node.params?.conceptName ?? "\u672a\u9009\u62e9"}
+          {t("ruleNodeView.label.conceptPrefix")}
+          {node.params?.conceptName ?? t("ruleNodeView.label.unselected")}
         </span>
       );
     case "TOPIC_REF":
       return (
         <span>
-          {"\u7b26\u5408\u4e3b\u9898\uff1a"}
-          {node.params?.topicName ?? "\u672a\u9009\u62e9"}
+          {t("ruleNodeView.label.topicPrefix")}
+          {node.params?.topicName ?? t("ruleNodeView.label.unselected")}
         </span>
       );
     case "PROXIMITY":
-      return <span>{"\u5185\u5bb9\u4f4d\u7f6e\u7ea6\u675f"}</span>;
+      return <span>{t("ruleNodeView.label.proximity")}</span>;
     case "LOGIC":
-      return <span>{"\u6392\u9664\u6761\u4ef6"}</span>;
+      return <span>{t("ruleNodeView.label.logic")}</span>;
     default:
-      return <span>{"\u89c4\u5219\u6761\u4ef6"}</span>;
+      return <span>{t("ruleNodeView.label.default")}</span>;
   }
 }

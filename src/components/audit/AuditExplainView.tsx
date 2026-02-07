@@ -1,6 +1,7 @@
 "use client";
 
 import { AuditSnapshot } from "@/lib/audit/auditTypes";
+import { t } from "@/i18n";
 
 export function AuditExplainView({
   snapshot,
@@ -23,9 +24,10 @@ export function AuditExplainView({
           }`}
         >
           <div className="mb-1 font-medium">
-            {`\u5224\u65ad\u573a\u666f ${idx + 1}\uff08\u4f18\u5148\u7ea7 ${
-              group.priority
-            }\uff09`}
+            {t("audit.explain.groupTitle", {
+              index: idx + 1,
+              priority: group.priority,
+            })}
           </div>
 
           <div className="mb-2 text-sm text-slate-600">

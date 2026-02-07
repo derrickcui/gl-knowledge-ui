@@ -19,12 +19,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-
-const STATUS_LABELS: Record<string, string> = {
-  APPROVED: "Approved",
-  PUBLISHED: "Published",
-  ARCHIVED: "Archived",
-};
+import { t } from "@/i18n";
 
 const STATUS_STYLES: Record<string, string> = {
   APPROVED: "bg-green-100 text-green-700",
@@ -33,7 +28,16 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function getStatusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
+  switch (normalizeStatus(status)) {
+    case "APPROVED":
+      return t("glossary.status.approved");
+    case "PUBLISHED":
+      return t("glossary.status.published");
+    case "ARCHIVED":
+      return t("glossary.status.archived");
+    default:
+      return status;
+  }
 }
 
 function getStatusClass(status: string) {
@@ -127,11 +131,11 @@ export function PublishedView({
 
   async function reload(
     nextOffset = 0,
-    actionLabel = "加载",
+    actionLabel = t("glossary.common.action.load"),
     nextQuery = query
   ) {
     setStatusMessage(
-      `正在执行${actionLabel}操作，请稍后...`
+      t("glossary.common.processing", { action: actionLabel })
     );
     setLoading(true);
     try {
@@ -162,7 +166,9 @@ export function PublishedView({
     async function loadDependencies() {
       const updates: Record<number, DependencySummary> = {};
       setStatusMessage(
-        "正在执行加载依赖关系操作，请稍后..."
+        t("glossary.common.processing", {
+          action: t("glossary.common.action.loadDependencies"),
+        })
       );
       try {
         await Promise.all(
@@ -270,7 +276,9 @@ export function PublishedView({
 
   function openDependencies(candidateId: number) {
     const summary = dependencyMap[candidateId];
-    const title = candidateNames[candidateId] ?? "Dependencies";
+    const title =
+      candidateNames[candidateId] ??
+      t("glossary.dependencies.titleFallback");
     setDependencyTitle(title);
     setDependencyRows(summary?.rows ?? []);
     setDependencyOpen(true);
@@ -283,7 +291,9 @@ export function PublishedView({
     setGraphDepth(1);
     setGraphMaxNodes(20);
     setStatusMessage(
-      "正在执行加载概念图操作，请稍后..."
+      t("glossary.common.processing", {
+        action: t("glossary.common.action.loadGraph"),
+      })
     );
     try {
       const result = await fetchConceptGraph({
@@ -297,7 +307,7 @@ export function PublishedView({
         setGraphData(result.data);
       } else {
         setGraphError(
-          result.error ?? "Unable to load graph data."
+          result.error ?? t("glossary.graph.loadFailed")
         );
       }
     } finally {
@@ -313,7 +323,9 @@ export function PublishedView({
     setGraphLoading(true);
     setGraphError(null);
     setStatusMessage(
-      "正在执行扩展概念图操作，请稍后..."
+      t("glossary.common.processing", {
+        action: t("glossary.common.action.expandGraph"),
+      })
     );
     try {
       const result = await fetchConceptGraph({
@@ -329,7 +341,7 @@ export function PublishedView({
         setGraphMaxNodes(nextMaxNodes);
       } else {
         setGraphError(
-          result.error ?? "Unable to load graph data."
+          result.error ?? t("glossary.graph.loadFailed")
         );
       }
     } finally {
@@ -360,7 +372,11 @@ export function PublishedView({
 
   async function handlePublish() {
     if (!selectedIds.length) return;
-    setStatusMessage("正在执行发布操作，请稍后...");
+    setStatusMessage(
+      t("glossary.common.processing", {
+        action: t("glossary.common.action.publish"),
+      })
+    );
     setPublishing(true);
     try {
       const result =
@@ -370,18 +386,18 @@ export function PublishedView({
       if (result.error) {
         setFeedback({
           type: "error",
-          title: "Publish failed",
+          title: t("glossary.publish.failed"),
           message:
-            result.error ?? "Unable to publish candidates.",
+            result.error ?? t("glossary.publish.failedMessage"),
         });
         return;
       }
       setFeedback({
         type: "success",
-        title: "Published",
-        message: "Selected candidates have been published.",
+        title: t("glossary.publish.success"),
+        message: t("glossary.publish.successMessage"),
       });
-      await reload(offset, "刷新列表");
+      await reload(offset, t("glossary.common.action.refresh"));
     } finally {
       setPublishing(false);
       setStatusMessage(null);
@@ -404,12 +420,14 @@ export function PublishedView({
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-lg font-semibold">
-            {isPublishMode ? "Publish" : "Knowbase (Published)"}
+            {isPublishMode
+              ? t("glossary.publish.title")
+              : t("glossary.knowbase.title")}
           </h1>
           <p className="text-sm opacity-70">
             {isPublishMode
-              ? "Publish approved terms into the knowledge base."
-              : "Published terms available to downstream use."}
+              ? t("glossary.publish.subtitle")
+              : t("glossary.knowbase.subtitle")}
           </p>
         </div>
         {isPublishMode && (
@@ -419,25 +437,27 @@ export function PublishedView({
             disabled={!selectedIds.length || publishing}
             onClick={handlePublish}
           >
-            Publish
+            {t("glossary.common.publish")}
           </button>
         )}
       </div>
 
       {loading && (
-        <span className="text-sm opacity-60">Loading...</span>
+        <span className="text-sm opacity-60">
+          {t("common.loading")}
+        </span>
       )}
 
       <div className="flex items-center gap-2">
         <input
           type="text"
           className="h-9 w-56 rounded-md border bg-background px-3 text-sm"
-          placeholder="Search candidates"
+          placeholder={t("glossary.candidates.searchPlaceholder")}
           value={query}
           onChange={(event) => {
             const nextQuery = event.target.value;
             setQuery(nextQuery);
-            reload(0, "搜索", nextQuery);
+            reload(0, t("glossary.common.action.search"), nextQuery);
           }}
         />
         {query && (
@@ -446,10 +466,10 @@ export function PublishedView({
             className="h-9 rounded-md border px-3 text-sm"
             onClick={() => {
               setQuery("");
-              reload(0, "清除搜索", "");
+              reload(0, t("glossary.common.action.clearSearch"), "");
             }}
           >
-            Clear
+            {t("glossary.common.clear")}
           </button>
         )}
       </div>
@@ -466,27 +486,28 @@ export function PublishedView({
                     onChange={(event) =>
                       toggleSelectAll(event.target.checked)
                     }
+                    aria-label={t("glossary.common.selectAll")}
                   />
                 </th>
               )}
               <th className="border-b px-3 py-2 text-left">
-                Canonical
+                {t("glossary.candidates.columns.canonical")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Role
+                {t("glossary.candidates.columns.role")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Confidence
+                {t("glossary.candidates.columns.confidence")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Status
+                {t("glossary.candidates.columns.status")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Dependencies
+                {t("glossary.dependencies.column")}
               </th>
               {!isPublishMode && (
                 <th className="border-b px-3 py-2 text-left">
-                  Graph
+                  {t("glossary.graph.column")}
                 </th>
               )}
             </tr>
@@ -532,6 +553,9 @@ export function PublishedView({
                             event.target.checked
                           )
                         }
+                        aria-label={t("glossary.common.selectRow", {
+                          name: r.canonical,
+                        })}
                       />
                     </td>
                   )}
@@ -561,7 +585,7 @@ export function PublishedView({
                       <button
                         type="button"
                         className="inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs text-amber-800"
-                        title="View pending dependencies"
+                        title={t("glossary.dependencies.viewPending")}
                         onClick={(event) => {
                           event.stopPropagation();
                           openDependencies(r.id);
@@ -584,7 +608,7 @@ export function PublishedView({
                           openGraph(r.id);
                         }}
                       >
-                        View
+                        {t("glossary.common.view")}
                       </button>
                     </td>
                   )}
@@ -599,8 +623,8 @@ export function PublishedView({
                   className="px-3 py-6 text-center text-sm opacity-60"
                 >
                   {isPublishMode
-                    ? "No candidates ready to publish"
-                    : "No published candidates found"}
+                    ? t("glossary.publish.empty")
+                    : t("glossary.knowbase.empty")}
                 </td>
               </tr>
             )}
@@ -610,7 +634,9 @@ export function PublishedView({
 
       <div className="flex items-center justify-between text-sm">
         <span className="opacity-70">
-          Page {Math.floor(offset / PAGE_SIZE) + 1}
+          {t("glossary.common.pageLabel", {
+            page: Math.floor(offset / PAGE_SIZE) + 1,
+          })}
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -620,12 +646,12 @@ export function PublishedView({
             onClick={() =>
               reload(
                 Math.max(0, offset - PAGE_SIZE),
-                "上一页",
+                t("glossary.common.action.prevPage"),
                 query
               )
             }
           >
-            Previous
+            {t("glossary.common.prev")}
           </button>
           <button
             type="button"
@@ -634,10 +660,14 @@ export function PublishedView({
             onClick={() => {
               const nextOffset =
                 nextCursor ?? offset + PAGE_SIZE;
-              reload(nextOffset, "下一页", query);
+              reload(
+                nextOffset,
+                t("glossary.common.action.nextPage"),
+                query
+              );
             }}
           >
-            Next
+            {t("glossary.common.next")}
           </button>
         </div>
       </div>
@@ -681,13 +711,13 @@ function DependencyDialog({
 
   function formatDependencyStatus(status: string) {
     const normalized = normalizeStatus(status);
-    if (normalized === "APPROVED") return "Approved";
-    if (normalized === "PUBLISHED") return "Published";
-    if (normalized === "ARCHIVED") return "Archived";
-    if (normalized === "CANDIDATE") return "Candidate";
-    if (normalized === "IN_REVIEW") return "In Review";
-    if (normalized === "SUBMITTED") return "In Review";
-    return "Pending";
+    if (normalized === "APPROVED") return t("glossary.status.approved");
+    if (normalized === "PUBLISHED") return t("glossary.status.published");
+    if (normalized === "ARCHIVED") return t("glossary.status.archived");
+    if (normalized === "CANDIDATE") return t("glossary.status.candidate");
+    if (normalized === "IN_REVIEW") return t("glossary.status.underReview");
+    if (normalized === "SUBMITTED") return t("glossary.status.underReview");
+    return t("glossary.status.pending");
   }
 
   const outgoingRows = rows.filter(
@@ -701,17 +731,19 @@ function DependencyDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[520px] rounded-lg bg-white p-6 shadow-xl">
         <div className="text-base font-semibold">
-          Dependencies for {title}
+          {t("glossary.dependencies.title", { title })}
         </div>
         <p className="mt-2 text-sm opacity-70">
-          These relationships cannot activate until the other side is approved.
+          {t("glossary.dependencies.subtitle")}
         </p>
 
         <div className="mt-4 space-y-4 text-sm">
           {rows.length ? (
             <>
               <div className="space-y-2">
-                <div className="font-medium">Outgoing</div>
+                <div className="font-medium">
+                  {t("glossary.dependencies.outgoing")}
+                </div>
                 <div className="border-t" />
                 {outgoingRows.length ? (
                   outgoingRows.map((row, index) => (
@@ -730,12 +762,16 @@ function DependencyDialog({
                     </div>
                   ))
                 ) : (
-                  <div className="text-sm opacity-60">None</div>
+                  <div className="text-sm opacity-60">
+                    {t("glossary.dependencies.none")}
+                  </div>
                 )}
               </div>
 
               <div className="space-y-2">
-                <div className="font-medium">Incoming</div>
+                <div className="font-medium">
+                  {t("glossary.dependencies.incoming")}
+                </div>
                 <div className="border-t" />
                 {incomingRows.length ? (
                   incomingRows.map((row, index) => (
@@ -754,13 +790,15 @@ function DependencyDialog({
                     </div>
                   ))
                 ) : (
-                  <div className="text-sm opacity-60">None</div>
+                  <div className="text-sm opacity-60">
+                    {t("glossary.dependencies.none")}
+                  </div>
                 )}
               </div>
             </>
           ) : (
             <div className="text-sm opacity-60">
-              No relationships found.
+              {t("glossary.dependencies.empty")}
             </div>
           )}
         </div>
@@ -771,7 +809,7 @@ function DependencyDialog({
             className="rounded-md border px-3 py-1 text-sm"
             onClick={onClose}
           >
-            Close
+            {t("glossary.common.close")}
           </button>
         </div>
       </div>
@@ -892,13 +930,18 @@ function ConceptGraphDialog({
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-base font-semibold">
-              Concept Graph
+              {t("glossary.graph.title")}
             </div>
             {data && (
               <div className="text-xs opacity-70">
-                Depth {depth} · Nodes {data.meta.nodeCount} ·
-                Edges {data.meta.edgeCount}
-                {data.meta.truncated ? " · Truncated" : ""}
+                {t("glossary.graph.meta", {
+                  depth,
+                  nodes: data.meta.nodeCount,
+                  edges: data.meta.edgeCount,
+                  truncated: data.meta.truncated
+                    ? t("glossary.graph.metaTruncated")
+                    : "",
+                })}
               </div>
             )}
           </div>
@@ -909,14 +952,14 @@ function ConceptGraphDialog({
               disabled={loading}
               onClick={onExpand}
             >
-              Expand
+              {t("glossary.graph.expand")}
             </button>
             <button
               type="button"
               className="rounded-md border px-3 py-1 text-xs"
               onClick={onClose}
             >
-              Close
+              {t("glossary.common.close")}
             </button>
           </div>
         </div>
@@ -924,7 +967,7 @@ function ConceptGraphDialog({
         <div className="mt-4 rounded-md border bg-slate-50">
           {loading && (
             <div className="p-4 text-sm opacity-70">
-              Loading graph...
+              {t("glossary.graph.loading")}
             </div>
           )}
           {error && (
@@ -940,7 +983,7 @@ function ConceptGraphDialog({
           )}
           {!loading && !error && data?.meta.truncated && (
             <div className="border-t px-4 py-2 text-xs opacity-70">
-              Graph truncated. Use Expand to load more nodes (max {maxNodes}).
+              {t("glossary.graph.truncated", { maxNodes })}
             </div>
           )}
         </div>

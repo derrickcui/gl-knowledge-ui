@@ -450,7 +450,7 @@ export default function TopicDetailPage() {
         type: "success",
         title: t("topicDetail.draft.deleted"),
       });
-      router.push("/knowledge/topics");
+      router.push("/knowledge/topics?refresh=1");
     }
 
     setActionBusy(false);

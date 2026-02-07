@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AntiPatternReport } from "./antiPatternTypes";
+import { t } from "@/i18n";
 
 type Props = {
   topicId: string;
@@ -36,11 +37,11 @@ export default function ReviewActionBar({
       <div className="text-sm">
         {canApprove ? (
           <span className="text-green-700">
-            ✅ 无严重问题，可通过评审
+            {t("review.actionBar.ready")}
           </span>
         ) : (
           <span className="text-red-700">
-            ❌ 存在 {errors.length} 个严重问题，禁止通过
+            {t("review.actionBar.blocked", { count: errors.length })}
           </span>
         )}
       </div>
@@ -48,7 +49,7 @@ export default function ReviewActionBar({
       <div className="flex items-center gap-2">
         {approving ? (
           <span className="rounded border px-3 py-1 text-sm text-slate-400">
-            去编辑器修复
+            {t("review.actionBar.fixInEditor")}
           </span>
         ) : (
           <Link
@@ -63,7 +64,7 @@ export default function ReviewActionBar({
                   )}`
             }
           >
-            去编辑器修复
+            {t("review.actionBar.fixInEditor")}
           </Link>
         )}
 
@@ -73,7 +74,7 @@ export default function ReviewActionBar({
           onClick={onRejectClick}
           disabled={approving}
         >
-          拒绝
+          {t("review.actionBar.reject")}
         </button>
 
         <button
@@ -84,10 +85,12 @@ export default function ReviewActionBar({
               : "cursor-not-allowed bg-slate-200 text-slate-500"
           }`}
           disabled={!canApprove || approving}
-          title={!canApprove ? "存在严重反模式，必须修复后才能通过" : ""}
+          title={!canApprove ? t("review.actionBar.blockedTooltip") : ""}
           onClick={onApproveClick}
         >
-          {approving ? "处理中…" : "通过"}
+          {approving
+            ? t("review.actionBar.approving")
+            : t("review.actionBar.approve")}
         </button>
       </div>
     </div>

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { ApprovalDTO } from "@/lib/api";
+import { t } from "@/i18n";
 
 export function ApprovalRow({
   candidate,
@@ -31,7 +32,7 @@ export function ApprovalRow({
             )
           }
         >
-          Review
+          {t("glossary.approvals.review")}
         </button>
       </td>
     </tr>

@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { t } from "@/i18n";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import {
   configureTemplate,
   createTemplateInitial,
+  deleteTemplate,
+  fetchTemplateReferencedTopics,
   publishTemplate,
 } from "@/lib/api";
 import {
@@ -78,9 +80,45 @@ export default function TemplateCreatePage({
     message?: string;
   } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [topicsDialogOpen, setTopicsDialogOpen] = useState(false);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [topicsError, setTopicsError] = useState<string | null>(null);
+  const [referencedTopics, setReferencedTopics] = useState<
+    { id: number | string; name: string; status: string }[]
+  >([]);
+  const [topicsLoaded, setTopicsLoaded] = useState(false);
   const [templateId, setTemplateId] = useState<number | null>(null);
   const isPublished =
     String(initialData?.status ?? "").toUpperCase() === "PUBLISHED";
+  const canDeletePublished =
+    topicsLoaded && !topicsError && referencedTopics.length === 0;
+
+  const formatTopicStatus = (status?: string) => {
+    if (!status) return "-";
+    const normalized = String(status).toUpperCase();
+    if (normalized === "PUBLISHED") return t("templates.status.published");
+    if (normalized === "DRAFT") return t("templates.status.draft");
+    if (normalized === "DEPRECATED") return t("templates.status.deprecated");
+    if (normalized === "IN_REVIEW") return t("review.status.inReview");
+    if (normalized === "REJECTED") return t("review.status.rejected");
+    return status;
+  };
+
+  const loadReferencedTopics = useCallback(async () => {
+    if (!templateId) return;
+    setTopicsLoading(true);
+    setTopicsError(null);
+    const res = await fetchTemplateReferencedTopics(templateId);
+    if (res.data) {
+      setReferencedTopics(res.data);
+    } else {
+      setReferencedTopics([]);
+      setTopicsError(res.error ?? t("templates.create.topicsLoadFailed"));
+    }
+    setTopicsLoading(false);
+    setTopicsLoaded(true);
+  }, [templateId, t]);
   const showTemplateName =
     (step > 0 || !!initialTemplateId || !!initialData?.name) &&
     name.trim().length > 0;
@@ -507,6 +545,64 @@ export default function TemplateCreatePage({
     }
   }
 
+  async function handleDeleteTemplate() {
+    try {
+      if (isPublished && !canDeletePublished) {
+        setStatusMessage({
+          type: "info",
+          title: t("templates.create.status.deleteNotAllowed"),
+        });
+        return;
+      }
+      if (!templateId) {
+        setStatusMessage({
+          type: "error",
+          title: t("templates.create.status.needStep1"),
+        });
+        return;
+      }
+      setSubmitting(true);
+      setStatusMessage({
+        type: "info",
+        title: t("templates.create.status.deleting"),
+      });
+      const res = await deleteTemplate(templateId);
+      if (!res.data) throw new Error(res.error ?? "delete failed");
+      setStatusMessage({
+        type: "success",
+        title: t("templates.create.status.deleted"),
+      });
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(
+          "templates:list:invalidate",
+          String(Date.now())
+        );
+      }
+      router.push("/knowledge/templates");
+    } catch (e: any) {
+      setStatusMessage({
+        type: "error",
+        title: t("templates.create.status.deleteFailed"),
+        message: e?.message,
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleOpenReferencedTopics() {
+    if (!templateId) return;
+    setTopicsDialogOpen(true);
+    if (!topicsLoaded && !topicsLoading) {
+      await loadReferencedTopics();
+    }
+  }
+
+  useEffect(() => {
+    if (!templateId) return;
+    loadReferencedTopics();
+  }, [templateId, loadReferencedTopics]);
+
   function handleCreate() {
     (async () => {
       try {
@@ -672,6 +768,26 @@ export default function TemplateCreatePage({
               <button
                 type="button"
                 className="h-9 rounded-md border px-3 text-sm"
+                onClick={handleOpenReferencedTopics}
+                disabled={!templateId}
+              >
+                {t("templates.create.referencedTopics")}
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-md border border-rose-300 px-3 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={
+                  submitting ||
+                  !templateId ||
+                  (isPublished && !canDeletePublished)
+                }
+              >
+                {t("templates.create.delete")}
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-md border px-3 text-sm"
                 onClick={handleSaveCurrentStep}
                 disabled={submitting || isPublished}
               >
@@ -688,6 +804,26 @@ export default function TemplateCreatePage({
             </>
           ) : (
             <>
+              <button
+                type="button"
+                className="h-9 rounded-md border px-3 text-sm"
+                onClick={handleOpenReferencedTopics}
+                disabled={!templateId}
+              >
+                {t("templates.create.referencedTopics")}
+              </button>
+              <button
+                type="button"
+                className="h-9 rounded-md border border-rose-300 px-3 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={
+                  submitting ||
+                  !templateId ||
+                  (isPublished && !canDeletePublished)
+                }
+              >
+                {t("templates.create.delete")}
+              </button>
               <button
                 type="button"
                 className="h-9 rounded-md border px-3 text-sm"
@@ -708,6 +844,103 @@ export default function TemplateCreatePage({
           )}
         </div>
       </div>
+
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold">
+              {t("templates.create.deleteConfirmTitle")}
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {t("templates.create.deleteConfirmMessage")}
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                className="rounded-md border px-3 py-1 text-sm"
+                onClick={() => setDeleteConfirmOpen(false)}
+              >
+                {t("templates.create.deleteConfirmCancel")}
+              </button>
+              <button
+                className="rounded-md bg-black px-4 py-1.5 text-sm text-white"
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  handleDeleteTemplate();
+                }}
+              >
+                {t("templates.create.deleteConfirmOk")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {topicsDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[520px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-base font-semibold">
+                  {t("templates.create.referencedTopicsTitle")}
+                </h3>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t("templates.create.referencedTopicsDesc")}
+                </p>
+              </div>
+              <button
+                className="rounded-md border px-3 py-1 text-sm"
+                onClick={() => setTopicsDialogOpen(false)}
+              >
+                {t("templates.create.referencedTopicsClose")}
+              </button>
+            </div>
+
+            <div className="mt-4 max-h-[360px] overflow-auto rounded-md border">
+              {topicsLoading && (
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  {t("templates.create.referencedTopicsLoading")}
+                </div>
+              )}
+              {!topicsLoading && topicsError && (
+                <div className="px-4 py-6 text-center text-sm text-red-600">
+                  {topicsError}
+                </div>
+              )}
+              {!topicsLoading && !topicsError && referencedTopics.length === 0 && (
+                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+                  {t("templates.create.referencedTopicsEmpty")}
+                </div>
+              )}
+              {!topicsLoading && !topicsError && referencedTopics.length > 0 && (
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <th className="border-b px-3 py-2 text-left">
+                        {t("templates.create.referencedTopicsColumns.name")}
+                      </th>
+                      <th className="border-b px-3 py-2 text-left">
+                        {t("templates.create.referencedTopicsColumns.status")}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {referencedTopics.map((topic) => (
+                      <tr key={String(topic.id)} className="hover:bg-muted/60">
+                        <td className="border-b px-3 py-2">
+                          {topic.name}
+                        </td>
+                        <td className="border-b px-3 py-2">
+                          {formatTopicStatus(topic.status)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

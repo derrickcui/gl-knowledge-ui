@@ -1,4 +1,5 @@
 import { RuleNode } from "../astTypes";
+import { t } from "@/i18n";
 
 export type ExplainLine = {
   conditionId: string;
@@ -23,7 +24,7 @@ function getConditionExplain(node: RuleNode): string {
   if (node.explain?.text) {
     return node.explain.text;
   }
-  return "\u6ee1\u8db3\u6307\u5b9a\u4e1a\u52a1\u6761\u4ef6";
+  return t("groupExplain.condition.default");
 }
 
 type ImportanceLevel = "HIGH" | "NORMAL" | "LOW";
@@ -60,9 +61,9 @@ function collectConditionLabels(node: RuleNode, labels: string[] = []): string[]
 }
 
 function proximityRangeLabel(range?: ProximityRange) {
-  if (range === "SENTENCE") return "\u540c\u4e00\u53e5\u4e2d";
-  if (range === "PARAGRAPH") return "\u540c\u4e00\u6bb5\u4e2d";
-  return "\u6587\u6863\u6b63\u6587\u4e2d";
+  if (range === "SENTENCE") return t("groupExplain.proximity.range.sentence");
+  if (range === "PARAGRAPH") return t("groupExplain.proximity.range.paragraph");
+  return t("groupExplain.proximity.range.document");
 }
 
 function buildProximityExplainLine(group: RuleNode): string | null {
@@ -72,7 +73,7 @@ function buildProximityExplainLine(group: RuleNode): string | null {
   if ((group.children?.length ?? 0) < 2) return null;
   const rangeText = proximityRangeLabel(raw?.range);
   if (relation === "ORDER") {
-    return `\u5728${rangeText}\uff0c\u4e0a\u8ff0\u6761\u4ef6\u9700\u8981\u6309\u7ed9\u5b9a\u987a\u5e8f\u4f9d\u6b21\u51fa\u73b0\u3002`;
+    return t("groupExplain.proximity.order", { range: rangeText });
   }
   const labels = Array.from(
     new Set(
@@ -82,17 +83,19 @@ function buildProximityExplainLine(group: RuleNode): string | null {
     )
   );
   if (labels.length === 0) {
-    return `\u5728${rangeText}\uff0c\u4e0a\u8ff0\u6761\u4ef6\u9700\u8981\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1\u3002`;
+    return t("groupExplain.proximity.near", { range: rangeText });
   }
   const joined = labels.map((label) => `\u300c${label}\u300d`).join("");
-  return `\u5728${rangeText}\uff0c${joined}\u9700\u8981\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1\u3002`;
+  return t("groupExplain.proximity.nearWith", {
+    range: rangeText,
+    labels: joined,
+  });
 }
 
 export function buildGroupExplainModel(group: RuleNode): GroupExplainModel {
   if (!group.children || group.children.length === 0) {
     return {
-      header:
-        "\u8be5\u5224\u65ad\u573a\u666f\u5c1a\u672a\u5b9a\u4e49\u5177\u4f53\u5224\u65ad\u6761\u4ef6\u3002",
+      header: t("groupExplain.header.empty"),
       lines: [],
     };
   }
@@ -124,16 +127,16 @@ export function buildGroupExplainModel(group: RuleNode): GroupExplainModel {
     group.children.length >= 2;
   const header =
     normalized === "OR"
-      ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u6ee1\u8db3\u4ee5\u4e0b\u4efb\u610f\u4e00\u6761\u6761\u4ef6\u5373\u53ef\uff1a"
+      ? t("groupExplain.header.any")
       : normalized === "EXCLUDE"
-      ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u82e5\u6ee1\u8db3\u4ee5\u4e0b\u6761\u4ef6\u5219\u6392\u9664\uff1a"
+      ? t("groupExplain.header.exclude")
       : importanceActive
-      ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u6ee1\u8db3\u4ee5\u4e0b\u6761\u4ef6\u5e76\u7efc\u5408\u91cd\u8981\u6027\u5224\u65ad\uff1a"
+      ? t("groupExplain.header.importance")
       : normalized === "ACCRUE" && !legacyLogsum
-      ? "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u5f53\u6ee1\u8db3\u591a\u4e2a\u5224\u65ad\u6761\u4ef6\u65f6\uff0c\u8be5\u5224\u65ad\u573a\u666f\u66f4\u5bb9\u6613\u88ab\u8ba4\u4e3a\u6210\u7acb\u3002"
+      ? t("groupExplain.header.accrue")
       : normalized === "LOGSUM" || legacyLogsum
-      ? `\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u540c\u65f6\u6ee1\u8db3\u4ee5\u4e0b\u6761\u4ef6\u4e2d\u7684\u81f3\u5c11 ${threshold} \u4e2a\uff1a`
-      : "\u5728\u540c\u4e00\u5185\u5bb9\u8bed\u5883\u4e2d\uff0c\u540c\u65f6\u6ee1\u8db3\u4ee5\u4e0b\u6761\u4ef6\uff1a";
+      ? t("groupExplain.header.logsum", { threshold: threshold ?? 2 })
+      : t("groupExplain.header.all");
 
   return {
     header,
@@ -163,7 +166,7 @@ export function generateGroupExplain(group: RuleNode): string {
     !hasTopicRef(group) &&
     (group.children?.length ?? 0) >= 2;
   if (importanceActive && hasImportanceOverride(group)) {
-    return `${withProximity}\n\n\u8bf4\u660e\uff1a\n\u5728\u8be5\u5224\u65ad\u573a\u666f\u4e2d\uff0c\u4e0d\u540c\u6761\u4ef6\u7684\u91cd\u8981\u6027\u4e0d\u540c\uff0c\n\u7cfb\u7edf\u5c06\u7efc\u5408\u5404\u6761\u4ef6\u7684\u91cd\u8981\u7a0b\u5ea6\u8fdb\u884c\u5224\u65ad\u3002`;
+    return `${withProximity}\n\n${t("groupExplain.importance.note")}`;
   }
   return withProximity;
 }

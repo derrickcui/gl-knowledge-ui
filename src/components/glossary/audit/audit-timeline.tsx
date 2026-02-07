@@ -1,6 +1,7 @@
 import { AuditRecord } from "@/types/audit";
 import { AuditDateGroup } from "./audit-date-group";
 import { AuditEmptyState } from "./audit-empty-state";
+import { t } from "@/i18n";
 
 function groupByDate(records: AuditRecord[]) {
   const map = new Map<string, AuditRecord[]>();
@@ -46,7 +47,6 @@ export function AuditTimeline({
         />
       ))}
 
-      {/* Load more */}
       <div className="flex justify-center pt-4">
         {hasMore ? (
           <button
@@ -54,11 +54,13 @@ export function AuditTimeline({
             disabled={loading}
             className="text-sm underline disabled:opacity-50"
           >
-            {loading ? "Loading…" : "Load earlier records"}
+            {loading
+              ? t("glossary.common.loading")
+              : t("glossary.audit.loadMore")}
           </button>
         ) : (
           <span className="text-xs text-muted-foreground">
-            No more records
+            {t("glossary.audit.noMore")}
           </span>
         )}
       </div>

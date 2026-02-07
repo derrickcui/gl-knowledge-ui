@@ -1,6 +1,7 @@
 "use client";
 
 import { AuditEvent } from "./auditTypes";
+import { t } from "@/i18n";
 
 export default function AuditTimeline({
   events,
@@ -9,9 +10,13 @@ export default function AuditTimeline({
 }) {
   return (
     <div className="rounded border p-3">
-      <div className="mb-2 text-sm font-semibold">操作审计</div>
+      <div className="mb-2 text-sm font-semibold">
+        {t("review.audit.title")}
+      </div>
       {events.length === 0 ? (
-        <div className="text-xs text-slate-500">暂无记录。</div>
+        <div className="text-xs text-slate-500">
+          {t("review.audit.empty")}
+        </div>
       ) : (
         <ul className="space-y-2 text-sm">
           {events.map((event) => (
@@ -20,7 +25,7 @@ export default function AuditTimeline({
                 <span>
                   <strong>{humanizeAction(event.action)}</strong>{" "}
                   <span className="text-slate-600">
-                    by {event.actor}
+                    {t("review.audit.by", { actor: event.actor })}
                   </span>
                 </span>
                 <span className="text-xs text-slate-500">
@@ -29,13 +34,19 @@ export default function AuditTimeline({
               </div>
               {(event.fromStatus || event.toStatus) && (
                 <div className="text-xs text-slate-600">
-                  状态：{event.fromStatus ?? "—"} →{" "}
-                  {event.toStatus ?? "—"}
+                  {t("review.audit.statusTransition", {
+                    from:
+                      event.fromStatus ??
+                      t("review.audit.statusPlaceholder"),
+                    to:
+                      event.toStatus ??
+                      t("review.audit.statusPlaceholder"),
+                  })}
                 </div>
               )}
               {event.reason && (
                 <div className="mt-1 text-xs text-slate-700">
-                  原因：{event.reason}
+                  {t("review.audit.reason", { reason: event.reason })}
                 </div>
               )}
             </li>
@@ -49,13 +60,13 @@ export default function AuditTimeline({
 function humanizeAction(action: string) {
   switch (action) {
     case "SUBMIT_REVIEW":
-      return "提交评审";
+      return t("review.audit.action.submit");
     case "APPROVE_REVIEW":
-      return "通过评审";
+      return t("review.audit.action.approve");
     case "REJECT_REVIEW":
-      return "拒绝评审";
+      return t("review.audit.action.reject");
     case "PUBLISH_TOPIC":
-      return "发布规则";
+      return t("review.audit.action.publish");
     default:
       return action;
   }

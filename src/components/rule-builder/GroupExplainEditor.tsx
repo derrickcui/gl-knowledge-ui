@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { RuleNode } from "./astTypes";
 import { generateGroupExplain } from "./explain/groupExplain";
+import { t } from "@/i18n";
 
 interface Props {
   group: RuleNode;
@@ -52,7 +53,7 @@ export function GroupExplainEditor({
   return (
     <div className="mt-3 border-t pt-3">
       <div className="text-xs text-slate-500 mb-1">
-        {"\u5224\u65ad\u573a\u666f\u8bf4\u660e"}
+        {t("groupExplainEditor.label")}
       </div>
 
       <textarea
@@ -70,7 +71,7 @@ export function GroupExplainEditor({
           onClick={saveCustom}
           disabled={readOnly}
         >
-          {"\u4fdd\u5b58\u8bf4\u660e"}
+          {t("groupExplainEditor.save")}
         </button>
 
         {isCustom && (
@@ -80,7 +81,7 @@ export function GroupExplainEditor({
             onClick={resetAuto}
             disabled={readOnly}
           >
-            {"\u6062\u590d\u81ea\u52a8\u751f\u6210"}
+            {t("groupExplainEditor.reset")}
           </button>
         )}
       </div>

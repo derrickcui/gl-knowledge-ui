@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ApprovalDTO } from "@/lib/api";
 import { ApprovalTable } from "@/components/glossary/approval/approval-table";
+import { t } from "@/i18n";
 
 export function ApprovalsView({
   initialItems,
@@ -23,9 +24,11 @@ export function ApprovalsView({
   return (
     <div className="space-y-4">
       <div>
-        <div className="text-lg font-semibold">Approvals</div>
+        <div className="text-lg font-semibold">
+          {t("glossary.approvals.title")}
+        </div>
         <p className="mt-2 text-sm opacity-70">
-          Terms under review that require your decision.
+          {t("glossary.approvals.subtitle")}
         </p>
       </div>
 
@@ -33,7 +36,7 @@ export function ApprovalsView({
         <input
           type="text"
           className="h-9 w-56 rounded-md border bg-background px-3 text-sm"
-          placeholder="Search approvals"
+          placeholder={t("glossary.approvals.searchPlaceholder")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -43,7 +46,7 @@ export function ApprovalsView({
             className="h-9 rounded-md border px-3 text-sm"
             onClick={() => setQuery("")}
           >
-            Clear
+            {t("glossary.common.clear")}
           </button>
         )}
       </div>

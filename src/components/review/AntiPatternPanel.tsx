@@ -3,6 +3,7 @@
 import { AntiPatternReport } from "./antiPatternTypes";
 import AntiPatternItem from "./AntiPatternItem";
 import AntiPatternSummary from "./AntiPatternSummary";
+import { t } from "@/i18n";
 
 interface Props {
   report: AntiPatternReport;
@@ -18,7 +19,7 @@ export default function AntiPatternPanel({
   if (!report.findings.length) {
     return (
       <div className="text-xs italic text-slate-400">
-        未发现规则反模式。
+        {t("review.anti.noneFound")}
       </div>
     );
   }

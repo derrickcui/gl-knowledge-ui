@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { fetchTemplatesList, RuleTemplateItem } from "@/lib/api";
 
 const TEMPLATE_LIST_TTL_MS = 30_000;
+const TEMPLATE_LIST_INVALIDATE_KEY = "templates:list:invalidate";
 const templateListCache: {
   data: RuleTemplateItem[] | null;
   error: string | null;
@@ -17,6 +18,21 @@ const templateListCache: {
   ts: 0,
   promise: null,
 };
+
+function clearTemplateListCache() {
+  templateListCache.data = null;
+  templateListCache.error = null;
+  templateListCache.ts = 0;
+  templateListCache.promise = null;
+}
+
+function consumeTemplateListInvalidateFlag() {
+  if (typeof window === "undefined") return;
+  const flag = window.sessionStorage.getItem(TEMPLATE_LIST_INVALIDATE_KEY);
+  if (!flag) return;
+  window.sessionStorage.removeItem(TEMPLATE_LIST_INVALIDATE_KEY);
+  clearTemplateListCache();
+}
 
 async function fetchTemplatesListCached() {
   const now = Date.now();
@@ -65,6 +81,21 @@ function getStatusLabel(status?: string) {
   return t("templates.status.draft");
 }
 
+function formatUpdatedAt(value?: string) {
+  if (!value) return "";
+  if (typeof value !== "string") return String(value);
+  const tIndex = value.indexOf("T");
+  if (tIndex === -1) return value;
+  const datePart = value.slice(0, tIndex);
+  let timePart = value.slice(tIndex + 1);
+  const zIndex = timePart.indexOf("Z");
+  if (zIndex !== -1) timePart = timePart.slice(0, zIndex);
+  const dotIndex = timePart.indexOf(".");
+  if (dotIndex !== -1) timePart = timePart.slice(0, dotIndex);
+  const trimmed = timePart.length >= 8 ? timePart.slice(0, 8) : timePart;
+  return `${datePart} ${trimmed}`;
+}
+
 export default function TemplatesPage() {
   const router = useRouter();
   const [templates, setTemplates] = useState<RuleTemplateItem[]>([]);
@@ -77,6 +108,7 @@ export default function TemplatesPage() {
       setLoading(true);
       setError(null);
       try {
+        consumeTemplateListInvalidateFlag();
         const res = await fetchTemplatesListCached();
         if (res.error) throw new Error(res.error);
         if (mounted) setTemplates(res.data ?? []);
@@ -164,7 +196,9 @@ export default function TemplatesPage() {
                     {getStatusLabel(tpl.status)}
                   </span>
                 </td>
-                <td className="border-b px-3 py-2">{tpl.updatedAt}</td>
+                <td className="border-b px-3 py-2">
+                  {formatUpdatedAt(tpl.updatedAt)}
+                </td>
               </tr>
             ))}
             {!loading && !error && !templates.length && (

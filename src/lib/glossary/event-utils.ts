@@ -1,5 +1,6 @@
 import { GovernanceEvent } from "./types";
 import { DECISION_EVENTS } from "./event-types";
+import { t } from "@/i18n";
 
 export function sortEventsAsc(events: GovernanceEvent[]) {
   return [...events].sort(
@@ -14,17 +15,21 @@ export function isDecisionEvent(type: string) {
 export function getEventLabel(event: GovernanceEvent): string {
   switch (event.type) {
     case "EXTRACTED":
-      return "Extracted by system";
+      return t("glossary.timeline.extracted");
     case "REQUEST_SUBMITTED":
-      return "Submitted for review";
+      return t("glossary.timeline.submitted");
     case "APPROVED":
-      return `Approved by ${event.operator}`;
+      return t("glossary.timeline.approved", {
+        operator: event.operator ?? "",
+      });
     case "REJECTED":
-      return `Rejected by ${event.operator}`;
+      return t("glossary.timeline.rejected", {
+        operator: event.operator ?? "",
+      });
     case "PUBLISHED":
-      return "Published";
+      return t("glossary.timeline.published");
     case "ARCHIVED":
-      return "Archived";
+      return t("glossary.timeline.archived");
     default:
       return event.type;
   }

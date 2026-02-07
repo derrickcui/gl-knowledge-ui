@@ -1,4 +1,5 @@
 import { CandidateRelationsResponse } from "@/lib/api";
+import { t } from "@/i18n";
 
 type RelationshipRow = {
   left: string;
@@ -9,11 +10,11 @@ type RelationshipRow = {
 };
 
 function getStatusLabel(status: string) {
-  if (status === "APPROVED") return "✔ Approved";
-  if (status === "PUBLISHED") return "✔ Published";
-  if (status === "CANDIDATE") return "⚠ Candidate";
-  if (status === "ARCHIVED") return "✖ Archived";
-  return "⚠ Pending";
+  if (status === "APPROVED") return t("glossary.status.approved");
+  if (status === "PUBLISHED") return t("glossary.status.published");
+  if (status === "CANDIDATE") return t("glossary.status.candidate");
+  if (status === "ARCHIVED") return t("glossary.status.archived");
+  return t("glossary.status.pending");
 }
 
 function getStatusClass(status: string) {
@@ -101,17 +102,19 @@ export function CandidateRelationshipsPanel({
     <div className="space-y-3 rounded-md border p-4">
       <div className="space-y-1">
         <h2 className="font-medium">
-          Relationships (Impact Preview)
+          {t("glossary.relationships.title")}
         </h2>
         <p className="text-sm opacity-70">
-          Relationships that will be affected if this candidate is approved.
+          {t("glossary.relationships.subtitle")}
         </p>
       </div>
 
       {outgoingRows.length || incomingRows.length ? (
         <div className="space-y-6 text-sm">
           <div className="space-y-3">
-            <div className="font-medium">Outgoing</div>
+            <div className="font-medium">
+              {t("glossary.relationships.outgoing")}
+            </div>
             <div className="border-t" />
             {outgoingRows.length ? (
               <div className="space-y-2">
@@ -121,13 +124,15 @@ export function CandidateRelationshipsPanel({
               </div>
             ) : (
               <div className="text-sm opacity-60">
-                No other candidates currently reference this concept.
+                {t("glossary.relationships.outgoingEmpty")}
               </div>
             )}
           </div>
 
           <div className="space-y-3">
-            <div className="font-medium">Incoming</div>
+            <div className="font-medium">
+              {t("glossary.relationships.incoming")}
+            </div>
             <div className="border-t" />
             {incomingRows.length ? (
               <div className="space-y-2">
@@ -136,18 +141,20 @@ export function CandidateRelationshipsPanel({
                 )}
               </div>
             ) : (
-              <div className="text-sm opacity-60">None</div>
+              <div className="text-sm opacity-60">
+                {t("glossary.relationships.incomingEmpty")}
+              </div>
             )}
           </div>
         </div>
       ) : (
         <div className="text-sm opacity-70">
-          No relationships found.
+          {t("glossary.relationships.empty")}
         </div>
       )}
 
       <div className="text-xs opacity-70">
-        Relationships will not be activated until both concepts are published.
+        {t("glossary.relationships.footer")}
       </div>
     </div>
   );

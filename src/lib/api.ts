@@ -458,6 +458,12 @@ export type RuleTemplateItem = {
   [key: string]: any;
 };
 
+export type RuleTemplateReferencedTopicItem = {
+  id: number | string;
+  name: string;
+  status: string;
+};
+
 function normalizeTemplateList(payload: any): RuleTemplateItem[] {
   if (Array.isArray(payload)) return payload;
   if (Array.isArray(payload?.items)) return payload.items;
@@ -520,11 +526,36 @@ export async function fetchTemplateById(
   };
 }
 
+export async function fetchTemplateReferencedTopics(
+  id: number | string
+): Promise<ApiResult<RuleTemplateReferencedTopicItem[]>> {
+  const res = await requestJson<unknown>(
+    `/api/templates/${id}/topics`,
+    { cache: "no-store" }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  const payload: any = res.data;
+  const list = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+    ? payload.data
+    : [];
+  return { data: list as RuleTemplateReferencedTopicItem[], error: null };
+}
+
 export async function publishTemplate(
   id: number
 ): Promise<ApiResult<unknown>> {
   return requestJson<unknown>(`/api/templates/${id}/publish`, {
     method: "POST",
+  });
+}
+
+export async function deleteTemplate(
+  id: number
+): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(`/api/templates/${id}`, {
+    method: "DELETE",
   });
 }
 

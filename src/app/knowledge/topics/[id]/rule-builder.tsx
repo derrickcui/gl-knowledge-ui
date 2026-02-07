@@ -374,9 +374,6 @@ function ScenarioCard({
   const allowOrder = hasTemplate
     ? templateCapabilities?.allowOrder === true
     : true;
-  // When template only allows ALL: scenario header degrades to read-only,
-  // operator fixed to AND, and scoring/threshold/importance/accrue UI hidden.
-  const onlyAllowAll = allowAll && !allowAccrue && !allowLogsum;
   const baseTitle =
     scenario.params?.title || t("scenario.title", { index: index + 1 });
   const rawScenarioOperator = scenario.params?.operator ?? "AND";
@@ -423,9 +420,8 @@ function ScenarioCard({
   const effectiveOperator = allowedOperators.includes(scenarioOperator)
     ? scenarioOperator
     : fallbackOperator;
-  const scenarioOperatorLabel = onlyAllowAll
-    ? t("scenario.operator.allLabel")
-    : effectiveOperator === "OR"
+  const scenarioOperatorLabel =
+    effectiveOperator === "OR"
     ? t("scenario.operator.anyLabel")
     : effectiveOperator === "ACCRUE"
     ? t("scenario.operator.accrueSoftLabel")
@@ -434,9 +430,8 @@ function ScenarioCard({
     : effectiveOperator === "LOGSUM"
     ? t("scenario.operator.accrueLabel")
     : t("scenario.operator.allLabel");
-  const scenarioTitle = onlyAllowAll
-    ? baseTitle
-    : effectiveOperator === "LOGSUM"
+  const scenarioTitle =
+    effectiveOperator === "LOGSUM"
     ? t("scenario.title.accrue", {
         title: baseTitle,
         threshold,
@@ -444,9 +439,8 @@ function ScenarioCard({
     : effectiveOperator === "ACCRUE"
     ? t("scenario.title.accrueSoft", { title: baseTitle })
     : baseTitle;
-  const scenarioSummary = onlyAllowAll
-    ? t("scenario.summary.all")
-    : effectiveOperator === "OR"
+  const scenarioSummary =
+    effectiveOperator === "OR"
     ? t("scenario.summary.any")
     : effectiveOperator === "WEIGHTED"
     ? t("scenario.summary.importance")
@@ -500,21 +494,6 @@ function ScenarioCard({
   };
 
   const isEmpty = !scenario.children || scenario.children.length === 0;
-
-  useEffect(() => {
-    if (!onlyAllowAll) return;
-    if (scenario.params?.operator === "AND") return;
-    onUpdate({
-      ...scenario,
-      params: {
-        ...scenario.params,
-        operator: "AND",
-        mode: undefined,
-        threshold: undefined,
-        importanceMode: undefined,
-      },
-    });
-  }, [onlyAllowAll, scenario, onUpdate]);
 
   useEffect(() => {
     if (readOnly) return;
@@ -791,55 +770,44 @@ function ScenarioCard({
           <div className="mt-1 text-xs text-muted-foreground">
             {scenarioSummary}
           </div>
-          {onlyAllowAll ? (
-            <div className="mt-2 text-xs text-slate-500">
-              <div className="text-[12px] font-medium text-slate-700">
-                {"\u5224\u65ad\u65b9\u5f0f\uff1a\u5fc5\u987b\u6ee1\u8db3\u6240\u6709\u6761\u4ef6"}
-              </div>
-              <div className="text-[11px] text-slate-400">
-                {"\u8be5\u4e3b\u9898\u6a21\u677f\u9650\u5b9a\u4e3a\u300c\u6240\u6709\u6761\u4ef6\u540c\u65f6\u6210\u7acb\u300d\u3002"}
-              </div>
-            </div>
-          ) : (
-            <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
-              <span className="text-[11px] font-medium text-slate-600">
-                {t("scenario.conditionsLabel")}
-              </span>
-              {allowedOperators.map((value) => {
-                const disabledOption =
-                  readOnly ||
-                  (value === "LOGSUM" && !canUseLogsum) ||
-                  (value === "WEIGHTED" && !canUseImportance);
-                return (
-                  <label
-                    key={value}
-                    className={`inline-flex items-center gap-1 text-[12px] font-medium ${
-                      disabledOption ? "text-slate-300" : "text-slate-700"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name={`scenario-${index}-operator`}
-                      value={value}
-                      checked={effectiveOperator === value}
-                      disabled={disabledOption}
-                      onChange={() => handleScenarioOperatorChange(value)}
-                      className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
-                    />
-                    {value === "AND"
-                      ? t("scenario.and")
-                      : value === "OR"
-                      ? t("scenario.or")
-                      : value === "WEIGHTED"
-                      ? t("scenario.importance")
-                      : value === "LOGSUM"
-                      ? t("scenario.operator.accrueLabel")
-                      : t("scenario.accrueSoft")}
-                  </label>
-                );
-              })}
-            </div>
-          )}
+          <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
+            <span className="text-[11px] font-medium text-slate-600">
+              {t("scenario.conditionsLabel")}
+            </span>
+            {allowedOperators.map((value) => {
+              const disabledOption =
+                readOnly ||
+                (value === "LOGSUM" && !canUseLogsum) ||
+                (value === "WEIGHTED" && !canUseImportance);
+              return (
+                <label
+                  key={value}
+                  className={`inline-flex items-center gap-1 text-[12px] font-medium ${
+                    disabledOption ? "text-slate-300" : "text-slate-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name={`scenario-${index}-operator`}
+                    value={value}
+                    checked={effectiveOperator === value}
+                    disabled={disabledOption}
+                    onChange={() => handleScenarioOperatorChange(value)}
+                    className="h-3 w-3 border-slate-300 text-blue-600 focus:ring-0"
+                  />
+                  {value === "AND"
+                    ? t("scenario.and")
+                    : value === "OR"
+                    ? t("scenario.or")
+                    : value === "WEIGHTED"
+                    ? t("scenario.importance")
+                    : value === "LOGSUM"
+                    ? t("scenario.operator.accrueLabel")
+                    : t("scenario.accrueSoft")}
+                </label>
+              );
+            })}
+          </div>
           <GroupPriorityEditor
             group={scenario}
             readOnly={readOnly}
@@ -867,9 +835,7 @@ function ScenarioCard({
       </div>
 
       <div className="mt-3">
-        {effectiveOperator === "LOGSUM" &&
-          allowThreshold &&
-          !onlyAllowAll && (
+        {effectiveOperator === "LOGSUM" && allowThreshold && (
           <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             <div className="text-[12px] font-semibold text-slate-700">
               {t("scenario.accrue.panelTitle")}
@@ -914,7 +880,7 @@ function ScenarioCard({
             </div>
           </div>
         )}
-        {effectiveOperator === "ACCRUE" && !onlyAllowAll && (
+        {effectiveOperator === "ACCRUE" && (
           <div className="mb-3 rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             <div className="text-[12px] font-semibold text-slate-700">
               {t("scenario.accrueSoft.panelTitle")}
@@ -1030,22 +996,31 @@ function ScenarioCard({
               open={proximityRelation !== "NONE"}
             >
               <summary className="cursor-pointer select-none text-sm font-medium text-slate-700">
-                {"\u51fa\u73b0\u4f4d\u7f6e\u5173\u7cfb\uff08\u9ad8\u7ea7\uff09"}{" "}
+                {t("ruleBuilder.proximity.title")}{" "}
                 <span className="text-slate-400">{"\u25b8"}</span>
               </summary>
               <div className="mt-3 space-y-3">
                 <div>
                   <div className="text-[12px] font-semibold text-slate-700">
-                    {"\u8fd9\u4e9b\u6761\u4ef6\u5728\u6587\u6863\u4e2d\u9700\u8981\uff1a"}
+                    {t("ruleBuilder.proximity.needLabel")}
                   </div>
                   <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                     {([
-                      { id: "NONE", label: "\u65e0\u7279\u6b8a\u4f4d\u7f6e\u5173\u7cfb\uff08\u9ed8\u8ba4\uff09" },
+                      {
+                        id: "NONE",
+                        label: t("ruleBuilder.proximity.relation.none"),
+                      },
                       allowNear
-                        ? { id: "NEAR", label: "\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1" }
+                        ? {
+                            id: "NEAR",
+                            label: t("ruleBuilder.proximity.relation.near"),
+                          }
                         : null,
                       allowOrder
-                        ? { id: "ORDER", label: "\u6309\u987a\u5e8f\u51fa\u73b0" }
+                        ? {
+                            id: "ORDER",
+                            label: t("ruleBuilder.proximity.relation.order"),
+                          }
                         : null,
                     ] as const).map((option) =>
                       option ? (
@@ -1073,10 +1048,10 @@ function ScenarioCard({
                   </div>
                   <div className="mt-1 text-[11px] text-slate-500">
                     {proximityRelation === "NEAR"
-                      ? "\u51fa\u73b0\u5728\u5f7c\u6b64\u9644\u8fd1\uff1a\u6761\u4ef6\u4e4b\u95f4\u8ddd\u79bb\u8f83\u8fd1"
+                      ? t("ruleBuilder.proximity.hint.near")
                       : proximityRelation === "ORDER"
-                      ? "\u6309\u987a\u5e8f\u51fa\u73b0\uff1a\u6761\u4ef6\u51fa\u73b0\u7684\u5148\u540e\u987a\u5e8f\u9700\u4e00\u81f4"
-                      : "\u9ed8\u8ba4\u4e0d\u505a\u4f4d\u7f6e\u5173\u7cfb\u9650\u5236"}
+                      ? t("ruleBuilder.proximity.hint.order")
+                      : t("ruleBuilder.proximity.hint.none")}
                   </div>
                 </div>
 
@@ -1084,13 +1059,24 @@ function ScenarioCard({
                   <div className="space-y-3">
                     <div>
                       <div className="text-[12px] font-semibold text-slate-700">
-                        {"\u8ddd\u79bb\u8981\u6c42\uff1a"}
+                        {t("ruleBuilder.proximity.distanceLabel")}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                         {([
-                          { id: "TIGHT", label: "\u5f88\u8fd1", value: 3 },
-                          { id: "NEAR", label: "\u8f83\u8fd1", value: 8 },
-                          { id: "CUSTOM", label: "\u81ea\u5b9a\u4e49" },
+                          {
+                            id: "TIGHT",
+                            label: t("ruleBuilder.proximity.distance.tight"),
+                            value: 3,
+                          },
+                          {
+                            id: "NEAR",
+                            label: t("ruleBuilder.proximity.distance.near"),
+                            value: 8,
+                          },
+                          {
+                            id: "CUSTOM",
+                            label: t("ruleBuilder.proximity.distance.custom"),
+                          },
                         ] as const).map((option) => (
                           <label
                             key={option.id}
@@ -1129,7 +1115,7 @@ function ScenarioCard({
                                 )
                               }
                             />
-                            {"\u8ddd\u79bb\u503c"}
+                            {t("ruleBuilder.proximity.distance.valueLabel")}
                           </label>
                         )}
                       </div>
@@ -1137,17 +1123,26 @@ function ScenarioCard({
 
                     <div>
                       <div className="text-[12px] font-semibold text-slate-700">
-                        {"\u4f4d\u7f6e\u8303\u56f4\uff1a"}
+                        {t("ruleBuilder.proximity.rangeLabel")}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                         {([
                           allowSentence
-                            ? { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" }
+                            ? {
+                                id: "SENTENCE",
+                                label: t("ruleBuilder.proximity.range.sentence"),
+                              }
                             : null,
                           allowParagraph
-                            ? { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" }
+                            ? {
+                                id: "PARAGRAPH",
+                                label: t("ruleBuilder.proximity.range.paragraph"),
+                              }
                             : null,
-                          { id: "DOCUMENT", label: "\u6574\u4e2a\u6587\u6863\u4e2d" },
+                          {
+                            id: "DOCUMENT",
+                            label: t("ruleBuilder.proximity.range.document"),
+                          },
                         ] as const).map((option) =>
                           option ? (
                           <label
@@ -1180,25 +1175,34 @@ function ScenarioCard({
                   <div className="space-y-3">
                     <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-2 text-[11px] text-slate-600">
                       <div className="text-[12px] font-semibold text-slate-700">
-                        {"\u987a\u5e8f\u8bf4\u660e\uff1a"}
+                        {t("ruleBuilder.proximity.orderTitle")}
                       </div>
                       <div className="mt-1">
-                        {"\u5c06\u6309\u6761\u4ef6\u5217\u8868\u4ece\u4e0a\u5230\u4e0b\u7684\u987a\u5e8f\u8fdb\u884c\u5224\u65ad"}
+                        {t("ruleBuilder.proximity.orderHint")}
                       </div>
                     </div>
                     <div>
                       <div className="text-[12px] font-semibold text-slate-700">
-                        {"\u4f4d\u7f6e\u8303\u56f4\uff1a"}
+                        {t("ruleBuilder.proximity.rangeLabel")}
                       </div>
                       <div className="mt-2 flex flex-wrap gap-3 text-[12px]">
                         {([
                           allowSentence
-                            ? { id: "SENTENCE", label: "\u540c\u4e00\u53e5\u4e2d" }
+                            ? {
+                                id: "SENTENCE",
+                                label: t("ruleBuilder.proximity.range.sentence"),
+                              }
                             : null,
                           allowParagraph
-                            ? { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5\u4e2d" }
+                            ? {
+                                id: "PARAGRAPH",
+                                label: t("ruleBuilder.proximity.range.paragraph"),
+                              }
                             : null,
-                          { id: "DOCUMENT", label: "\u6574\u4e2a\u6587\u6863\u4e2d" },
+                          {
+                            id: "DOCUMENT",
+                            label: t("ruleBuilder.proximity.range.document"),
+                          },
                         ] as const).map((option) =>
                           option ? (
                           <label

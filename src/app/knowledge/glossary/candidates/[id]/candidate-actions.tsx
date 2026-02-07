@@ -8,6 +8,7 @@ import {
   submitChange,
 } from "@/lib/api";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { t } from "@/i18n";
 
 export function CandidateActions({
   draft,
@@ -32,7 +33,9 @@ export function CandidateActions({
       setLoading(true);
       onFeedback({
         type: "info",
-        title: "正在执行提交审核操作，请稍后...",
+        title: t("glossary.common.processing", {
+          action: t("glossary.common.action.submitReview"),
+        }),
       });
 
       const changeResult = await createChange({
@@ -48,7 +51,7 @@ export function CandidateActions({
 
       if (!changeResult.data) {
         throw new Error(
-          changeResult.error ?? "Failed to create change."
+          changeResult.error ?? t("glossary.candidates.submit.createFailed")
         );
       }
 
@@ -57,13 +60,13 @@ export function CandidateActions({
       });
       if (!submitResult.data) {
         throw new Error(
-          submitResult.error ?? "Failed to submit change."
+          submitResult.error ?? t("glossary.candidates.submit.submitFailed")
         );
       }
 
       onFeedback({
         type: "success",
-        title: "已提交审核",
+        title: t("glossary.candidates.submit.success"),
       });
 
       setOpen(false);
@@ -71,7 +74,7 @@ export function CandidateActions({
     } catch (e: any) {
       onFeedback({
         type: "error",
-        title: "提交失败",
+        title: t("glossary.candidates.submit.failed"),
         message: e?.message,
       });
     } finally {
@@ -88,7 +91,7 @@ export function CandidateActions({
           title={reviewInfo.reason}
           onClick={() => setOpen(true)}
         >
-          Submit for Review
+          {t("glossary.candidates.submit.button")}
         </button>
       </div>
 
@@ -96,7 +99,7 @@ export function CandidateActions({
         open={open}
         subject={{
           title: draft.canonical,
-          meta: `role: ${draft.role}`,
+          meta: `${t("glossary.common.role")}: ${draft.role}`,
           fromStatus: reviewInfo.effectiveStatus,
           toStatus: "IN_REVIEW",
         }}

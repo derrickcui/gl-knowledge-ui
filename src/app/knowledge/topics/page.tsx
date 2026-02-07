@@ -18,6 +18,7 @@ import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { normalizeForRuleBuilder, createScenario } from "@/components/rule-builder/ruleGroupOps";
 import { ruleNodeToBusinessRule } from "@/lib/business-rule";
 import { RuleNode } from "@/components/rule-builder/astTypes";
+import { t } from "@/i18n";
 
 const TOPIC_LIST_TTL_MS = 30_000;
 const topicListCache: {
@@ -32,8 +33,18 @@ const topicListCache: {
   promise: null,
 };
 
-async function fetchTopicsCached() {
+function invalidateTopicListCache() {
+  topicListCache.data = null;
+  topicListCache.error = null;
+  topicListCache.ts = 0;
+  topicListCache.promise = null;
+}
+
+async function fetchTopicsCached(options?: { force?: boolean }) {
   const now = Date.now();
+  if (options?.force) {
+    invalidateTopicListCache();
+  }
   const fresh =
     topicListCache.data && now - topicListCache.ts < TOPIC_LIST_TTL_MS;
   if (fresh) {
@@ -74,14 +85,6 @@ const STATUS_STYLES: Record<string, string> = {
   REJECTED: "bg-rose-100 text-rose-800",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "\u8349\u7a3f",
-  IN_REVIEW: "\u5f85\u8bc4\u5ba1",
-  APPROVED: "\u5df2\u5ba1\u6279",
-  REJECTED: "\u88ab\u9000\u56de",
-  PUBLISHED: "\u5df2\u53d1\u5e03",
-};
-
 function normalizeStatus(status: string) {
   return String(status ?? "").trim().toUpperCase();
 }
@@ -89,6 +92,16 @@ function normalizeStatus(status: string) {
 function getStatusClass(status: string) {
   const normalized = normalizeStatus(status);
   return STATUS_STYLES[normalized] ?? "bg-gray-100 text-gray-700";
+}
+
+function getStatusLabel(status: string) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "DRAFT") return t("topics.status.draft");
+  if (normalized === "IN_REVIEW") return t("topics.status.inReview");
+  if (normalized === "APPROVED") return t("topics.status.approved");
+  if (normalized === "REJECTED") return t("topics.status.rejected");
+  if (normalized === "PUBLISHED") return t("topics.status.published");
+  return status;
 }
 
 function formatUsedBy(usedBy?: string[] | null) {
@@ -126,7 +139,7 @@ function extractTemplateCapabilities(config: any): string {
   const normalized = config?.config ?? config?.data ?? config;
   const caps = normalized.capabilities ?? normalized.features ?? null;
   if (Array.isArray(caps)) {
-    return caps.filter(Boolean).join("、");
+    return caps.filter(Boolean).join(t("topics.capabilities.listSeparator"));
   }
   if (typeof caps === "string") return caps;
 
@@ -143,14 +156,24 @@ function extractTemplateCapabilities(config: any): string {
   const parts: string[] = [];
   if (allowedModes && typeof allowedModes === "object") {
     const modeLabels: string[] = [];
-    if (allowedModes.all) modeLabels.push("全部满足/任一满足");
-    if (allowedModes.partial) modeLabels.push("满足部分条件");
+    if (allowedModes.all)
+      modeLabels.push(t("topics.capabilities.mode.allAny"));
+    if (allowedModes.partial)
+      modeLabels.push(t("topics.capabilities.mode.partial"));
     if (allowedModes.weighted)
-      modeLabels.push("满足部分条件并综合重要性判断");
+      modeLabels.push(t("topics.capabilities.mode.weighted"));
     if (modeLabels.length === 1) {
-      parts.push(`仅支持“${modeLabels[0]}”`);
+      parts.push(
+        t("topics.capabilities.onlySupports", {
+          modes: modeLabels[0],
+        })
+      );
     } else if (modeLabels.length > 1) {
-      parts.push(`支持“${modeLabels.join(" / ")}”`);
+      parts.push(
+        t("topics.capabilities.supports", {
+          modes: modeLabels.join(" / "),
+        })
+      );
     }
   } else if (
     "allowAll" in normalized ||
@@ -158,33 +181,47 @@ function extractTemplateCapabilities(config: any): string {
     "allowLogsum" in normalized
   ) {
     const modeLabels: string[] = [];
-    if (normalized.allowAll) modeLabels.push("全部满足/任一满足");
-    if (normalized.allowAccrue) modeLabels.push("满足部分条件");
+    if (normalized.allowAll)
+      modeLabels.push(t("topics.capabilities.mode.allAny"));
+    if (normalized.allowAccrue)
+      modeLabels.push(t("topics.capabilities.mode.accrue"));
     if (normalized.allowLogsum)
-      modeLabels.push("满足部分条件并综合重要性判断");
+      modeLabels.push(t("topics.capabilities.mode.partial"));
     if (modeLabels.length === 1) {
-      parts.push(`仅支持“${modeLabels[0]}”`);
+      parts.push(
+        t("topics.capabilities.onlySupports", {
+          modes: modeLabels[0],
+        })
+      );
     } else if (modeLabels.length > 1) {
-      parts.push(`支持“${modeLabels.join(" / ")}”`);
+      parts.push(
+        t("topics.capabilities.supports", {
+          modes: modeLabels.join(" / "),
+        })
+      );
     }
   }
 
   if (importanceAllowed) {
-    parts.push("支持“条件重要性”");
+    parts.push(t("topics.capabilities.importance"));
   }
 
   if (positionRules && typeof positionRules === "object") {
     const positionLabels: Record<string, string> = {
-      paragraph: "同一段",
-      sentence: "同一句",
-      order: "前后顺序",
-      near: "彼此附近",
+      paragraph: t("topics.capabilities.position.paragraph"),
+      sentence: t("topics.capabilities.position.sentence"),
+      order: t("topics.capabilities.position.order"),
+      near: t("topics.capabilities.position.near"),
     };
     const enabled = Object.entries(positionRules)
       .filter(([key, value]) => key !== "any" && Boolean(value))
       .map(([key]) => positionLabels[key] ?? key);
     if (enabled.length) {
-      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+      parts.push(
+        t("topics.capabilities.positionRelation", {
+          positions: enabled.join(" / "),
+        })
+      );
     }
   } else if (
     normalized.allowProximity ||
@@ -193,16 +230,24 @@ function extractTemplateCapabilities(config: any): string {
     normalized.allowParagraph
   ) {
     const enabled: string[] = [];
-    if (normalized.allowSentence) enabled.push("同一句");
-    if (normalized.allowParagraph) enabled.push("同一段");
-    if (normalized.allowOrder) enabled.push("前后顺序");
-    if (normalized.allowProximity) enabled.push("彼此附近");
+    if (normalized.allowSentence)
+      enabled.push(t("topics.capabilities.position.sentence"));
+    if (normalized.allowParagraph)
+      enabled.push(t("topics.capabilities.position.paragraph"));
+    if (normalized.allowOrder)
+      enabled.push(t("topics.capabilities.position.order"));
+    if (normalized.allowProximity)
+      enabled.push(t("topics.capabilities.position.near"));
     if (enabled.length) {
-      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+      parts.push(
+        t("topics.capabilities.positionRelation", {
+          positions: enabled.join(" / "),
+        })
+      );
     }
   }
 
-  return parts.join("；");
+  return parts.join(t("topics.capabilities.separator"));
 }
 
 export default function TopicsPage() {
@@ -243,12 +288,12 @@ export default function TopicsPage() {
     });
   }
 
-  async function loadTopics(showLoading = true) {
+  async function loadTopics(showLoading = true, force = false) {
     if (showLoading) {
       setLoading(true);
     }
     setError(null);
-    const result = await fetchTopicsCached();
+    const result = await fetchTopicsCached({ force });
     if (!mountedRef.current) return;
     if (result.data) {
       setTopics(result.data);
@@ -269,10 +314,15 @@ export default function TopicsPage() {
   }, []);
 
   useEffect(() => {
-    if (searchParams.get("fromReview")) {
-      loadTopics(false);
+    if (searchParams.get("refresh")) {
+      loadTopics(false, true);
+      router.replace("/knowledge/topics");
+      return;
     }
-  }, [searchParams]);
+    if (searchParams.get("fromReview")) {
+      loadTopics(false, true);
+    }
+  }, [searchParams, router]);
 
   const filteredTopics = useMemo(() => {
     const nextQuery = query.trim().toLowerCase();
@@ -286,11 +336,6 @@ export default function TopicsPage() {
     router.push(`/knowledge/topics/${encodeURIComponent(topicId)}`);
   }
 
-  function getStatusLabel(status: string) {
-    const normalized = normalizeStatus(status);
-    return STATUS_LABELS[normalized] ?? status;
-  }
-
   function handleSubmitReview(topic: TopicDTO) {
     setPendingReviewTopic(topic);
     setReviewDialogOpen(true);
@@ -301,8 +346,8 @@ export default function TopicsPage() {
     if (!reviewsResult.data || reviewsResult.data.length === 0) {
       setActionFeedback({
         type: "error",
-        title: "\u53d1\u5e03\u5931\u8d25",
-        message: "\u672a\u627e\u5230\u8bc4\u5ba1\u8bb0\u5f55\uff0c\u65e0\u6cd5\u83b7\u53d6\u53d1\u5e03\u54c8\u5e0c\u3002",
+        title: t("topics.publish.failedTitle"),
+        message: t("topics.publish.missingReview"),
       });
       return;
     }
@@ -321,8 +366,8 @@ export default function TopicsPage() {
     if (!expectedHash) {
       setActionFeedback({
         type: "error",
-        title: "\u53d1\u5e03\u5931\u8d25",
-        message: "\u672a\u83b7\u53d6\u5230\u8bc4\u5ba1\u54c8\u5e0c\uff0c\u65e0\u6cd5\u53d1\u5e03\u3002",
+        title: t("topics.publish.failedTitle"),
+        message: t("topics.publish.missingHash"),
       });
       return;
     }
@@ -333,14 +378,14 @@ export default function TopicsPage() {
     if (result.data) {
       setActionFeedback({
         type: "success",
-        title: "\u5df2\u53d1\u5e03",
+        title: t("topics.publish.successTitle"),
       });
       await loadTopics(false);
     } else {
       setActionFeedback({
         type: "error",
-        title: "\u53d1\u5e03\u5931\u8d25",
-        message: result.error ?? "\u65e0\u6cd5\u53d1\u5e03\u89c4\u5219\u3002",
+        title: t("topics.publish.failedTitle"),
+        message: result.error ?? t("topics.publish.failedMessage"),
       });
     }
   }
@@ -351,7 +396,7 @@ export default function TopicsPage() {
     if (result.data) {
       setActionFeedback({
         type: "success",
-        title: "已提交评审",
+        title: t("topics.review.submitSuccess"),
       });
       await loadTopics(false);
       setReviewDialogOpen(false);
@@ -364,8 +409,8 @@ export default function TopicsPage() {
     } else {
       setActionFeedback({
         type: "error",
-        title: "提交评审失败",
-        message: result.error ?? "无法提交评审。",
+        title: t("topics.review.submitFailed"),
+        message: result.error ?? t("topics.review.submitFailedMessage"),
       });
     }
   }
@@ -373,8 +418,8 @@ export default function TopicsPage() {
   function handleRollback(topic: TopicDTO) {
     setActionFeedback({
       type: "info",
-      title: `已选择回滚：${topic.name}`,
-      message: "回滚功能尚未接入后端。",
+      title: t("topics.actions.rollbackSelected", { name: topic.name }),
+      message: t("topics.actions.rollbackUnavailable"),
     });
   }
 
@@ -383,9 +428,11 @@ export default function TopicsPage() {
     <div className="space-y-4 p-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Topics</h1>
+          <h1 className="text-xl font-semibold">
+            {t("topics.list.title")}
+          </h1>
           <p className="text-sm opacity-70">
-            Quickly see which topics exist and where they are used.
+            {t("topics.list.subtitle")}
           </p>
         </div>
         <button
@@ -393,7 +440,7 @@ export default function TopicsPage() {
           className="h-9 rounded-md border px-3 text-sm"
           onClick={() => setTemplateDialogOpen(true)}
         >
-          + New Topic
+          {t("topics.list.create")}
         </button>
       </div>
 
@@ -434,19 +481,19 @@ export default function TopicsPage() {
             <thead>
               <tr>
                 <th className="border-b px-3 py-2 text-left">
-                  Topic Name
+                  {t("topics.list.columns.name")}
                 </th>
                 <th className="border-b px-3 py-2 text-left">
-                  Status
+                  {t("topics.list.columns.status")}
                 </th>
                 <th className="border-b px-3 py-2 text-left">
-                  Actions
+                  {t("topics.list.columns.actions")}
                 </th>
                 <th className="border-b px-3 py-2 text-left">
-                  Used By
+                  {t("topics.list.columns.usedBy")}
                 </th>
                 <th className="border-b px-3 py-2 text-left">
-                  Updated At
+                  {t("topics.list.columns.updatedAt")}
                 </th>
               </tr>
             </thead>
@@ -476,20 +523,20 @@ export default function TopicsPage() {
                       {(normalizeStatus(topic.status) === "DRAFT" ||
                         normalizeStatus(topic.status) === "REJECTED") && (
                         <>
-                          <button
-                            type="button"
-                            className="rounded border px-2 py-0.5 text-xs"
-                            onClick={() => handleRowActivate(topic.id)}
-                          >
-                            {"\u7f16\u8f91"}
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded bg-black px-2 py-0.5 text-xs text-white"
-                            onClick={() => handleSubmitReview(topic)}
-                          >
-                            {"\u63d0\u4ea4\u8bc4\u5ba1"}
-                          </button>
+                        <button
+                          type="button"
+                          className="rounded border px-2 py-0.5 text-xs"
+                          onClick={() => handleRowActivate(topic.id)}
+                        >
+                            {t("topics.actions.edit")}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded bg-black px-2 py-0.5 text-xs text-white"
+                          onClick={() => handleSubmitReview(topic)}
+                        >
+                            {t("topics.actions.submitReview")}
+                        </button>
                         </>
                       )}
                       {normalizeStatus(topic.status) === "IN_REVIEW" && (
@@ -501,10 +548,10 @@ export default function TopicsPage() {
                             if (!result.data || result.data.length === 0) {
                               setActionFeedback({
                                 type: "error",
-                                title: "\u65e0\u6cd5\u83b7\u53d6\u8bc4\u5ba1\u8bb0\u5f55",
+                                title: t("topics.review.fetchFailedTitle"),
                                 message:
                                   result.error ??
-                                  "\u8be5\u89c4\u5219\u6682\u65e0\u53ef\u7528\u8bc4\u5ba1\u8bb0\u5f55\u3002",
+                                  t("topics.review.fetchFailedMessage"),
                               });
                               return;
                             }
@@ -518,7 +565,7 @@ export default function TopicsPage() {
                             );
                           }}
                         >
-                          {"\u67e5\u770b"}
+                          {t("topics.actions.view")}
                         </button>
                       )}
                       {normalizeStatus(topic.status) === "APPROVED" && (
@@ -528,14 +575,14 @@ export default function TopicsPage() {
                             className="rounded border px-2 py-0.5 text-xs"
                             onClick={() => handleRowActivate(topic.id)}
                           >
-                            {"\u67e5\u770b"}
+                            {t("topics.actions.view")}
                           </button>
                           <button
                             type="button"
                             className="rounded bg-black px-2 py-0.5 text-xs text-white"
                             onClick={() => handlePublishFromList(topic)}
                           >
-                            {"\u53d1\u5e03"}
+                            {t("topics.actions.publish")}
                           </button>
                         </>
                       )}
@@ -546,14 +593,14 @@ export default function TopicsPage() {
                             className="rounded border px-2 py-0.5 text-xs"
                             onClick={() => handleRowActivate(topic.id)}
                           >
-                            {"\u67e5\u770b"}
+                            {t("topics.actions.view")}
                           </button>
                           <button
                             type="button"
                             className="rounded border px-2 py-0.5 text-xs"
                             onClick={() => handleRollback(topic)}
                           >
-                            {"\u56de\u6eda"}
+                            {t("topics.actions.rollback")}
                           </button>
                         </>
                       )}
@@ -724,11 +771,19 @@ function CreateTopicDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[520px] rounded-lg bg-white p-6 shadow-xl">
-        <div className="text-base font-semibold">新建主题 · 基本信息</div>
+        <div className="text-base font-semibold">
+          {t("topics.create.basic.title")}
+        </div>
         <div className="mt-2 text-sm text-muted-foreground">
-          已选模板：{template ? template.name : "（无）"}
+          {t("topics.create.basic.selectedTemplate", {
+            name: template
+              ? template.name
+              : t("topics.create.basic.none"),
+          })}
           {template && templateVersion
-            ? ` · 版本 ${templateVersion}`
+            ? ` · ${t("topics.create.basic.version", {
+                version: templateVersion,
+              })}`
             : ""}
         </div>
         {error && (
@@ -738,20 +793,24 @@ function CreateTopicDialog({
         )}
         <div className="mt-4 space-y-4 text-sm">
           <div className="space-y-2">
-            <label className="text-sm font-medium">主题名称*</label>
+            <label className="text-sm font-medium">
+              {t("topics.create.basic.nameLabel")}
+            </label>
             <input
               type="text"
               className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              placeholder="填写主题名称"
+              placeholder={t("topics.create.basic.namePlaceholder")}
               value={name}
               onChange={(event) => onChangeName(event.target.value)}
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">业务说明*</label>
+            <label className="text-sm font-medium">
+              {t("topics.create.basic.descriptionLabel")}
+            </label>
             <textarea
               className="min-h-[88px] w-full rounded-md border bg-background px-3 py-2 text-sm"
-              placeholder="说明这个主题用于什么"
+              placeholder={t("topics.create.basic.descriptionPlaceholder")}
               value={description}
               onChange={(event) =>
                 onChangeDescription(event.target.value)
@@ -766,7 +825,7 @@ function CreateTopicDialog({
             onClick={onBack}
             disabled={loading}
           >
-            上一步
+            {t("topics.create.basic.back")}
           </button>
           <button
             type="button"
@@ -774,7 +833,7 @@ function CreateTopicDialog({
             onClick={onCancel}
             disabled={loading}
           >
-            Cancel
+            {t("topics.create.basic.cancel")}
           </button>
           <button
             type="button"
@@ -782,7 +841,9 @@ function CreateTopicDialog({
             onClick={onCreate}
             disabled={!canCreate}
           >
-            {loading ? "创建中..." : "创建并进入"}
+            {loading
+              ? t("topics.create.basic.creating")
+              : t("topics.create.basic.create")}
           </button>
         </div>
       </div>
@@ -807,18 +868,22 @@ function SubmitReviewDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
         <h3 className="text-base font-semibold">
-          确认提交评审？
+          {t("topics.review.confirmTitle")}
         </h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          提交后规则将进入评审流程，在评审完成前将无法修改。
+          {t("topics.review.confirmHint")}
         </p>
         <div className="mt-4 rounded-md border bg-muted/30 p-3 text-sm">
           <div className="font-medium">{topic.name}</div>
           <div className="mt-1 text-xs text-muted-foreground">
-            当前状态：{STATUS_LABELS[topic.status] ?? topic.status}
+            {t("topics.review.currentStatus", {
+              status: getStatusLabel(topic.status),
+            })}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
-            提交后状态：待评审
+            {t("topics.review.nextStatus", {
+              status: t("topics.status.inReview"),
+            })}
           </div>
         </div>
         <div className="mt-6 flex justify-end gap-2">
@@ -826,13 +891,13 @@ function SubmitReviewDialog({
             className="rounded-md border px-3 py-1 text-sm"
             onClick={onCancel}
           >
-            取消
+            {t("topics.review.cancel")}
           </button>
           <button
             className="rounded-md bg-black px-4 py-1.5 text-sm text-white"
             onClick={onConfirm}
           >
-            确认提交
+            {t("topics.review.confirm")}
           </button>
         </div>
       </div>
@@ -928,16 +993,18 @@ function SelectTemplateDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[640px] rounded-lg bg-white p-6 shadow-xl">
-        <div className="text-base font-semibold">新建主题 · 选择模板</div>
+        <div className="text-base font-semibold">
+          {t("topics.create.selectTemplate.title")}
+        </div>
         <div className="mt-2 text-sm text-muted-foreground">
-          选择一个标准模板开始创建主题（可减少配置步骤）
+          {t("topics.create.selectTemplate.subtitle")}
         </div>
 
         <div className="mt-4">
           <input
             type="text"
             className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-            placeholder="搜索模板…"
+            placeholder={t("topics.create.selectTemplate.searchPlaceholder")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
@@ -945,13 +1012,17 @@ function SelectTemplateDialog({
 
         <div className="mt-4 space-y-3">
           {loading && (
-            <div className="text-sm opacity-60">加载中...</div>
+            <div className="text-sm opacity-60">
+              {t("topics.create.selectTemplate.loading")}
+            </div>
           )}
           {error && (
             <div className="text-sm text-red-600">{error}</div>
           )}
           {!loading && !error && filtered.length === 0 && (
-            <div className="text-sm opacity-60">暂无已发布模板</div>
+            <div className="text-sm opacity-60">
+              {t("topics.create.selectTemplate.empty")}
+            </div>
           )}
           {!loading &&
             !error &&
@@ -971,7 +1042,7 @@ function SelectTemplateDialog({
                   templateConfigs[String(tpl.id)]
                 ) && (
                   <div className="mt-1 text-xs text-muted-foreground">
-                    能力：
+                    {t("topics.create.selectTemplate.capabilitiesLabel")}：
                     {extractTemplateCapabilities(
                       templateConfigs[String(tpl.id)]
                     )}
@@ -982,7 +1053,7 @@ function SelectTemplateDialog({
                   templateConfigs[String(tpl.id)]
                 ) && (
                   <div className="mt-1 text-xs text-muted-foreground">
-                    版本{" "}
+                    {t("topics.create.selectTemplate.versionLabel")}{" "}
                     {extractTemplateVersion(
                       tpl,
                       templateConfigs[String(tpl.id)]
@@ -995,7 +1066,7 @@ function SelectTemplateDialog({
 
         {selectedTemplate && !selectedVersion && (
           <div className="mt-3 text-xs text-amber-600">
-            该模板缺少版本信息，无法用于创建主题。
+            {t("topics.create.selectTemplate.missingVersion")}
           </div>
         )}
 
@@ -1006,7 +1077,7 @@ function SelectTemplateDialog({
             onClick={onCancel}
             disabled={loading}
           >
-            取消
+            {t("topics.create.selectTemplate.cancel")}
           </button>
           <button
             type="button"
@@ -1014,7 +1085,7 @@ function SelectTemplateDialog({
             onClick={() => selectedTemplate && onNext(selectedTemplate)}
             disabled={!canProceed}
           >
-            下一步
+            {t("topics.create.selectTemplate.next")}
           </button>
         </div>
       </div>

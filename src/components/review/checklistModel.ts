@@ -2,6 +2,7 @@ import { ExplainDiffItem } from "./explainDiffTypes";
 import { AntiPatternReport } from "./antiPatternTypes";
 import { ChecklistSummary } from "./checklistTypes";
 import { RuleNode } from "../rule-builder/astTypes";
+import { t } from "@/i18n";
 
 export function buildChecklistSummary(
   explainDiff: ExplainDiffItem[] | undefined,
@@ -42,7 +43,7 @@ export function buildChecklistSummary(
       canApprove,
       reason: canApprove
         ? undefined
-        : "存在严重规则反模式，必须修改后才能发布",
+        : t("review.checklist.decision.blockedReason"),
     },
     importance,
   };
@@ -95,7 +96,8 @@ function buildImportanceSummary(rule?: RuleNode) {
       });
       return {
         title:
-          scenario.params?.title ?? `判断场景 ${index + 1}`,
+          scenario.params?.title ??
+          t("review.checklist.scenarioTitle", { index: index + 1 }),
         counts,
       };
     })

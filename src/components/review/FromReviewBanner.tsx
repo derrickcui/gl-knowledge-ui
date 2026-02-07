@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { t } from "@/i18n";
 
 export default function FromReviewBanner({
   reviewId,
@@ -11,15 +12,15 @@ export default function FromReviewBanner({
 }) {
   return (
     <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
-      你正在修复评审中发现的问题（评审 #{reviewId}）。
+      {t("review.fromReview.message", { id: reviewId })}
       <span className="ml-2">
         <Link className="underline" href={`/knowledge/reviews/${reviewId}`}>
-          返回评审
+          {t("review.fromReview.back")}
         </Link>
       </span>
       {reason && (
         <div className="mt-2 text-xs text-amber-900">
-          评审原因：{reason}
+          {t("review.fromReview.reason", { reason })}
         </div>
       )}
     </div>

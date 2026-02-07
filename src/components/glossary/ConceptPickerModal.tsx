@@ -9,6 +9,7 @@ import {
 } from "@/lib/glossary-api";
 import { ConceptConditionDraft } from "./conceptConditionDraft";
 import type { RuleTemplateCapability } from "@/components/rule-builder/templateCapabilities";
+import { t } from "@/i18n";
 
 type RelationMode = "SELF" | "DESCENDANT" | "SUBSET";
 
@@ -283,9 +284,11 @@ export default function ConceptPickerModal({
       <div className="flex h-[720px] max-h-[90vh] w-[960px] max-w-[95vw] flex-col overflow-hidden rounded-lg bg-white p-5 shadow-xl">
         <div className="flex items-start justify-between">
           <div>
-            <div className="text-sm font-semibold">添加业务概念条件</div>
+            <div className="text-sm font-semibold">
+              {t("conceptPicker.title")}
+            </div>
             <div className="text-xs text-slate-500">
-              选择一个业务概念，并定义它在规则中的匹配方式
+              {t("conceptPicker.subtitle")}
             </div>
           </div>
           <button
@@ -293,26 +296,30 @@ export default function ConceptPickerModal({
             className="text-xs text-slate-500 hover:underline"
             onClick={onClose}
           >
-            关闭
+            {t("conceptPicker.close")}
           </button>
         </div>
 
         <div className="mt-4 grid flex-1 min-h-0 gap-4 lg:grid-cols-[320px_1fr_1fr]">
           <div className="min-h-0 space-y-3 overflow-auto border-r pr-4">
-            <div className="text-sm font-semibold">搜索业务概念</div>
+            <div className="text-sm font-semibold">
+              {t("conceptPicker.searchTitle")}
+            </div>
             <input
               type="text"
               className="h-9 w-full rounded-md border px-3 text-sm"
-              placeholder="搜索业务概念（如：博士后、人才补贴）"
+              placeholder={t("conceptPicker.searchPlaceholder")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
             {loading && (
-              <div className="text-xs text-slate-500">搜索中…</div>
+              <div className="text-xs text-slate-500">
+                {t("conceptPicker.searching")}
+              </div>
             )}
             {!loading && results.length === 0 && query.trim() && (
               <div className="rounded-md border border-dashed p-3 text-xs text-slate-500">
-                未找到匹配概念
+                {t("conceptPicker.searchEmpty")}
               </div>
             )}
             <div className="space-y-2">
@@ -340,19 +347,22 @@ export default function ConceptPickerModal({
                         {result.center.canonical}
                       </div>
                       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] text-emerald-700">
-                        已发布
+                        {t("conceptPicker.published")}
                       </span>
                     </div>
                     {isSelected && detail?.definition && (
                       <div className="mt-1 text-xs text-slate-600">
-                        定义：{detail.definition}
+                        {t("conceptPicker.definition")}:{" "}
+                        {detail.definition}
                       </div>
                     )}
                     <div className="mt-1 text-xs text-slate-500">
-                      上位：{parents.length ? parents.join(" / ") : "—"}
+                      {t("conceptPicker.parents")}:{" "}
+                      {parents.length ? parents.join(" / ") : t("conceptPicker.none")}
                     </div>
                     <div className="mt-1 text-xs text-slate-500">
-                      下位：{children.length ? children.join(" / ") : "—"}
+                      {t("conceptPicker.children")}:{" "}
+                      {children.length ? children.join(" / ") : t("conceptPicker.none")}
                     </div>
                   </button>
                 );
@@ -363,41 +373,47 @@ export default function ConceptPickerModal({
           <div className="min-h-0 overflow-auto rounded-md border p-4">
             {!selected ? (
               <div className="text-sm text-slate-500">
-                请选择一个概念查看详情
+                {t("conceptPicker.selectHint")}
               </div>
             ) : (
               <div className="flex h-full flex-col space-y-4">
                 <div>
-                  <div className="text-sm font-semibold">已选业务概念</div>
+                  <div className="text-sm font-semibold">
+                    {t("conceptPicker.selectedTitle")}
+                  </div>
                   <div className="text-sm font-semibold">
                     {selected.center.canonical}
                   </div>
                   <div className="mt-2 text-xs text-slate-600">
-                    定义：{detail?.definition ?? "暂无定义"}
+                    {t("conceptPicker.definition")}:{" "}
+                    {detail?.definition ?? t("conceptPicker.definitionEmpty")}
                   </div>
                   {detail?.aliases && detail.aliases.length > 1 && (
                     <div className="mt-1 text-xs text-slate-500">
-                      别名：{detail.aliases.join(" / ")}
+                      {t("conceptPicker.aliases")}:{" "}
+                      {detail.aliases.join(" / ")}
                     </div>
                   )}
                   {detail?.evidence && detail.evidence.length > 0 && (
                     <div className="mt-1 text-xs text-slate-500">
-                      证据：{detail.evidence.length} 条
+                      {t("conceptPicker.evidence", {
+                        count: detail.evidence.length,
+                      })}
                     </div>
                   )}
                   <div className="mt-2 text-xs text-slate-500">
-                    上位概念：
-                    {parentNames.length ? parentNames.join(" / ") : "—"}
+                    {t("conceptPicker.parentsLabel")}:{" "}
+                    {parentNames.length ? parentNames.join(" / ") : t("conceptPicker.none")}
                   </div>
                   <div className="mt-1 text-xs text-slate-500">
-                    下位概念：
-                    {childNames.length ? childNames.join(" / ") : "—"}
+                    {t("conceptPicker.childrenLabel")}:{" "}
+                    {childNames.length ? childNames.join(" / ") : t("conceptPicker.none")}
                   </div>
                 </div>
 
                 <div className="mt-auto flex items-center justify-end gap-2">
                   <div className="text-xs text-slate-500">
-                    仅用于确认选择是否正确
+                    {t("conceptPicker.confirmTip")}
                   </div>
                 </div>
               </div>
@@ -407,12 +423,14 @@ export default function ConceptPickerModal({
           <div className="min-h-0 overflow-auto rounded-md border p-4">
             {!selected ? (
               <div className="text-sm text-slate-500">
-                请选择概念后配置规则条件
+                {t("conceptPicker.configureHint")}
               </div>
             ) : (
               <div className="flex min-h-0 flex-col space-y-4">
                 <div className="space-y-2 text-sm">
-                  <div className="font-medium">概念匹配范围</div>
+                  <div className="font-medium">
+                    {t("conceptPicker.scopeTitle")}
+                  </div>
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="radio"
@@ -420,7 +438,7 @@ export default function ConceptPickerModal({
                       checked={relationMode === "SELF"}
                       onChange={() => setRelationMode("SELF")}
                     />
-                    仅匹配该概念
+                    {t("conceptPicker.scopeSelf")}
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -429,7 +447,7 @@ export default function ConceptPickerModal({
                       checked={relationMode === "DESCENDANT"}
                       onChange={() => setRelationMode("DESCENDANT")}
                     />
-                    包含所有下位概念（推荐）
+                    {t("conceptPicker.scopeDesc")}
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -438,14 +456,14 @@ export default function ConceptPickerModal({
                       checked={relationMode === "SUBSET"}
                       onChange={() => setRelationMode("SUBSET")}
                     />
-                    选择部分下位概念
+                    {t("conceptPicker.scopeSubset")}
                   </label>
                 </div>
 
                 {relationMode === "SUBSET" && (
                   <div className="rounded-md border border-dashed p-3 text-xs text-slate-600">
                     {childIds.length === 0 ? (
-                      <div>该概念暂无下位概念</div>
+                      <div>{t("conceptPicker.subsetEmpty")}</div>
                     ) : (
                       <div className="max-h-[120px] space-y-2 overflow-auto">
                         {childIds.map((id) => (
@@ -474,7 +492,9 @@ export default function ConceptPickerModal({
                 )}
 
                 <div className="space-y-2 text-sm">
-                  <div className="font-medium">内容出现的位置</div>
+                  <div className="font-medium">
+                    {t("conceptPicker.locationTitle")}
+                  </div>
                   <label className="flex items-center gap-2 text-sm">
                     <input
                       type="radio"
@@ -482,7 +502,7 @@ export default function ConceptPickerModal({
                       checked={location.inBody}
                       onChange={() => setExclusiveLocation("inBody")}
                     />
-                    出现在文档正文中（默认）
+                    {t("conceptPicker.locationBody")}
                   </label>
                   {allowLocationTitle && (
                     <label className="flex items-center gap-2 text-sm">
@@ -492,7 +512,7 @@ export default function ConceptPickerModal({
                         checked={location.inTitle}
                         onChange={() => setExclusiveLocation("inTitle")}
                       />
-                      出现在标题中（高级）
+                      {t("conceptPicker.locationTitleOnly")}
                     </label>
                   )}
                   {allowLocationParagraph && (
@@ -503,7 +523,7 @@ export default function ConceptPickerModal({
                         checked={location.inParagraph}
                         onChange={() => setExclusiveLocation("inParagraph")}
                       />
-                      出现在同一段落中（高级）
+                      {t("conceptPicker.locationParagraph")}
                     </label>
                   )}
                   {allowLocationSentence && (
@@ -514,14 +534,14 @@ export default function ConceptPickerModal({
                         checked={location.inSentence}
                         onChange={() => setExclusiveLocation("inSentence")}
                       />
-                      出现在同一句话中（高级）
+                      {t("conceptPicker.locationSentence")}
                     </label>
                   )}
                 </div>
 
                 <div className="rounded-md border bg-slate-50 p-3 text-sm text-slate-800">
                   <div className="text-xs font-medium text-slate-500">
-                    规则含义预览
+                    {t("conceptPicker.previewTitle")}
                   </div>
                   <div className="mt-2">
                     {buildExplainMini({
@@ -541,7 +561,7 @@ export default function ConceptPickerModal({
                     className="rounded border px-3 py-1 text-sm"
                     onClick={onClose}
                   >
-                    取消
+                    {t("conceptPicker.cancel")}
                   </button>
                   <button
                     type="button"
@@ -556,17 +576,13 @@ export default function ConceptPickerModal({
                         !location.inParagraph &&
                         !location.inSentence
                       ) {
-                        errors.push(
-                          "请至少选择一个内容出现位置（建议保留“正文”）。"
-                        );
+                        errors.push(t("conceptPicker.error.location"));
                       }
                       if (
                         relationMode === "SUBSET" &&
                         selectedChildren.size === 0
                       ) {
-                        errors.push(
-                          "你选择了“部分下位概念”，但尚未选择任何下位概念。"
-                        );
+                        errors.push(t("conceptPicker.error.subset"));
                       }
                       const draft: ConceptConditionDraft = {
                         concept: {
@@ -610,7 +626,7 @@ export default function ConceptPickerModal({
                       onConfirm(draft);
                     }}
                   >
-                    添加到规则
+                    {t("conceptPicker.confirm")}
                   </button>
                 </div>
               </div>
@@ -661,18 +677,26 @@ function buildExplainMini({
   selectedChildNames?: string[];
 }) {
   const parts: string[] = [];
-  if (location.inBody) parts.push("正文");
-  if (location.inTitle) parts.push("标题");
-  if (location.inParagraph) parts.push("同一段落");
-  if (location.inSentence) parts.push("同一句话");
-  const loc = parts.length ? `文档${parts.join(" / ")}` : "文档内容";
-  let scope = "仅该概念";
+  if (location.inBody) parts.push(t("conceptPicker.location.body"));
+  if (location.inTitle) parts.push(t("conceptPicker.location.title"));
+  if (location.inParagraph) parts.push(t("conceptPicker.location.paragraph"));
+  if (location.inSentence) parts.push(t("conceptPicker.location.sentence"));
+  const loc = parts.length
+    ? t("conceptPicker.location.doc", { parts: parts.join(" / ") })
+    : t("conceptPicker.location.docContent");
+  let scope = t("conceptPicker.scope.self");
   if (relation === "DESCENDANT") {
-    scope = "该概念及其下位概念";
+    scope = t("conceptPicker.scope.descendant");
   } else if (relation === "SUBSET") {
     scope = selectedChildNames.length
-      ? `该概念及选中的下位概念：${selectedChildNames.join(" / ")}`
-      : "该概念及选中的下位概念";
+      ? t("conceptPicker.scope.subsetWith", {
+          names: selectedChildNames.join(" / "),
+        })
+      : t("conceptPicker.scope.subset");
   }
-  return `当【${loc}】中提到「${conceptName}」（${scope}）时，该规则条件成立。`;
+  return t("conceptPicker.explain", {
+    loc,
+    conceptName,
+    scope,
+  });
 }

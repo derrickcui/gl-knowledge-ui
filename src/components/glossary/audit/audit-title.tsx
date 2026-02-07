@@ -1,9 +1,11 @@
+import { t } from "@/i18n";
+
 export function AuditTitle() {
   return (
     <div>
-      <h1 className="text-lg font-semibold">Audit</h1>
+      <h1 className="text-lg font-semibold">{t("glossary.audit.title")}</h1>
       <p className="text-sm text-muted-foreground">
-        All governance decisions (read-only)
+        {t("glossary.audit.subtitle")}
       </p>
     </div>
   );

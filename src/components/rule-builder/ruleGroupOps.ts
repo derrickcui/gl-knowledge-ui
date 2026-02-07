@@ -1,5 +1,6 @@
 import { RuleNode, cloneRule } from "./astTypes";
 import { createNodeId } from "./nodeId";
+import { t } from "@/i18n";
 
 function createRuleRoot(
   children: RuleNode[],
@@ -20,7 +21,7 @@ export function createScenario(index: number): RuleNode {
       operator: "AND",
       role: "SCENARIO",
       sticky: true,
-      title: `\u5224\u65ad\u573a\u666f ${index + 1}`,
+      title: t("ruleGroupOps.scenarioTitle", { index: index + 1 }),
     },
     priority: 100,
     children: [],
@@ -63,7 +64,9 @@ function ensureScenario(node: RuleNode, index: number): RuleNode {
         operator: scenarioOperator,
         role: node.params?.role ?? "SCENARIO",
         sticky: true,
-        title: node.params?.title ?? `\u5224\u65ad\u573a\u666f ${index + 1}`,
+        title:
+          node.params?.title ??
+          t("ruleGroupOps.scenarioTitle", { index: index + 1 }),
       },
     };
   }
@@ -75,7 +78,7 @@ function ensureScenario(node: RuleNode, index: number): RuleNode {
       operator: "AND",
       role: "SCENARIO",
       sticky: true,
-      title: `\u5224\u65ad\u573a\u666f ${index + 1}`,
+      title: t("ruleGroupOps.scenarioTitle", { index: index + 1 }),
     },
     priority: 100,
     children: [node],

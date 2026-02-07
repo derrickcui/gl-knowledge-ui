@@ -1,18 +1,19 @@
 import clsx from "clsx";
+import { t } from "@/i18n";
 
 export function ConfidenceLabel({
   value,
 }: {
   value: number;
 }) {
-  let label = "Low";
+  let label = t("glossary.confidence.low");
   let color = "text-red-600";
 
   if (value >= 0.7) {
-    label = "High";
+    label = t("glossary.confidence.high");
     color = "text-green-600";
   } else if (value >= 0.4) {
-    label = "Medium";
+    label = t("glossary.confidence.medium");
     color = "text-yellow-600";
   }
 

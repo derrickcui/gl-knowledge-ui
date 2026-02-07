@@ -11,17 +11,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: "Pending Review",
-  PENDING_REVIEW: "Pending Review",
-  CANDIDATE: "Pending Review",
-  SUBMITTED: "Under Review",
-  IN_REVIEW: "Under Review",
-  APPROVED: "Published",
-  PUBLISHED: "Published",
-  REJECTED: "Rejected",
-};
+import { t } from "@/i18n";
 
 const STATUS_STYLES: Record<string, string> = {
   DRAFT: "bg-gray-100 text-gray-700",
@@ -35,7 +25,22 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 function getStatusLabel(status: string) {
-  return STATUS_LABELS[status] ?? status;
+  switch (status) {
+    case "DRAFT":
+    case "PENDING_REVIEW":
+    case "CANDIDATE":
+      return t("glossary.status.pendingReview");
+    case "SUBMITTED":
+    case "IN_REVIEW":
+      return t("glossary.status.underReview");
+    case "APPROVED":
+    case "PUBLISHED":
+      return t("glossary.status.published");
+    case "REJECTED":
+      return t("glossary.status.rejected");
+    default:
+      return status;
+  }
 }
 
 function getStatusClass(status: string) {
@@ -60,7 +65,7 @@ export function CandidatesView({
   initialStatus: string;
   initialData: CandidateListResponse;
 }) {
-  const router = useRouter(); // ƒ-? †.3‚"r 1
+  const router = useRouter();
   const [statusMessage, setStatusMessage] = useState<
     string | null
   >(null);
@@ -84,10 +89,10 @@ export function CandidatesView({
     nextStatus: string,
     nextOffset = 0,
     nextQuery = query,
-    actionLabel = "加载"
+    actionLabel = t("glossary.common.action.load")
   ) {
     setStatusMessage(
-      `正在执行${actionLabel}操作，请稍后...`
+      t("glossary.common.processing", { action: actionLabel })
     );
     setLoading(true);
     try {
@@ -120,9 +125,11 @@ export function CandidatesView({
         <FeedbackBanner type="info" title={statusMessage} />
       )}
       <div>
-        <h1 className="text-lg font-semibold">Candidates</h1>
+        <h1 className="text-lg font-semibold">
+          {t("glossary.candidates.title")}
+        </h1>
         <p className="text-sm opacity-70">
-          Review glossary candidates and their current status.
+          {t("glossary.candidates.subtitle")}
         </p>
       </div>
 
@@ -134,24 +141,35 @@ export function CandidatesView({
           onChange={(e) => {
             const v = e.target.value;
             setStatus(v);
-            reload(v, 0, query, "筛选");
+            reload(v, 0, query, t("glossary.common.action.filter"));
           }}
         >
-          <option value={ALL_CANDIDATES}>All Candidates</option>
-          <option value="PENDING_REVIEW">Pending Review</option>
-          <option value="IN_REVIEW">Under Review</option>
+          <option value={ALL_CANDIDATES}>
+            {t("glossary.candidates.filter.all")}
+          </option>
+          <option value="PENDING_REVIEW">
+            {t("glossary.candidates.filter.pending")}
+          </option>
+          <option value="IN_REVIEW">
+            {t("glossary.candidates.filter.inReview")}
+          </option>
         </select>
 
         <div className="flex items-center gap-2">
           <input
             type="text"
             className="h-9 w-56 rounded-md border bg-background px-3 text-sm"
-            placeholder="Search candidates"
+            placeholder={t("glossary.candidates.searchPlaceholder")}
             value={query}
             onChange={(e) => {
               const nextQuery = e.target.value;
               setQuery(nextQuery);
-              reload(status, 0, nextQuery, "搜索");
+              reload(
+                status,
+                0,
+                nextQuery,
+                t("glossary.common.action.search")
+              );
             }}
           />
           {query && (
@@ -160,16 +178,23 @@ export function CandidatesView({
               className="h-9 rounded-md border px-3 text-sm"
               onClick={() => {
                 setQuery("");
-                reload(status, 0, "", "清除搜索");
+                reload(
+                  status,
+                  0,
+                  "",
+                  t("glossary.common.action.clearSearch")
+                );
               }}
             >
-              Clear
+              {t("glossary.common.clear")}
             </button>
           )}
         </div>
 
         {loading && (
-          <span className="text-sm opacity-60">Loadingƒ?Ý</span>
+          <span className="text-sm opacity-60">
+            {t("common.loading")}
+          </span>
         )}
       </div>
 
@@ -179,16 +204,16 @@ export function CandidatesView({
           <thead>
             <tr>
               <th className="border-b px-3 py-2 text-left">
-                Canonical
+                {t("glossary.candidates.columns.canonical")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Role
+                {t("glossary.candidates.columns.role")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Confidence
+                {t("glossary.candidates.columns.confidence")}
               </th>
               <th className="border-b px-3 py-2 text-left">
-                Status
+                {t("glossary.candidates.columns.status")}
               </th>
             </tr>
           </thead>
@@ -207,7 +232,7 @@ export function CandidatesView({
               const statusClass =
                 getStatusClass(displayStatus);
               const statusTooltip = isInReview
-                ? "Under Review\n- High frequency across documents\n- Requires human validation"
+                ? t("glossary.candidates.statusTooltip")
                 : undefined;
 
               return (
@@ -219,7 +244,6 @@ export function CandidatesView({
                   onClick={
                     editable
                       ? () => {
-                          // ƒ-? †.3‚"r 2‹¬s‡oY‘-œ‡s,Šú3Š«ª‚?¯Š_`
                           router.push(
                             `/knowledge/glossary/candidates/${r.id}`
                           );
@@ -259,7 +283,7 @@ export function CandidatesView({
                           );
                         }}
                       >
-                        View
+                        {t("glossary.common.view")}
                       </button>
                     )}
                   </td>
@@ -273,7 +297,7 @@ export function CandidatesView({
                   colSpan={4}
                   className="px-3 py-6 text-center text-sm opacity-60"
                 >
-                  No candidates found
+                  {t("glossary.candidates.empty")}
                 </td>
               </tr>
             )}
@@ -283,7 +307,9 @@ export function CandidatesView({
 
       <div className="flex items-center justify-between text-sm">
         <span className="opacity-70">
-          Page {Math.floor(offset / PAGE_SIZE) + 1}
+          {t("glossary.common.pageLabel", {
+            page: Math.floor(offset / PAGE_SIZE) + 1,
+          })}
         </span>
         <div className="flex items-center gap-2">
           <button
@@ -295,11 +321,11 @@ export function CandidatesView({
                 status,
                 Math.max(0, offset - PAGE_SIZE),
                 query,
-                "上一页"
+                t("glossary.common.action.prevPage")
               )
             }
           >
-            Previous
+            {t("glossary.common.prev")}
           </button>
           <button
             type="button"
@@ -308,10 +334,15 @@ export function CandidatesView({
             onClick={() => {
               const nextOffset =
                 nextCursor ?? offset + PAGE_SIZE;
-              reload(status, nextOffset, query, "下一页");
+              reload(
+                status,
+                nextOffset,
+                query,
+                t("glossary.common.action.nextPage")
+              );
             }}
           >
-            Next
+            {t("glossary.common.next")}
           </button>
         </div>
       </div>

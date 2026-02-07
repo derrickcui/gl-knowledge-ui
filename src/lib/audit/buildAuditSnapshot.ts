@@ -3,6 +3,7 @@ import { buildGroupExplainModel } from "@/components/rule-builder/explain/groupE
 import { generateRuleExplain } from "@/components/rule-builder/explain/ruleExplain";
 import { createNodeId } from "@/components/rule-builder/nodeId";
 import { AuditSnapshot, AuditGroupSnapshot } from "./auditTypes";
+import { t } from "@/i18n";
 
 type MatchResult = {
   matchedGroupIds: string[];
@@ -50,7 +51,7 @@ export function buildAuditSnapshot({
               conditionId,
               explain:
                 condition.explain?.text ??
-                "\u6ee1\u8db3\u6307\u5b9a\u4e1a\u52a1\u6761\u4ef6",
+                t("audit.snapshot.condition.default"),
               matched:
                 matchResult.matchedConditionIds.includes(conditionId),
               evidence:

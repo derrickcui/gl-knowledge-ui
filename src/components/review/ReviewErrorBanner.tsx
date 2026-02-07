@@ -1,6 +1,7 @@
 "use client";
 
 import { ReviewActionError } from "./reviewErrorTypes";
+import { t } from "@/i18n";
 
 interface Props {
   error: ReviewActionError;
@@ -23,7 +24,7 @@ export default function ReviewErrorBanner({
           <div className="mt-1 text-sm">{view.description}</div>
           {view.hint && (
             <div className="mt-1 text-xs text-slate-600">
-              建议：{view.hint}
+              {t("review.error.suggestion", { hint: view.hint })}
             </div>
           )}
         </div>
@@ -32,7 +33,7 @@ export default function ReviewErrorBanner({
           className="text-xs text-slate-500 hover:underline"
           onClick={onClose}
         >
-          关闭
+          {t("review.error.close")}
         </button>
       </div>
 
@@ -43,7 +44,7 @@ export default function ReviewErrorBanner({
             className="text-xs text-blue-600 hover:underline"
             onClick={() => onFix(view.focusPath)}
           >
-            去编辑器修复
+            {t("review.error.fix")}
           </button>
         </div>
       )}
@@ -55,12 +56,12 @@ function mapErrorToView(error: ReviewActionError) {
   if (error.status === 409) {
     return {
       style: "border-amber-400 bg-amber-50",
-      title: "操作未完成",
+      title: t("review.error.operationIncomplete"),
       description:
         error.code === "RULE_QUALITY_BLOCKED"
-          ? "规则存在严重质量问题，无法通过评审。"
-          : "评审状态已发生变化，当前操作无法继续。",
-      hint: "请查看评审内容或返回列表刷新状态。",
+          ? t("review.error.qualityBlocked")
+          : t("review.error.statusChanged"),
+      hint: t("review.error.hintCheckReview"),
       fixable: error.code === "RULE_QUALITY_BLOCKED",
       focusPath: undefined,
     };
@@ -70,9 +71,9 @@ function mapErrorToView(error: ReviewActionError) {
     const firstPath = normalizePath(error.details?.errors?.[0]?.path);
     return {
       style: "border-blue-400 bg-blue-50",
-      title: "规则无法提交",
-      description: "规则未通过质量校验。",
-      hint: "请返回编辑器修复后重新提交评审。",
+      title: t("review.error.ruleCannotSubmit"),
+      description: t("review.error.ruleQualityFailed"),
+      hint: t("review.error.hintFixAndResubmit"),
       fixable: true,
       focusPath: firstPath,
     };
@@ -80,9 +81,9 @@ function mapErrorToView(error: ReviewActionError) {
 
   return {
     style: "border-red-400 bg-red-50",
-    title: "系统错误",
-    description: "系统暂时无法完成操作，请稍后重试。",
-    hint: "如问题持续存在，请联系管理员。",
+    title: t("review.error.system"),
+    description: t("review.error.systemDesc"),
+    hint: t("review.error.systemHint"),
     fixable: false,
     focusPath: undefined,
   };

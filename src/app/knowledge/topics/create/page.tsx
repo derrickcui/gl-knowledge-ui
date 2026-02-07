@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createTopic, saveTopicDraft } from "@/lib/topic-api";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import { t } from "@/i18n";
 
 export default function TopicCreateWithTemplatePage() {
   const search = useSearchParams();
@@ -28,7 +29,7 @@ export default function TopicCreateWithTemplatePage() {
   async function handleCreate() {
     if (!name.trim() || !description.trim()) return;
     if (!templateId || !templateVersion) {
-      setError("请先选择已发布模板。");
+      setError(t("topics.create.basic.selectTemplateError"));
       return;
     }
     setBusy(true);
@@ -74,10 +75,10 @@ export default function TopicCreateWithTemplatePage() {
         // created -> go to topic page
         router.push(`/knowledge/topics/${encodeURIComponent(res.data.id)}`);
       } else {
-        setError(res.error ?? "创建失败");
+        setError(res.error ?? t("topics.create.basic.createFailed"));
       }
     } catch (e: any) {
-      setError(e?.message ?? "创建失败");
+      setError(e?.message ?? t("topics.create.basic.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -85,27 +86,43 @@ export default function TopicCreateWithTemplatePage() {
 
   return (
     <div className="p-6 max-w-2xl">
-      <h1 className="text-lg font-semibold">新建主题 · 基本信息</h1>
+      <h1 className="text-lg font-semibold">
+        {t("topics.create.basic.title")}
+      </h1>
       <div className="mt-3 text-sm">
-        已选模板：{templateId ? `模板 #${templateId}` : "（无）"}
-        {templateId && templateVersion ? ` · 版本 ${templateVersion}` : ""}
+        {t("topics.create.basic.selectedTemplate", {
+          name: templateId
+            ? t("topics.create.basic.templateId", { id: templateId })
+            : t("topics.create.basic.none"),
+        })}
+        {templateId && templateVersion
+          ? ` · ${t("topics.create.basic.version", {
+              version: templateVersion,
+            })}`
+          : ""}
       </div>
 
       {error && <FeedbackBanner type="error" title={error} />}
 
       <div className="mt-4 space-y-3">
         <div>
-          <label className="text-sm font-medium">主题名称*</label>
+          <label className="text-sm font-medium">
+            {t("topics.create.basic.nameLabel")}
+          </label>
           <input
             className="mt-1 w-full rounded-md border px-3 py-2"
+            placeholder={t("topics.create.basic.namePlaceholder")}
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
         </div>
         <div>
-          <label className="text-sm font-medium">业务说明*</label>
+          <label className="text-sm font-medium">
+            {t("topics.create.basic.descriptionLabel")}
+          </label>
           <textarea
             className="mt-1 w-full min-h-[80px] rounded-md border px-3 py-2"
+            placeholder={t("topics.create.basic.descriptionPlaceholder")}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
           />
@@ -118,7 +135,7 @@ export default function TopicCreateWithTemplatePage() {
           onClick={() => router.push("/knowledge/topics/create/select-template")}
           disabled={busy}
         >
-          上一步
+          {t("topics.create.basic.back")}
         </button>
         <button
           className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
@@ -131,7 +148,9 @@ export default function TopicCreateWithTemplatePage() {
             !templateVersion
           }
         >
-          创建并进入
+          {busy
+            ? t("topics.create.basic.creating")
+            : t("topics.create.basic.create")}
         </button>
       </div>
     </div>

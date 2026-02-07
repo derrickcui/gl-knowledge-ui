@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { useDrawerStore } from "@/store/drawer-store";
 import { DrawerGroup } from "./drawer-group";
 import { DrawerItem } from "./drawer-item";
@@ -27,6 +28,13 @@ import {
 export function AppDrawer() {
   const { collapsed, toggle } = useDrawerStore();
   const [locale, setLocale] = useState<Locale>(getLocale());
+  const pathname = usePathname();
+
+  const isActive = (href: string, options?: { exact?: boolean }) => {
+    if (!pathname) return false;
+    if (options?.exact) return pathname === href;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  };
 
   useEffect(() => {
     const stored =
@@ -69,6 +77,7 @@ export function AppDrawer() {
           label={t("drawer.search")}
           icon={<Search className="h-4 w-4" />}
           collapsed={collapsed}
+          active={isActive("/search", { exact: true })}
         />
 
         <DrawerItem
@@ -76,6 +85,7 @@ export function AppDrawer() {
           label={t("drawer.chat")}
           icon={<MessageSquare className="h-4 w-4" />}
           collapsed={collapsed}
+          active={isActive("/chat", { exact: true })}
         />
 
         <DrawerGroup
@@ -90,6 +100,7 @@ export function AppDrawer() {
             icon={<Layers className="h-4 w-4" />}
             collapsed={collapsed}
             nested
+            active={isActive("/knowledge/glossary")}
           />
 
           <DrawerItem
@@ -98,6 +109,7 @@ export function AppDrawer() {
             icon={<Layers className="h-4 w-4" />}
             collapsed={collapsed}
             nested
+            active={isActive("/knowledge/topics")}
           />
 
           <DrawerItem
@@ -106,6 +118,7 @@ export function AppDrawer() {
             icon={<Layers className="h-4 w-4" />}
             collapsed={collapsed}
             nested
+            active={isActive("/knowledge/templates")}
           />
         </DrawerGroup>
 
@@ -114,6 +127,7 @@ export function AppDrawer() {
           label={t("drawer.settings")}
           icon={<Settings className="h-4 w-4" />}
           collapsed={collapsed}
+          active={isActive("/settings")}
         />
       </nav>
 

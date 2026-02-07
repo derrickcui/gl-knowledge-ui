@@ -1,4 +1,5 @@
 import { AuditRecord } from "@/types/audit";
+import { t } from "@/i18n";
 
 export function AuditRecordSummary({
   record,
@@ -33,7 +34,7 @@ export function AuditRecordSummary({
           {record.conceptName}
         </div>
         <div className="text-xs text-muted-foreground">
-          by {record.actor}
+          {t("glossary.audit.by", { actor: record.actor })}
         </div>
       </div>
     </div>

@@ -28,7 +28,7 @@ function extractTemplateCapabilities(config: any): string {
   const normalized = config?.config ?? config?.data ?? config;
   const caps = normalized.capabilities ?? normalized.features ?? null;
   if (Array.isArray(caps)) {
-    return caps.filter(Boolean).join("、");
+    return caps.filter(Boolean).join(t("topics.capabilities.listSeparator"));
   }
   if (typeof caps === "string") return caps;
 
@@ -49,24 +49,44 @@ function extractTemplateCapabilities(config: any): string {
   const parts: string[] = [];
   if (allowModes && typeof allowModes === "object") {
     const modeLabels: string[] = [];
-    if (allowModes.ALL) modeLabels.push("全部满足/任一满足");
-    if (allowModes.ACCRUE) modeLabels.push("满足越多越容易成立");
-    if (allowModes.LOGSUM) modeLabels.push("满足部分条件");
+    if (allowModes.ALL) modeLabels.push(t("topics.capabilities.mode.allAny"));
+    if (allowModes.ACCRUE)
+      modeLabels.push(t("topics.capabilities.mode.accrue"));
+    if (allowModes.LOGSUM)
+      modeLabels.push(t("topics.capabilities.mode.partial"));
     if (modeLabels.length === 1) {
-      parts.push(`仅支持“${modeLabels[0]}”`);
+      parts.push(
+        t("topics.capabilities.onlySupports", {
+          modes: modeLabels[0],
+        })
+      );
     } else if (modeLabels.length > 1) {
-      parts.push(`支持“${modeLabels.join(" / ")}”`);
+      parts.push(
+        t("topics.capabilities.supports", {
+          modes: modeLabels.join(" / "),
+        })
+      );
     }
   } else if (allowedModes && typeof allowedModes === "object") {
     const modeLabels: string[] = [];
-    if (allowedModes.all) modeLabels.push("全部满足/任一满足");
-    if (allowedModes.partial) modeLabels.push("满足部分条件");
+    if (allowedModes.all)
+      modeLabels.push(t("topics.capabilities.mode.allAny"));
+    if (allowedModes.partial)
+      modeLabels.push(t("topics.capabilities.mode.partial"));
     if (allowedModes.weighted)
-      modeLabels.push("满足部分条件并综合重要性判断");
+      modeLabels.push(t("topics.capabilities.mode.weighted"));
     if (modeLabels.length === 1) {
-      parts.push(`仅支持“${modeLabels[0]}”`);
+      parts.push(
+        t("topics.capabilities.onlySupports", {
+          modes: modeLabels[0],
+        })
+      );
     } else if (modeLabels.length > 1) {
-      parts.push(`支持“${modeLabels.join(" / ")}”`);
+      parts.push(
+        t("topics.capabilities.supports", {
+          modes: modeLabels.join(" / "),
+        })
+      );
     }
   } else if (
     "allowAll" in normalized ||
@@ -74,45 +94,64 @@ function extractTemplateCapabilities(config: any): string {
     "allowLogsum" in normalized
   ) {
     const modeLabels: string[] = [];
-    if (normalized.allowAll) modeLabels.push("全部满足/任一满足");
-    if (normalized.allowAccrue) modeLabels.push("满足越多越容易成立");
-    if (normalized.allowLogsum) modeLabels.push("满足部分条件");
+    if (normalized.allowAll)
+      modeLabels.push(t("topics.capabilities.mode.allAny"));
+    if (normalized.allowAccrue)
+      modeLabels.push(t("topics.capabilities.mode.accrue"));
+    if (normalized.allowLogsum)
+      modeLabels.push(t("topics.capabilities.mode.partial"));
     if (modeLabels.length === 1) {
-      parts.push(`仅支持“${modeLabels[0]}”`);
+      parts.push(
+        t("topics.capabilities.onlySupports", {
+          modes: modeLabels[0],
+        })
+      );
     } else if (modeLabels.length > 1) {
-      parts.push(`支持“${modeLabels.join(" / ")}”`);
+      parts.push(
+        t("topics.capabilities.supports", {
+          modes: modeLabels.join(" / "),
+        })
+      );
     }
   }
 
   if (importanceAllowed) {
-    parts.push("支持“条件重要性”");
+    parts.push(t("topics.capabilities.importance"));
   }
 
   if (proximity && typeof proximity === "object") {
     const positionLabels: Record<string, string> = {
-      paragraph: "同一段",
-      sentence: "同一句",
-      order: "前后顺序",
-      enabled: "彼此附近",
+      paragraph: t("topics.capabilities.position.paragraph"),
+      sentence: t("topics.capabilities.position.sentence"),
+      order: t("topics.capabilities.position.order"),
+      enabled: t("topics.capabilities.position.near"),
     };
     const enabled = Object.entries(proximity)
       .filter(([key, value]) => key !== "any" && Boolean(value))
       .map(([key]) => positionLabels[key] ?? key);
     if (enabled.length) {
-      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+      parts.push(
+        t("topics.capabilities.positionRelation", {
+          positions: enabled.join(" / "),
+        })
+      );
     }
   } else if (positionRules && typeof positionRules === "object") {
     const positionLabels: Record<string, string> = {
-      paragraph: "同一段",
-      sentence: "同一句",
-      order: "前后顺序",
-      near: "彼此附近",
+      paragraph: t("topics.capabilities.position.paragraph"),
+      sentence: t("topics.capabilities.position.sentence"),
+      order: t("topics.capabilities.position.order"),
+      near: t("topics.capabilities.position.near"),
     };
     const enabled = Object.entries(positionRules)
       .filter(([key, value]) => key !== "any" && Boolean(value))
       .map(([key]) => positionLabels[key] ?? key);
     if (enabled.length) {
-      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+      parts.push(
+        t("topics.capabilities.positionRelation", {
+          positions: enabled.join(" / "),
+        })
+      );
     }
   } else if (
     normalized.allowProximity ||
@@ -121,16 +160,24 @@ function extractTemplateCapabilities(config: any): string {
     normalized.allowParagraph
   ) {
     const enabled: string[] = [];
-    if (normalized.allowSentence) enabled.push("同一句");
-    if (normalized.allowParagraph) enabled.push("同一段");
-    if (normalized.allowOrder) enabled.push("前后顺序");
-    if (normalized.allowProximity) enabled.push("彼此附近");
+    if (normalized.allowSentence)
+      enabled.push(t("topics.capabilities.position.sentence"));
+    if (normalized.allowParagraph)
+      enabled.push(t("topics.capabilities.position.paragraph"));
+    if (normalized.allowOrder)
+      enabled.push(t("topics.capabilities.position.order"));
+    if (normalized.allowProximity)
+      enabled.push(t("topics.capabilities.position.near"));
     if (enabled.length) {
-      parts.push(`支持“位置关系（${enabled.join(" / ")}）”`);
+      parts.push(
+        t("topics.capabilities.positionRelation", {
+          positions: enabled.join(" / "),
+        })
+      );
     }
   }
 
-  return parts.join("；");
+  return parts.join(t("topics.capabilities.separator"));
 }
 
 export default function SelectTemplatePage() {
@@ -213,7 +260,7 @@ export default function SelectTemplatePage() {
         <input
           type="text"
           className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-          placeholder="搜索模板…"
+          placeholder={t("topics.create.selectTemplate.searchPlaceholder")}
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -243,28 +290,28 @@ export default function SelectTemplatePage() {
               <div className="text-xs text-muted-foreground mt-1">
                 {tpl.purpose ?? tpl.description}
               </div>
-              {extractTemplateCapabilities(
-                templateConfigs[String(tpl.id)]
-              ) && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  能力：
+                {extractTemplateCapabilities(
+                  templateConfigs[String(tpl.id)]
+                ) && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                  {t("topics.create.selectTemplate.capabilitiesLabel")}：
                   {extractTemplateCapabilities(
                     templateConfigs[String(tpl.id)]
                   )}
-                </div>
-              )}
-              {extractTemplateVersion(
-                tpl,
-                templateConfigs[String(tpl.id)]
-              ) && (
-                <div className="text-xs text-muted-foreground mt-1">
-                  版本{" "}
+                  </div>
+                )}
+                {extractTemplateVersion(
+                  tpl,
+                  templateConfigs[String(tpl.id)]
+                ) && (
+                  <div className="text-xs text-muted-foreground mt-1">
+                  {t("topics.create.selectTemplate.versionLabel")}{" "}
                   {extractTemplateVersion(
                     tpl,
                     templateConfigs[String(tpl.id)]
                   )}
-                </div>
-              )}
+                  </div>
+                )}
             </button>
           ))}
       </div>

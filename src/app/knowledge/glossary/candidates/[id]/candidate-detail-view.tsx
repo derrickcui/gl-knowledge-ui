@@ -16,17 +16,7 @@ import { CandidateRelationshipsPanel } from "./candidate-relationships-panel";
 import { CandidateActions } from "./candidate-actions";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { ApprovalActionPanel } from "@/components/glossary/approval/approval-action-panel";
-
-const LIFECYCLE_LABELS: Record<string, string> = {
-  DRAFT: "Pending Review",
-  PENDING_REVIEW: "Pending Review",
-  CANDIDATE: "Pending Review",
-  SUBMITTED: "Under Review",
-  IN_REVIEW: "Under Review",
-  APPROVED: "Published",
-  PUBLISHED: "Published",
-  REJECTED: "Rejected",
-};
+import { t } from "@/i18n";
 
 function formatStatusValue(status: string) {
   return status
@@ -37,7 +27,22 @@ function formatStatusValue(status: string) {
 
 function formatLifecycleStatus(status?: string) {
   if (!status) return undefined;
-  return LIFECYCLE_LABELS[status] ?? formatStatusValue(status);
+  switch (status) {
+    case "DRAFT":
+    case "PENDING_REVIEW":
+    case "CANDIDATE":
+      return t("glossary.status.pendingReview");
+    case "SUBMITTED":
+    case "IN_REVIEW":
+      return t("glossary.status.underReview");
+    case "APPROVED":
+    case "PUBLISHED":
+      return t("glossary.status.published");
+    case "REJECTED":
+      return t("glossary.status.rejected");
+    default:
+      return formatStatusValue(status);
+  }
 }
 
 function normalizeChangeId(value: unknown) {
@@ -74,7 +79,6 @@ export function CandidateDetailView({
   );
   const [draft, setDraft] = useState(candidate);
 
-  // ƒo. †"_„,?‘-œ‡­r‡s, readonly †^‘--
   const effectiveStatus =
     candidate.lifecycleStatus ??
     reviewInfo.effectiveStatus ??
@@ -116,7 +120,9 @@ export function CandidateDetailView({
     async function loadChangeId() {
       if (!ignore) {
         setStatusMessage(
-          "正在执行加载审批信息操作，请稍后..."
+          t("glossary.common.processing", {
+            action: t("glossary.common.action.loadApprovalInfo"),
+          })
         );
       }
       const approvalsResult = await fetchApprovals({
@@ -157,7 +163,6 @@ export function CandidateDetailView({
       )}
 
       <div className="space-y-6">
-        {/* Header‹¬s‡¯"‘z,„,?†?~‹¬O†?¦‘~_‡S‘??‘?‘§?†?~ */}
         <CandidateHeader
           candidate={candidate}
           status={effectiveStatus}
@@ -168,7 +173,7 @@ export function CandidateDetailView({
 
         {isInReview && (
           <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            This term is under review. Editing is locked.
+            {t("glossary.candidates.locked")}
           </div>
         )}
 
@@ -181,12 +186,12 @@ export function CandidateDetailView({
           publishedAt) && (
           <details className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
             <summary className="cursor-pointer select-none font-medium">
-              Governance Info
+              {t("glossary.candidates.governance.title")}
             </summary>
             <div className="mt-2 flex flex-wrap gap-4">
               {candidate.lifecycleStatus && (
                 <span>
-                  Lifecycle:{" "}
+                  {t("glossary.candidates.governance.lifecycle")}:{" "}
                   <span className="font-medium">
                     {lifecycleLabel}
                   </span>
@@ -194,7 +199,7 @@ export function CandidateDetailView({
               )}
               {candidate.extractionStatus && (
                 <span>
-                  Extraction:{" "}
+                  {t("glossary.candidates.governance.extraction")}:{" "}
                   <span className="font-medium">
                     {extractionLabel}
                   </span>
@@ -202,31 +207,31 @@ export function CandidateDetailView({
               )}
               {submittedBy && (
                 <span>
-                  Submitted by:{" "}
+                  {t("glossary.candidates.governance.submittedBy")}:{" "}
                   <span className="font-medium">{submittedBy}</span>
                 </span>
               )}
               {submittedAt && (
                 <span>
-                  Submitted at:{" "}
+                  {t("glossary.candidates.governance.submittedAt")}:{" "}
                   <span className="font-medium">{submittedAt}</span>
                 </span>
               )}
               {reviewedBy && (
                 <span>
-                  Reviewed by:{" "}
+                  {t("glossary.candidates.governance.reviewedBy")}:{" "}
                   <span className="font-medium">{reviewedBy}</span>
                 </span>
               )}
               {publishedAt && (
                 <span>
-                  Published at:{" "}
+                  {t("glossary.candidates.governance.publishedAt")}:{" "}
                   <span className="font-medium">{publishedAt}</span>
                 </span>
               )}
               {reviewComment && (
                 <span>
-                  Review comment:{" "}
+                  {t("glossary.candidates.governance.reviewComment")}:{" "}
                   <span className="font-medium">{reviewComment}</span>
                 </span>
               )}
@@ -234,7 +239,6 @@ export function CandidateDetailView({
           </details>
         )}
 
-        {/* „,¯„«"†+.†r1‹¬s†rO†."‘?›†? */}
         <div className="grid grid-cols-2 gap-6">
           <CandidateTermEditor
             draft={draft}
@@ -250,7 +254,6 @@ export function CandidateDetailView({
           relations={relations}
         />
 
-        {/* Actions‹¬s†?¦‡"ñ reviewInfo †+3†rs‘~_†?Ý†Ø§‡Zø */}
         {reviewInfo.canSubmitForReview && (
           <CandidateActions
             draft={draft}

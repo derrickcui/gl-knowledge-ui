@@ -1,5 +1,6 @@
 import { GovernanceEvent } from "@/lib/glossary/types";
 import { getEventLabel, isDecisionEvent } from "@/lib/glossary/event-utils";
+import { t } from "@/i18n";
 
 export function TimelineItem({ event }: { event: GovernanceEvent }) {
   const isDecision = isDecisionEvent(event.type);
@@ -13,7 +14,7 @@ export function TimelineItem({ event }: { event: GovernanceEvent }) {
 
       {event.reason && (
         <div className="timeline-reason">
-          <strong>Reason</strong>
+          <strong>{t("glossary.timeline.reason")}</strong>
           <p>{event.reason}</p>
         </div>
       )}

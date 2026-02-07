@@ -2,15 +2,9 @@
 
 import { RuleNode } from "./astTypes";
 import { ActivePath } from "./pathUtils";
+import { t } from "@/i18n";
 
 type Location = "BODY" | "TITLE" | "PARAGRAPH" | "SENTENCE";
-
-const LOCATION_OPTIONS: { id: Location; label: string }[] = [
-  { id: "BODY", label: "\u6587\u6863\u6b63\u6587" },
-  { id: "TITLE", label: "\u6807\u9898" },
-  { id: "PARAGRAPH", label: "\u540c\u4e00\u6bb5" },
-  { id: "SENTENCE", label: "\u540c\u4e00\u53e5" },
-];
 
 type Props = {
   node: RuleNode;
@@ -85,13 +79,13 @@ function gatherLocations(node: RuleNode, acc: Set<Location>) {
 function locationLabel(id: Location) {
   switch (id) {
     case "BODY":
-      return "\u6587\u6863\u6b63\u6587";
+      return t("conditionCard.location.body");
     case "TITLE":
-      return "\u6807\u9898";
+      return t("conditionCard.location.title");
     case "PARAGRAPH":
-      return "\u540c\u4e00\u6bb5";
+      return t("conditionCard.location.paragraph");
     case "SENTENCE":
-      return "\u540c\u4e00\u53e5";
+      return t("conditionCard.location.sentence");
   }
 }
 
@@ -102,14 +96,20 @@ function buildExplainText(
 ) {
   const conceptText = concepts.length
     ? concepts.join(" / ")
-    : "\u672a\u5b9a\u4e49\u7684\u6982\u5ff5";
+    : t("conditionCard.concept.undefined");
   const locationText = locations.length
     ? locations.map(locationLabel).join(" / ")
-    : "\u6587\u6863\u6b63\u6587";
+    : t("conditionCard.location.body");
   if (negated) {
-    return `\u4e0d\u5e94\u5728\u3010${locationText}\u3011\u4e2d\u51fa\u73b0\u201c${conceptText}\u201d\u3002`;
+    return t("conditionCard.explain.negated", {
+      locations: locationText,
+      concepts: conceptText,
+    });
   }
-  return `\u5f53\u3010${locationText}\u3011\u4e2d\u63d0\u5230\u201c${conceptText}\u201d\u65f6\uff0c\u8be5\u6761\u4ef6\u6210\u7acb\u3002`;
+  return t("conditionCard.explain.positive", {
+    locations: locationText,
+    concepts: conceptText,
+  });
 }
 
 function describeTopicScope(locations: Location[]) {
@@ -119,18 +119,20 @@ function describeTopicScope(locations: Location[]) {
     (loc) => loc === "PARAGRAPH" || loc === "SENTENCE"
   );
   if (hasTitle && hasBody && !hasOther) {
-    return "\u6587\u6863\u5185\u5bb9\u6574\u4f53";
+    return t("conditionCard.scope.documentAll");
   }
   if (hasTitle && !hasBody && !hasOther) {
-    return "\u6587\u6863\u6807\u9898\u5185\u5bb9";
+    return t("conditionCard.scope.documentTitle");
   }
   if (hasBody && !hasTitle && !hasOther) {
-    return "\u6587\u6863\u6b63\u6587\u5185\u5bb9";
+    return t("conditionCard.scope.documentBody");
   }
   const locationText = locations.length
     ? locations.map(locationLabel).join(" / ")
-    : "\u6587\u6863\u5185\u5bb9";
-  return `\u6587\u6863${locationText}\u5185\u5bb9`;
+    : t("conditionCard.scope.documentContent");
+  return t("conditionCard.scope.documentWith", {
+    locations: locationText,
+  });
 }
 
 function buildTopicExplainText(
@@ -140,9 +142,15 @@ function buildTopicExplainText(
 ) {
   const scope = describeTopicScope(locations);
   if (negated) {
-    return `\u4e0d\u5e94\u5728${scope}\u7b26\u5408\u4e3b\u9898\u300c${topicName}\u300d\u7684\u5b9a\u4e49\u89c4\u5219\u3002`;
+    return t("conditionCard.topicExplain.negated", {
+      scope,
+      topic: topicName,
+    });
   }
-  return `\u5f53${scope}\u7b26\u5408\u4e3b\u9898\u300c${topicName}\u300d\u7684\u5b9a\u4e49\u89c4\u5219\u65f6\uff0c\u8be5\u6761\u4ef6\u6210\u7acb\u3002`;
+  return t("conditionCard.topicExplain.positive", {
+    scope,
+    topic: topicName,
+  });
 }
 
 const containerClassFor = (selected: boolean, highlighted: boolean) =>
@@ -178,7 +186,7 @@ export default function ConditionCard({
   const locations = Array.from(locationSet);
   const explainText = isTopic
     ? buildTopicExplainText(
-        topicNames[0] ?? "\u672a\u5b9a\u4e49\u7684\u4e3b\u9898",
+        topicNames[0] ?? t("conditionCard.topic.undefined"),
         locations,
         !!node.params?.negated
       )
@@ -194,7 +202,15 @@ export default function ConditionCard({
   const topicStatus = topicNode?.params?.topicStatus;
   const topicVersion = topicNode?.params?.topicVersion;
   const topicStatusLabel =
-    topicStatus === "PUBLISHED" ? "\u5df2\u53d1\u5e03" : topicStatus;
+    topicStatus === "PUBLISHED"
+      ? t("topics.status.published")
+      : topicStatus;
+  const locationOptions: { id: Location; label: string }[] = [
+    { id: "BODY", label: t("conditionCard.location.body") },
+    { id: "TITLE", label: t("conditionCard.location.title") },
+    { id: "PARAGRAPH", label: t("conditionCard.location.paragraph") },
+    { id: "SENTENCE", label: t("conditionCard.location.sentence") },
+  ];
 
   return (
     <div
@@ -208,37 +224,47 @@ export default function ConditionCard({
       <div className="flex items-center justify-between text-sm text-slate-900">
         <div className="font-semibold">
           {isTopic
-            ? "\uD83D\uDCD8 \u4e3b\u9898\u6761\u4ef6"
-            : "\u2714 \u6761\u4ef6"}
+            ? t("conditionCard.title.topic")
+            : t("conditionCard.title.condition")}
         </div>
         <span className="text-[10px] uppercase tracking-wide text-slate-500">
-          {negated ? "\u6392\u9664" : "\u5e38\u89c4"}
+          {negated
+            ? t("conditionCard.negation.exclude")
+            : t("conditionCard.negation.normal")}
         </span>
       </div>
 
       <div className="mt-2 text-[11px] text-slate-500">
-        {isTopic ? "\u7b26\u5408\u4e3b\u9898" : "\u6d89\u53ca\u4e1a\u52a1\u6982\u5ff5"}
+        {isTopic
+          ? t("conditionCard.subtitle.topic")
+          : t("conditionCard.subtitle.concept")}
       </div>
       <div className="mt-0.5 text-sm font-medium text-slate-900">
         {isTopic
-          ? topicNames[0] ?? "\u672a\u5b9a\u4e49"
+          ? topicNames[0] ?? t("conditionCard.undefined")
           : conceptNames.length > 0
           ? conceptNames.join(" / ")
-          : "\u672a\u5b9a\u4e49"}
+          : t("conditionCard.undefined")}
       </div>
       {isTopic && (topicStatus || topicVersion) && (
         <div className="mt-1 text-[11px] text-slate-500">
-          {topicStatusLabel ? `\u72b6\u6001\uff1a${topicStatusLabel}` : null}
+          {topicStatusLabel
+            ? t("conditionCard.topicStatus", {
+                status: topicStatusLabel,
+              })
+            : null}
           {topicStatus && topicVersion ? " \u00b7 " : null}
           {topicVersion ? `v${topicVersion}` : null}
         </div>
       )}
 
       <div className="mt-3 text-[11px] text-slate-500">
-        {isTopic ? "\u5224\u5b9a\u8303\u56f4" : "\u51fa\u73b0\u4f4d\u7f6e"}
+        {isTopic
+          ? t("conditionCard.scopeLabel")
+          : t("conditionCard.locationLabel")}
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1">
-        {LOCATION_OPTIONS.map((option) => {
+        {locationOptions.map((option) => {
           const active = locations.includes(option.id);
           return (
             <span
@@ -258,12 +284,12 @@ export default function ConditionCard({
       {showImportance && (
         <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-slate-700">
           <span className="text-[11px] text-slate-500">
-            {"\u6761\u4ef6\u91cd\u8981\u6027\uff1a"}
+            {t("conditionCard.importanceLabel")}
           </span>
           {([
-            { id: "HIGH", label: "\u91cd\u8981" },
-            { id: "NORMAL", label: "\u4e00\u822c" },
-            { id: "LOW", label: "\u6b21\u8981" },
+            { id: "HIGH", label: t("conditionCard.importance.high") },
+            { id: "NORMAL", label: t("conditionCard.importance.normal") },
+            { id: "LOW", label: t("conditionCard.importance.low") },
           ] as const).map((option) => (
             <label
               key={option.id}
@@ -304,16 +330,18 @@ export default function ConditionCard({
                 onToggleNegation(!negated);
               }}
             />
-            {"\u6392\u9664\u8be5\u6761\u4ef6"}
+            {t("conditionCard.negation.toggle")}
           </label>
           <span className="text-[10px] text-slate-500">
-            {negated ? "\u4e0d\u5e94\u547d\u4e2d" : "\u547d\u4e2d\u65f6\u6210\u7acb"}
+            {negated
+              ? t("conditionCard.negation.hintExclude")
+              : t("conditionCard.negation.hintNormal")}
           </span>
         </div>
       )}
 
       <div className="mt-3 text-[11px] text-slate-500">
-        {"\u8bf4\u660e"}
+        {t("conditionCard.explainLabel")}
       </div>
       <div className="mt-0.5 text-xs text-slate-700">{explainText}</div>
     </div>

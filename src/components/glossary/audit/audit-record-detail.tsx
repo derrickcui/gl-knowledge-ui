@@ -1,4 +1,5 @@
 import { AuditRecord } from "@/types/audit";
+import { t } from "@/i18n";
 
 export function AuditRecordDetail({
   record,
@@ -13,14 +14,14 @@ export function AuditRecordDetail({
     <div className="border-t bg-muted px-4 py-3 text-sm">
       {record.reason && (
         <div className="mb-2">
-          <div className="font-medium">Reason</div>
+          <div className="font-medium">{t("glossary.audit.reason")}</div>
           <div className="text-muted-foreground">{record.reason}</div>
         </div>
       )}
 
       {record.version && (
         <div className="mb-2">
-          <div className="font-medium">Version</div>
+          <div className="font-medium">{t("glossary.audit.version")}</div>
           <div className="text-muted-foreground">{record.version}</div>
         </div>
       )}
@@ -31,11 +32,11 @@ export function AuditRecordDetail({
           onClick={onViewSnapshot}
           disabled={!record.snapshotId}
         >
-          View Snapshot
+          {t("glossary.audit.viewSnapshot")}
         </button>
 
         <button className="underline" onClick={onViewCurrent}>
-          View Current
+          {t("glossary.audit.viewCurrent")}
         </button>
       </div>
     </div>

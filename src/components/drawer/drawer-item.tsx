@@ -8,17 +8,20 @@ export function DrawerItem(props: {
   collapsed?: boolean;
   nested?: boolean;
   disabled?: boolean;
+  active?: boolean;
 }) {
-  const { href, label, icon, collapsed, nested, disabled } = props;
+  const { href, label, icon, collapsed, nested, disabled, active } = props;
 
   return (
     <Link
       href={disabled ? "#" : href}
       className={cn(
         "flex items-center gap-3 rounded-md px-3 py-2 text-sm hover:bg-accent",
+        active && "bg-accent text-foreground font-medium",
         nested && "ml-4",
         disabled && "pointer-events-none opacity-40"
       )}
+      aria-current={active ? "page" : undefined}
       title={collapsed ? label : undefined}
     >
       <span className="inline-flex h-5 w-5 items-center justify-center">

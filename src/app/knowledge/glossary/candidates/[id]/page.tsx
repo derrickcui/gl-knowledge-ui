@@ -4,6 +4,7 @@ import {
   fetchReviewInfo,
 } from "@/lib/api";
 import { CandidateDetailView } from "./candidate-detail-view";
+import { t } from "@/i18n";
 
 export default async function CandidateDetailPage({
   params,
@@ -30,7 +31,7 @@ export default async function CandidateDetailPage({
   if (!candidate || !reviewInfo || !relations) {
     return (
       <div className="rounded-md border border-red-300 bg-red-50 p-4 text-sm text-red-800">
-        {loadError ?? "Unable to load candidate details."}
+        {loadError ?? t("glossary.candidates.loadFailed")}
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { ApprovalDTO } from "@/lib/api";
 import { ApprovalRow } from "./approval-row";
+import { t } from "@/i18n";
 
 export function ApprovalTable({
   items,
@@ -11,10 +12,14 @@ export function ApprovalTable({
       <table className="w-full border-collapse text-sm">
         <thead>
           <tr>
-            <th className="border-b px-3 py-2 text-left">Term</th>
-            <th className="border-b px-3 py-2 text-left">Status</th>
             <th className="border-b px-3 py-2 text-left">
-              Submitted At
+              {t("glossary.approvals.table.term")}
+            </th>
+            <th className="border-b px-3 py-2 text-left">
+              {t("glossary.approvals.table.status")}
+            </th>
+            <th className="border-b px-3 py-2 text-left">
+              {t("glossary.approvals.table.submittedAt")}
             </th>
             <th className="border-b px-3 py-2 text-right" />
           </tr>
@@ -32,7 +37,7 @@ export function ApprovalTable({
                 colSpan={4}
                 className="px-3 py-6 text-center text-sm opacity-60"
               >
-                No approvals waiting
+                {t("glossary.approvals.table.empty")}
               </td>
             </tr>
           )}

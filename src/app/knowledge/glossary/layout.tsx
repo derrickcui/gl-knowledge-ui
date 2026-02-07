@@ -1,5 +1,5 @@
 import { fetchApprovals, isServiceDownError } from "@/lib/api";
-import { GlossaryTabs } from "@/components/glossary/glossary-tabs";
+import { GlossaryHeader } from "@/components/glossary/glossary-header";
 
 export default async function GlossaryLayout({
   children
@@ -19,10 +19,7 @@ export default async function GlossaryLayout({
   return (
     <div className="min-h-full">
       <div className="border-b bg-background p-3">
-        <div className="flex items-center justify-between">
-          <div className="font-semibold">Glossary</div>
-          <GlossaryTabs pendingCount={pendingCount} />
-        </div>
+        <GlossaryHeader pendingCount={pendingCount} />
       </div>
 
       <div className="space-y-4 p-4">

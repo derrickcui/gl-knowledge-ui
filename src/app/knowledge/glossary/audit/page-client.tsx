@@ -6,13 +6,7 @@ import { fetchGlossaryAuditLogs } from "@/lib/api";
 import { AuditHeader } from "@/components/glossary/audit/audit-header";
 import { AuditTimeline } from "@/components/glossary/audit/audit-timeline";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-
-const ACTION_OPTIONS: Array<{ label: string; value: AuditAction }> = [
-  { label: "Approved", value: "APPROVED" },
-  { label: "Rejected", value: "REJECTED" },
-  { label: "Published", value: "PUBLISHED" },
-  { label: "Archived", value: "ARCHIVED" },
-];
+import { t } from "@/i18n";
 
 export default function PageClient({
   initialItems,
@@ -35,8 +29,14 @@ export default function PageClient({
     const today = new Date();
     return today.toISOString().slice(0, 10);
   });
+  const actionOptions: Array<{ label: string; value: AuditAction }> = [
+    { label: t("glossary.audit.actions.approved"), value: "APPROVED" },
+    { label: t("glossary.audit.actions.rejected"), value: "REJECTED" },
+    { label: t("glossary.audit.actions.published"), value: "PUBLISHED" },
+    { label: t("glossary.audit.actions.archived"), value: "ARCHIVED" },
+  ];
   const [activeActions, setActiveActions] = useState<Set<AuditAction>>(
-    () => new Set(ACTION_OPTIONS.map((o) => o.value))
+    () => new Set(actionOptions.map((o) => o.value))
   );
 
   const filteredItems = items.filter((item) =>
@@ -58,7 +58,9 @@ export default function PageClient({
   useEffect(() => {
     const run = async () => {
       setStatusMessage(
-        "正在执行查询审计记录操作，请稍后..."
+        t("glossary.common.processing", {
+          action: t("glossary.common.action.search"),
+        })
       );
       setLoading(true);
       try {
@@ -85,7 +87,9 @@ export default function PageClient({
     if (!hasMore || loading || !cursor) return;
 
     setStatusMessage(
-      "正在执行加载更多操作，请稍后..."
+      t("glossary.common.processing", {
+        action: t("glossary.common.action.loadMore"),
+      })
     );
     setLoading(true);
     try {
@@ -114,7 +118,7 @@ export default function PageClient({
         </div>
       )}
       <AuditHeader
-        actions={ACTION_OPTIONS}
+        actions={actionOptions}
         selectedActions={activeActions}
         onToggleAction={toggleAction}
         query={query}

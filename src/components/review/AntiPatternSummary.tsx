@@ -1,6 +1,7 @@
 "use client";
 
 import { AntiPatternReport } from "./antiPatternTypes";
+import { t } from "@/i18n";
 
 export default function AntiPatternSummary({
   report,
@@ -24,20 +25,20 @@ export default function AntiPatternSummary({
   return (
     <div className={`rounded border p-3 ${color}`}>
       <div className="mb-1 text-sm font-semibold">
-        规则质量评估
+        {t("review.anti.summaryTitle")}
       </div>
       <div className="text-sm">
-        风险评分：<b>{report.score}</b> / 100
+        {t("review.anti.score", { score: report.score })}
       </div>
       <div className="mt-1 text-xs text-slate-600">
         {errors > 0 &&
-          `存在 ${errors} 个严重问题，必须修改后才能发布。`}
+          t("review.anti.errors", { count: errors })}
         {errors === 0 &&
           warnings > 0 &&
-          `存在 ${warnings} 个潜在问题，建议优化。`}
+          t("review.anti.warnings", { count: warnings })}
         {errors === 0 &&
           warnings === 0 &&
-          "未发现明显问题。"}
+          t("review.anti.none")}
       </div>
     </div>
   );

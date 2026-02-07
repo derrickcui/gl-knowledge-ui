@@ -1038,6 +1038,16 @@ components:
         currentVersion:
           type: integer
           nullable: true
+    RuleTemplateReferencedTopicItem:
+      type: object
+      required: [id, name, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
     RuleTemplateConfigRequest:
       type: object
       properties:
@@ -1081,21 +1091,44 @@ components:
           type: string
         fail:
           type: string
-    PageResponseRuleTemplateListItem:
+    RuleTemplateConfigResponse:
       type: object
-      required: [items, page, size, total]
+      required: [version]
       properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/RuleTemplateListItem"
-        page:
+        version:
           type: integer
-        size:
-          type: integer
-        total:
-          type: integer
-          format: int64
+        allowAll:
+          type: boolean
+        allowAccrue:
+          type: boolean
+        allowLogsum:
+          type: boolean
+        allowImportance:
+          type: boolean
+        allowProximity:
+          type: boolean
+        allowOrder:
+          type: boolean
+        allowSentence:
+          type: boolean
+        allowParagraph:
+          type: boolean
+        explainSuccess:
+          type: string
+          nullable: true
+        explainFail:
+          type: string
+          nullable: true
+    ApiResponseRuleTemplateConfigResponse:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: "#/components/schemas/RuleTemplateConfigResponse"
+        error:
+          $ref: "#/components/schemas/ApiError"
     ApiResponseRuleCreateResponse:
       type: object
       required: [success]
@@ -1124,6 +1157,18 @@ components:
           type: boolean
         data:
           $ref: "#/components/schemas/RuleTemplatePublishResponse"
+        error:
+          $ref: "#/components/schemas/ApiError"
+    ApiResponseRuleTemplateReferencedTopicList:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/RuleTemplateReferencedTopicItem"
         error:
           $ref: "#/components/schemas/ApiError"
     ApiResponsePageResponseRuleTemplateListItem:
@@ -1429,6 +1474,12 @@ components:
           type: string
         rule:
           $ref: "#/components/schemas/BusinessRule"
+        templateId:
+          type: integer
+          format: int64
+        templateVersion:
+          type: integer
+          format: int32
     TopicUpdateRequest:
       type: object
       properties:
@@ -2269,6 +2320,27 @@ paths:
         "500":
           $ref: "#/components/responses/ErrorResponse"
   /api/templates/{id}/config:
+    get:
+      summary: Get a rule template configuration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Template configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRuleTemplateConfigResponse"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
     put:
       summary: Configure a rule template
       parameters:
@@ -2290,6 +2362,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiResponseVoid"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/templates/{id}:
+    delete:
+      summary: Delete a rule template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Template deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseVoid"
+        "400":
+          $ref: "#/components/responses/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/ErrorResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /api/templates/{id}/topics:
+    get:
+      summary: List topics referencing a rule template
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Referenced topics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiResponseRuleTemplateReferencedTopicList"
         "400":
           $ref: "#/components/responses/ErrorResponse"
         "404":
@@ -2319,1481 +2435,3 @@ paths:
         "500":
           $ref: "#/components/responses/ErrorResponse"
 
-components:
-  schemas:
-    RuleNode:
-      oneOf:
-        - $ref: "#/components/schemas/GroupRule"
-        - $ref: "#/components/schemas/LogicRule"
-        - $ref: "#/components/schemas/AccumulateRule"
-        - $ref: "#/components/schemas/ProximityRule"
-        - $ref: "#/components/schemas/ConceptMatchRule"
-        - $ref: "#/components/schemas/ConceptScopeRule"
-        - $ref: "#/components/schemas/TextMatchRule"
-        - $ref: "#/components/schemas/FieldConditionRule"
-        - $ref: "#/components/schemas/WhenRule"
-        - $ref: "#/components/schemas/TopicRefRule"
-
-    GroupRule:
-      type: object
-      required: [type, children]
-      properties:
-        type:
-          const: GROUP
-        children:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/RuleNode"
-
-    LogicRule:
-      type: object
-      required: [type, operator, children]
-      properties:
-        type:
-          const: LOGIC
-        operator:
-          enum: [AND, OR, NOT]
-        children:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/RuleNode"
-
-    AccumulateRule:
-      type: object
-      required: [type, combineMode, items]
-      properties:
-        type:
-          const: ACCUMULATE
-        combineMode:
-          enum: [ACCRUE, SUM, PRODUCT, LOGSUM, YESNO]
-          description: >-
-            ACCRUE does soft matching; the minimum-match threshold is controlled by the request-level `min`
-            parameter (0.1-1, where larger means lower threshold; min=1 means any single hit). ACCRUE does not
-            support per-item weights (weight prefixes like [1.0] are invalid/ignored in rule text). LOGSUM/SUM/PRODUCT
-            only combine scores and never perform hard filtering. Use WEIGHTED/LOGSUM/SUM/PRODUCT when weights are needed.
-            Rule text example: <accrue>(<in/DOC_TEXT>foo, <in/DOC_TEXT>bar) (no [1.0] prefixes).
-        threshold:
-          type: number
-          description: >-
-            Optional parameter for LOGSUM saturation (logsum/n). Ignored for ACCRUE/SUM/PRODUCT/YESNO.
-        items:
-          type: array
-          minItems: 1
-          items:
-            $ref: "#/components/schemas/WeightedRule"
-      examples:
-        accrue_no_weights:
-          summary: ACCRUE (soft match, no weight prefixes)
-          value:
-            type: ACCUMULATE
-            combineMode: ACCRUE
-            items:
-              - weight: 1.0
-                rule:
-                  type: TEXT_MATCH
-                  matchType: PHRASE
-                  value: foo
-                  caseSensitive: false
-              - weight: 1.0
-                rule:
-                  type: TEXT_MATCH
-                  matchType: PHRASE
-                  value: bar
-                  caseSensitive: false
-        weighted_logsum:
-          summary: WEIGHTED + LOGSUM (weights are applied)
-          value:
-            type: ACCUMULATE
-            combineMode: LOGSUM
-            threshold: 2.0
-            items:
-              - weight: 0.7
-                rule:
-                  type: TEXT_MATCH
-                  matchType: PHRASE
-                  value: foo
-                  caseSensitive: false
-              - weight: 0.3
-                rule:
-                  type: TEXT_MATCH
-                  matchType: PHRASE
-                  value: bar
-                  caseSensitive: false
-
-    WeightedRule:
-      type: object
-      required: [weight, rule]
-      properties:
-        weight:
-          type: number
-          description: Used by SUM/PRODUCT/LOGSUM/YESNO; ignored for ACCRUE.
-        rule:
-          $ref: "#/components/schemas/RuleNode"
-
-    ProximityRule:
-      type: object
-      required: [type, mode, ordered, left, right]
-      properties:
-        type:
-          const: PROXIMITY
-        mode:
-          enum: [NEAR, SENTENCE, PARAGRAPH, DOCUMENT]
-          description: DOCUMENT means ordered/unordered across the whole document (no proximity window).
-        distance:
-          type: integer
-          minimum: 1
-        ordered:
-          type: boolean
-        left:
-          $ref: "#/components/schemas/RuleNode"
-        right:
-          $ref: "#/components/schemas/RuleNode"
-
-    ConceptMatchRule:
-      type: object
-      required: [type, mode, conceptIds, includeAliases]
-      properties:
-        type:
-          const: CONCEPT_MATCH
-        mode:
-          enum: [ANY, ALL]
-        conceptIds:
-          type: array
-          minItems: 1
-          items:
-            type: string
-        includeAliases:
-          type: boolean
-
-    ConceptScopeRule:
-      type: object
-      required: [type, baseConceptId, scope]
-      properties:
-        type:
-          const: CONCEPT_SCOPE
-        baseConceptId:
-          type: string
-        scope:
-          enum: [SELF, DESCENDANT, ANCESTOR, RELATED]
-        maxDepth:
-          type: integer
-          minimum: 1
-
-    TextMatchRule:
-      type: object
-      required: [type, matchType, value, caseSensitive]
-      properties:
-        type:
-          const: TEXT_MATCH
-        matchType:
-          enum: [WORD, PHRASE, WILDCARD, FREETEXT, STEM, SOUNDEX]
-        value:
-          type: string
-        caseSensitive:
-          type: boolean
-        fuzz:
-          type: integer
-          minimum: 0
-        typo:
-          type: integer
-          minimum: 0
-        lang:
-          type: string
-
-    FieldConditionRule:
-      type: object
-      required: [type, field, operator, valueType, value]
-      properties:
-        type:
-          const: FIELD_CONDITION
-        field:
-          type: string
-        operator:
-          enum: [CONTAINS, STARTS, ENDS, MATCHES, SUBSTRING, EQ, NEQ, GT, GTE, LT, LTE]
-        valueType:
-          enum: [STRING, NUMBER, DATE]
-        value: {}
-        timezone:
-          type: string
-
-    WhenRule:
-      type: object
-      required: [type, inField, expr, condition]
-      properties:
-        type:
-          const: WHEN
-        inField:
-          type: string
-          description: Logical field identifier (e.g. DOC_TEXT, DOC_TITLE). Physical fields must not appear in rule APIs.
-        expr:
-          $ref: "#/components/schemas/RuleNode"
-        condition:
-          $ref: "#/components/schemas/RuleNode"
-
-    TopicRefRule:
-      type: object
-      required: [type, topicId, refMode]
-      properties:
-        type:
-          const: TOPIC_REF
-        topicId:
-          type: string
-        refMode:
-          enum: [PUBLISHED_ONLY, PINNED_VERSION]
-        pinnedVersion:
-          type: integer
-
-    RuleLanguageSpec:
-      type: object
-      required: [version, astSchemaId, ruleTypes, palette, dialects]
-      properties:
-        version:
-          type: string
-          example: v1
-        astSchemaId:
-          type: string
-          example: https://geelink.ai/schema/rulenode/v1.json
-        ruleTypes:
-          type: array
-          items:
-            type: string
-        palette:
-          type: array
-          items:
-            $ref: "#/components/schemas/PaletteItemSpec"
-        dialects:
-          type: array
-          items:
-            $ref: "#/components/schemas/DialectSpec"
-        metadata:
-          type: object
-          additionalProperties: true
-
-    PaletteItemSpec:
-      type: object
-      required: [key, ruleType, label]
-      properties:
-        key:
-          type: string
-          example: concept_match
-        ruleType:
-          type: string
-          example: CONCEPT_MATCH
-        label:
-          type: string
-          example: 涉及某类政策概念
-        category:
-          type: string
-          example: concept
-        uiParams:
-          type: array
-          items:
-            type: string
-        explainHint:
-          type: string
-          example: 文档内容涉及某一政策概念
-
-    DialectSpec:
-      type: object
-      required: [locale, industry, templatesByRuleType]
-      properties:
-        locale:
-          type: string
-          example: zh-CN
-        industry:
-          type: string
-          example: policy
-        templatesByRuleType:
-          type: object
-          additionalProperties:
-            type: string
-
-    ExplainPreviewViewModel:
-      type: object
-      required: [title, blocks]
-      properties:
-        title:
-          type: string
-        blocks:
-          type: array
-          items:
-            $ref: "#/components/schemas/ExplainBlockViewModel"
-
-    ExplainBlockViewModel:
-      type: object
-      required: [id, text, level, indent]
-      properties:
-        id:
-          type: string
-        text:
-          type: string
-        level:
-          $ref: "#/components/schemas/ExplainBlockLevel"
-        indent:
-          type: integer
-        children:
-          type: array
-          items:
-            $ref: "#/components/schemas/ExplainBlockViewModel"
-        paletteKey:
-          type: string
-        ruleType:
-          type: string
-
-    ExplainBlockLevel:
-      type: string
-      enum: [INFO, WARNING]
-
-    SemanticDiffResult:
-      type: object
-      required: [summary, items]
-      properties:
-        summary:
-          type: string
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/DiffItem"
-
-    DiffItem:
-      type: object
-      required: [kind, path]
-      properties:
-        kind:
-          $ref: "#/components/schemas/DiffKind"
-        path:
-          type: string
-        beforeText:
-          type: string
-          nullable: true
-        afterText:
-          type: string
-          nullable: true
-
-    DiffKind:
-      type: string
-      enum: [ADDED, REMOVED, MODIFIED, MOVED]
-
-    AntiPatternReport:
-      type: object
-      required: [score, findings]
-      properties:
-        score:
-          type: integer
-        findings:
-          type: array
-          items:
-            $ref: "#/components/schemas/Finding"
-
-    Finding:
-      type: object
-      required: [severity, code, path, message]
-      properties:
-        severity:
-          $ref: "#/components/schemas/Severity"
-        code:
-          type: string
-        path:
-          type: string
-        message:
-          type: string
-        meta:
-          type: object
-          additionalProperties: true
-
-    Severity:
-      type: string
-      enum: [INFO, WARNING, ERROR]
-
-    ReviewPacket:
-      type: object
-      required:
-        - reviewId
-        - topicId
-        - topicName
-        - baseRule
-        - draftRule
-        - afterAst
-        - status
-        - contentHash
-        - dialectLocale
-        - dialectIndustry
-        - submittedAt
-        - explain
-        - diff
-        - antiPatterns
-      properties:
-        reviewId:
-          type: integer
-        topicId:
-          type: string
-        topicName:
-          type: string
-        baseRule:
-          $ref: "#/components/schemas/RuleNode"
-        draftRule:
-          $ref: "#/components/schemas/RuleNode"
-        afterAst:
-          $ref: "#/components/schemas/RuleNode"
-        status:
-          type: string
-        contentHash:
-          type: string
-        dialectLocale:
-          type: string
-        dialectIndustry:
-          type: string
-        submittedBy:
-          type: string
-        submittedAt:
-          type: string
-          format: date-time
-        reviewedBy:
-          type: string
-        reviewedAt:
-          type: string
-          format: date-time
-        reviewComment:
-          type: string
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        diff:
-          $ref: "#/components/schemas/SemanticDiffResult"
-        antiPatterns:
-          $ref: "#/components/schemas/AntiPatternReport"
-    ExplainLineViewModel:
-      type: object
-      required: [id, text, level, indent]
-      properties:
-        id:
-          type: string
-        text:
-          type: string
-        level:
-          $ref: "#/components/schemas/ExplainBlockLevel"
-        indent:
-          type: integer
-        paletteKey:
-          type: string
-          nullable: true
-        ruleType:
-          type: string
-          nullable: true
-    ExplainPreviewFlatViewModel:
-      type: object
-      required: [title, lines]
-      properties:
-        title:
-          type: string
-        lines:
-          type: array
-          items:
-            $ref: "#/components/schemas/ExplainLineViewModel"
-    ReviewPacketBusinessResponse:
-      type: object
-      required:
-        - reviewId
-        - topicId
-        - topicName
-        - status
-        - contentHash
-        - submittedAt
-        - explain
-        - diff
-        - antiPatterns
-      properties:
-        reviewId:
-          type: integer
-        topicId:
-          type: string
-        topicName:
-          type: string
-        baseRule:
-          $ref: "#/components/schemas/BusinessRule"
-          nullable: true
-        draftRule:
-          $ref: "#/components/schemas/BusinessRule"
-        status:
-          type: string
-        contentHash:
-          type: string
-        dialectLocale:
-          type: string
-        dialectIndustry:
-          type: string
-        submittedBy:
-          type: string
-        submittedAt:
-          type: string
-          format: date-time
-        reviewedBy:
-          type: string
-        reviewedAt:
-          type: string
-          format: date-time
-        reviewComment:
-          type: string
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        explainFlat:
-          $ref: "#/components/schemas/ExplainPreviewFlatViewModel"
-          description: Optional flattened explain view for UI adapters/highlighting.
-        diff:
-          $ref: "#/components/schemas/SemanticDiffResult"
-        antiPatterns:
-          $ref: "#/components/schemas/AntiPatternReport"
-    TopicDetailResponse:
-      type: object
-      required: [id, name, status, createdAt, updatedAt]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-        status:
-          type: string
-        currentPublishedRevision:
-          type: integer
-          nullable: true
-        templateId:
-          type: integer
-          format: int64
-          nullable: true
-        templateVersion:
-          type: integer
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        publishedAt:
-          type: string
-          format: date-time
-          nullable: true
-    BusinessRule:
-      type: object
-      required: [groups]
-      properties:
-        logic:
-          $ref: "#/components/schemas/RuleHow"
-          description: "Rule-level combination operator for groups (ALL/ANY). Defaults to ALL when omitted."
-          default: ALL
-        groups:
-          type: array
-          items:
-            $ref: "#/components/schemas/BusinessGroup"
-    BusinessGroup:
-      type: object
-      required: [id, priority, conditions]
-      properties:
-        id:
-          type: string
-        priority:
-          type: integer
-          default: 100
-        explain:
-          $ref: "#/components/schemas/ExplainOverride"
-        operator:
-          $ref: "#/components/schemas/ConditionHow"
-          description: "Scenario-level condition operator (AND/OR)."
-        how:
-          $ref: "#/components/schemas/ConditionHow"
-          deprecated: true
-          description: "Deprecated alias for operator."
-        score:
-          $ref: "#/components/schemas/GroupScore"
-        proximity:
-          $ref: "#/components/schemas/GroupProximity"
-          description: Optional group-level structure constraint (NEAR/SENTENCE/PARAGRAPH/DOCUMENT).
-        conditions:
-          type: array
-          items:
-            $ref: "#/components/schemas/BusinessCondition"
-    RuleHow:
-      type: string
-      enum: [ALL, ANY]
-    ConditionHow:
-      type: string
-      enum: [AND, OR]
-    GroupScore:
-      oneOf:
-        - $ref: "#/components/schemas/ScoreNone"
-        - $ref: "#/components/schemas/ScoreAtLeast"
-        - $ref: "#/components/schemas/ScoreWeighted"
-    ScoreNone:
-      type: object
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [NONE]
-    ScoreAtLeast:
-      type: object
-      required: [type]
-      properties:
-        type:
-          type: string
-          enum: [AT_LEAST]
-        n:
-          type: integer
-          minimum: 1
-          deprecated: true
-          description: >-
-            Deprecated. ACCRUE's minimum-match threshold is controlled by the request-level `min` parameter.
-    ScoreWeighted:
-      type: object
-      required: [type, mode]
-      properties:
-        type:
-          type: string
-          enum: [WEIGHTED]
-        mode:
-          $ref: "#/components/schemas/WeightedScoreMode"
-        threshold:
-          type: number
-          description: Optional LOGSUM saturation parameter (logsum/n). Ignored for SUM/PRODUCT/YESNO.
-        weights:
-          type: object
-          additionalProperties:
-            type: number
-    WeightedScoreMode:
-      type: string
-      enum: [LOGSUM, SUM, PRODUCT, YESNO]
-      description: LOGSUM/SUM/PRODUCT fuse scores only; they do not apply hard filtering.
-    GroupProximity:
-      type: object
-      required: [mode]
-      properties:
-        mode:
-          $ref: "#/components/schemas/GroupProximityMode"
-        distance:
-          type: integer
-          minimum: 1
-          description: Required when mode is NEAR.
-        ordered:
-          type: boolean
-          description: Optional; defaults to false. For DOCUMENT, ordered=true maps to <ORDER>(...), ordered=false is equivalent to omitting proximity.
-        scope:
-          $ref: "#/components/schemas/GroupProximityMode"
-          description: Optional; only valid when mode is NEAR. If set to SENTENCE/PARAGRAPH, wraps NEAR inside the scope (<SENTENCE>(<NEAR/n>(...))).
-      examples:
-        document_order:
-          summary: Ordered across whole document
-          value:
-            mode: DOCUMENT
-            ordered: true
-        near_order:
-          summary: Ordered within NEAR window
-          value:
-            mode: NEAR
-            distance: 5
-            ordered: true
-        near_sentence:
-          summary: NEAR within a sentence
-          value:
-            mode: NEAR
-            distance: 3
-            scope: SENTENCE
-    GroupProximityMode:
-      type: string
-      enum: [NEAR, SENTENCE, PARAGRAPH, DOCUMENT]
-    BusinessCondition:
-      type: object
-      required: [id, kind, payload]
-      properties:
-        id:
-          type: string
-        kind:
-          type: string
-          enum: [CONCEPT, TOPIC_REF]
-        explain:
-          $ref: "#/components/schemas/ExplainOverride"
-        payload:
-          oneOf:
-            - $ref: "#/components/schemas/ConceptConditionPayload"
-            - $ref: "#/components/schemas/TopicRefConditionPayload"
-        negate:
-          type: boolean
-          default: false
-          description: "If true, the condition is negated (wrapped with NOT)."
-    ConceptConditionPayload:
-      type: object
-      required: [conceptId, scope, location]
-      properties:
-        conceptId:
-          type: string
-        conceptName:
-          type: string
-          nullable: true
-        scope:
-          type: string
-          enum: [SELF, DESCENDANT, PARTIAL_DESCENDANT]
-        selectedChildIds:
-          type: array
-          items:
-            type: string
-        location:
-          type: object
-          properties:
-            inBody:
-              type: boolean
-            inTitle:
-              type: boolean
-            inParagraph:
-              type: boolean
-            inSentence:
-              type: boolean
-        includeAliases:
-          type: boolean
-          default: true
-    TopicRefConditionPayload:
-      type: object
-      required: [topicId]
-      properties:
-        topicId:
-          type: string
-        topicName:
-          type: string
-          nullable: true
-        topicStatus:
-          type: string
-          enum: [DRAFT, IN_REVIEW, APPROVED, PUBLISHED, ARCHIVED]
-          nullable: true
-        location:
-          type: object
-          properties:
-            inBody:
-              type: boolean
-            inTitle:
-              type: boolean
-            inParagraph:
-              type: boolean
-            inSentence:
-              type: boolean
-        refMode:
-          type: string
-          enum: [PUBLISHED_ONLY, PINNED_VERSION]
-          nullable: true
-        pinnedVersion:
-          type: integer
-          nullable: true
-        useOriginalRule:
-          type: boolean
-          default: false
-          description: If true, location may be omitted or all-false; the referenced topic rule is used as-is.
-      description: When useOriginalRule is false, location is required.
-    ExplainOverride:
-      type: object
-      properties:
-        mode:
-          type: string
-          enum: [AUTO, CUSTOM]
-        text:
-          type: string
-    TopicDraftBusinessRequest:
-      type: object
-      required: [rule]
-      properties:
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        updatedBy:
-          type: string
-          nullable: true
-    TopicDraftBusinessResponse:
-      type: object
-      required: [rule, explain, updatedAt]
-      properties:
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        updatedAt:
-          type: string
-          format: date-time
-    RulePreviewBusinessRequest:
-      type: object
-      required: [rule]
-      properties:
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-    RulePreviewBusinessResult:
-      type: object
-      required: [valid, errors]
-      properties:
-        valid:
-          type: boolean
-        errors:
-          type: array
-          items:
-            type: string
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        antiPatterns:
-          $ref: "#/components/schemas/AntiPatternReport"
-        generatedGql:
-          type: string
-          nullable: true
-          description: Preview-only GQL string. Not persisted or executed.
-    RuleUpdateBusinessRequest:
-      type: object
-      required: [rule]
-      properties:
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        updatedBy:
-          type: string
-          nullable: true
-    TopicSubmitReviewBusinessRequest:
-      type: object
-      properties:
-        submittedBy:
-          type: string
-          nullable: true
-        comment:
-          type: string
-          nullable: true
-    TopicSubmitReviewRequest:
-      type: object
-      properties:
-        submittedBy:
-          type: string
-          nullable: true
-        comment:
-          type: string
-          nullable: true
-    TopicSubmitReviewResponse:
-      type: object
-      required: [reviewId, revision, status, submittedAt]
-      properties:
-        reviewId:
-          type: integer
-        revision:
-          type: integer
-        status:
-          type: string
-        submittedAt:
-          type: string
-          format: date-time
-    TopicReviewDetailResponse:
-      type: object
-      required: [revision, rule, explain, status, submittedAt]
-      properties:
-        revision:
-          type: integer
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        gql:
-          type: string
-          nullable: true
-        status:
-          type: string
-        submittedBy:
-          type: string
-          nullable: true
-        submittedAt:
-          type: string
-          format: date-time
-        reviewedBy:
-          type: string
-          nullable: true
-        reviewedAt:
-          type: string
-          format: date-time
-          nullable: true
-        reviewComment:
-          type: string
-          nullable: true
-    TopicPublishRequest:
-      type: object
-      properties:
-        sourceRevision:
-          type: integer
-          nullable: true
-        publisher:
-          type: string
-          nullable: true
-        expectedHash:
-          type: string
-          nullable: true
-    TopicPublishResponse:
-      type: object
-      required: [publishedRevision, publishedAt]
-      properties:
-        publishedRevision:
-          type: integer
-        publishedAt:
-          type: string
-          format: date-time
-    TopicPublishedResponse:
-      type: object
-      required: [revision, rule, explain, publishedAt]
-      properties:
-        revision:
-          type: integer
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        gql:
-          type: string
-          nullable: true
-        publishedBy:
-          type: string
-          nullable: true
-        publishedAt:
-          type: string
-          format: date-time
-    TopicResponse:
-      type: object
-      required: [id, name, status]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        status:
-          type: string
-    TopicListItem:
-      type: object
-      required: [id, name, status, tags, updatedAt]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        status:
-          type: string
-        tags:
-          type: array
-          items:
-            type: string
-        updatedAt:
-          type: string
-          format: date-time
-    RuleCreateRequest:
-      type: object
-      required: [templateId, templateVersion, name, rule]
-      properties:
-        templateId:
-          type: integer
-          format: int64
-        templateVersion:
-          type: integer
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        createdBy:
-          type: string
-          nullable: true
-    RuleCreateResponse:
-      type: object
-      required: [id, status]
-      properties:
-        id:
-          type: string
-        status:
-          type: string
-    RuleTemplateCreateRequest:
-      type: object
-      required: [name, description]
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        category:
-          type: string
-          nullable: true
-        createdBy:
-          type: string
-          nullable: true
-    RuleTemplateCreateResponse:
-      type: object
-      required: [id, status]
-      properties:
-        id:
-          type: integer
-          format: int64
-        status:
-          type: string
-    RuleTemplatePublishResponse:
-      type: object
-      required: [templateId, version, status]
-      properties:
-        templateId:
-          type: integer
-          format: int64
-        version:
-          type: integer
-        status:
-          type: string
-    RuleTemplateListItem:
-      type: object
-      required: [id, name, description, category, status, currentVersion]
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        description:
-          type: string
-        category:
-          type: string
-          nullable: true
-        status:
-          type: string
-        currentVersion:
-          type: integer
-          nullable: true
-    RuleTemplateConfigRequest:
-      type: object
-      properties:
-        allowModes:
-          $ref: "#/components/schemas/RuleTemplateAllowModes"
-        importance:
-          $ref: "#/components/schemas/RuleTemplateImportance"
-        proximity:
-          $ref: "#/components/schemas/RuleTemplateProximity"
-        explain:
-          $ref: "#/components/schemas/RuleTemplateExplain"
-    RuleTemplateAllowModes:
-      type: object
-      properties:
-        ALL:
-          type: boolean
-        ACCRUE:
-          type: boolean
-        LOGSUM:
-          type: boolean
-    RuleTemplateImportance:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-    RuleTemplateProximity:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-        sentence:
-          type: boolean
-        paragraph:
-          type: boolean
-        order:
-          type: boolean
-    RuleTemplateExplain:
-      type: object
-      properties:
-        success:
-          type: string
-        fail:
-          type: string
-    PageResponseRuleTemplateListItem:
-      type: object
-      required: [items, page, size, total]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/RuleTemplateListItem"
-        page:
-          type: integer
-        size:
-          type: integer
-        total:
-          type: integer
-          format: int64
-    ApiResponseRuleCreateResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/RuleCreateResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseRuleTemplateCreateResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/RuleTemplateCreateResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseRuleTemplatePublishResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/RuleTemplatePublishResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponsePageResponseRuleTemplateListItem:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/PageResponseRuleTemplateListItem"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    RulePreviewResult:
-      type: object
-      required: [valid, errors, dialect]
-      properties:
-        valid:
-          type: boolean
-        errors:
-          type: array
-          items:
-            type: string
-        explain:
-          $ref: "#/components/schemas/ExplainPreviewViewModel"
-        antiPatterns:
-          $ref: "#/components/schemas/AntiPatternReport"
-        generatedGql:
-          type: string
-          nullable: true
-          description: Preview-only GQL string. Not persisted or executed.
-        dialect:
-          type: object
-          required: [locale, industry]
-          properties:
-            locale:
-              type: string
-            industry:
-              type: string
-    ApiError:
-      type: object
-      required: [code, message]
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-    ApiResponseTopicResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseTopicDetailResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicDetailResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseTopicDraftBusiness:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicDraftBusinessResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseRulePreviewBusiness:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/RulePreviewBusinessResult"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseTopicSubmitReviewResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicSubmitReviewResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseTopicReviewDetailResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicReviewDetailResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseTopicPublishResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicPublishResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseTopicPublishedResponse:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/TopicPublishedResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseRulePreviewResult:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/RulePreviewResult"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseReviewPacket:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/ReviewPacket"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseReviewPacketBusiness:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/ReviewPacketBusinessResponse"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseReviewList:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/ReviewListItem"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseRuleLanguageSpec:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/RuleLanguageSpec"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseAuditEventList:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: "#/components/schemas/AuditEventDTO"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseVoid:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          nullable: true
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ApiResponseError:
-      type: object
-      required: [success, error]
-      properties:
-        success:
-          type: boolean
-        data:
-          nullable: true
-        error:
-          $ref: "#/components/schemas/ApiError"
-  responses:
-    ErrorResponse:
-      description: Error response
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/ApiResponseError"
-    PageResponseTopicListItem:
-      type: object
-      required: [items, page, size, total]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/TopicListItem"
-        page:
-          type: integer
-        size:
-          type: integer
-        total:
-          type: integer
-          format: int64
-    ApiResponsePageResponseTopicListItem:
-      type: object
-      required: [success]
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: "#/components/schemas/PageResponseTopicListItem"
-        error:
-          $ref: "#/components/schemas/ApiError"
-    ReviewListItem:
-      type: object
-      required: [reviewId, revision, status, submittedBy, submittedAt]
-      properties:
-        reviewId:
-          type: integer
-        revision:
-          type: integer
-        status:
-          type: string
-        submittedBy:
-          type: string
-        submittedAt:
-          type: string
-          format: date-time
-        reviewedBy:
-          type: string
-          nullable: true
-        reviewedAt:
-          type: string
-          format: date-time
-          nullable: true
-    SubmitReviewRequest:
-      type: object
-      required: [draftRule]
-      properties:
-        draftRule:
-          $ref: "#/components/schemas/RuleNode"
-        dialectLocale:
-          type: string
-        dialectIndustry:
-          type: string
-        submittedBy:
-          type: string
-    ReviewDecisionRequest:
-      type: object
-      properties:
-        decision:
-          type: string
-          enum: [APPROVE, REJECT]
-        reviewer:
-          type: string
-        comment:
-          type: string
-        expectedHash:
-          type: string
-    PublishReviewRequest:
-      type: object
-      properties:
-        publisher:
-          type: string
-        expectedHash:
-          type: string
-    TopicRequest:
-      type: object
-      required: [name]
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-    TopicUpdateRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-    RulePreviewRequest:
-      type: object
-      required: [rule]
-      properties:
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-        dialectLocale:
-          type: string
-        dialectIndustry:
-          type: string
-    RuleUpdateRequest:
-      type: object
-      required: [rule]
-      properties:
-        rule:
-          $ref: "#/components/schemas/BusinessRule"
-    AuditEventDTO:
-      type: object
-      required: [id, action, actor, actorType, createdAt]
-      properties:
-        id:
-          type: integer
-        action:
-          type: string
-        actor:
-          type: string
-        actorType:
-          type: string
-        fromStatus:
-          type: string
-        toStatus:
-          type: string
-        reason:
-          type: string
-        metadata:
-          type: object
-          additionalProperties: true
-        createdAt:
-          type: string
-          format: date-time

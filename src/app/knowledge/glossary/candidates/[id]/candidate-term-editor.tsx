@@ -1,4 +1,5 @@
 import { CandidateDTO } from "@/lib/api";
+import { t } from "@/i18n";
 
 export function CandidateTermEditor({
   draft,
@@ -11,10 +12,14 @@ export function CandidateTermEditor({
 }) {
   return (
     <div className="space-y-4 rounded-md border p-4">
-      <h2 className="font-medium">Term</h2>
+      <h2 className="font-medium">
+        {t("glossary.candidates.editor.title")}
+      </h2>
 
       <div>
-        <label className="text-sm">Canonical</label>
+        <label className="text-sm">
+          {t("glossary.candidates.editor.canonical")}
+        </label>
         <input
           className="mt-1 w-full rounded-md border px-2 py-1 text-sm"
           value={draft.canonical}
@@ -26,10 +31,12 @@ export function CandidateTermEditor({
       </div>
 
       <div>
-        <label className="text-sm">Aliases</label>
+        <label className="text-sm">
+          {t("glossary.candidates.editor.aliases")}
+        </label>
         <input
           className="mt-1 w-full rounded-md border px-2 py-1 text-sm"
-          placeholder="Comma separated, e.g. 创办者, 创始人"
+          placeholder={t("glossary.candidates.editor.aliasesPlaceholder")}
           value={draft.aliases.join(", ")}
           disabled={readonly}
           onChange={(e) =>
@@ -43,12 +50,14 @@ export function CandidateTermEditor({
           }
         />
         <div className="mt-1 text-xs opacity-60">
-          多个别名请使用英文逗号分隔
+          {t("glossary.candidates.editor.aliasesHint")}
         </div>
       </div>
 
       <div>
-        <label className="text-sm">Definition</label>
+        <label className="text-sm">
+          {t("glossary.candidates.editor.definition")}
+        </label>
         <textarea
           className="mt-1 w-full rounded-md border px-2 py-1 text-sm"
           rows={3}

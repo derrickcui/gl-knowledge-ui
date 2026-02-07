@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { t } from "@/i18n";
 
 const REJECT_REASONS = [
-  { value: "TOO_GENERIC", label: "Too generic" },
-  { value: "NOT_DOMAIN_TERM", label: "Not a domain term" },
-  { value: "NOISE", label: "Noise" },
-  { value: "OTHER", label: "Other" },
+  { value: "TOO_GENERIC", labelKey: "glossary.rejectDialog.reason.tooGeneric" },
+  { value: "NOT_DOMAIN_TERM", labelKey: "glossary.rejectDialog.reason.notDomain" },
+  { value: "NOISE", labelKey: "glossary.rejectDialog.reason.noise" },
+  { value: "OTHER", labelKey: "glossary.rejectDialog.reason.other" },
 ];
 
 export function RejectDialog({
@@ -40,25 +41,28 @@ export function RejectDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="w-[440px] rounded-lg bg-white p-6 shadow-xl">
-        <h3 className="text-base font-semibold">Reject Term</h3>
+        <h3 className="text-base font-semibold">
+          {t("glossary.rejectDialog.title")}
+        </h3>
         <p className="mt-2 text-sm text-muted-foreground">
-          You are rejecting <strong>{term}</strong>. Provide the reason
-          type and explanation.
+          {t("glossary.rejectDialog.subtitle", { term })}
         </p>
 
         <div className="mt-4">
           <label className="text-xs font-medium text-muted-foreground">
-            Reason Type (required)
+            {t("glossary.rejectDialog.reasonTypeLabel")}
           </label>
           <select
             className="mt-2 w-full rounded-md border bg-white p-2 text-sm"
             value={reasonType}
             onChange={(e) => setReasonType(e.target.value)}
           >
-            <option value="">Select a reason</option>
+            <option value="">
+              {t("glossary.rejectDialog.reasonTypePlaceholder")}
+            </option>
             {REJECT_REASONS.map((item) => (
               <option key={item.value} value={item.value}>
-                {item.label}
+                {t(item.labelKey as any)}
               </option>
             ))}
           </select>
@@ -66,14 +70,14 @@ export function RejectDialog({
 
         <div className="mt-4">
           <label className="text-xs font-medium text-muted-foreground">
-            Explanation (required)
+            {t("glossary.rejectDialog.explanationLabel")}
           </label>
           <textarea
             className="mt-2 w-full rounded-md border p-2 text-sm"
             rows={4}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder="Explain the rejection"
+            placeholder={t("glossary.rejectDialog.explanationPlaceholder")}
           />
         </div>
 
@@ -83,7 +87,7 @@ export function RejectDialog({
             onClick={onCancel}
             disabled={loading}
           >
-            Cancel
+            {t("glossary.common.cancel")}
           </button>
           <button
             className="rounded-md bg-black px-4 py-1.5 text-sm text-white disabled:opacity-50"
@@ -95,7 +99,7 @@ export function RejectDialog({
               })
             }
           >
-            Confirm Reject
+            {t("glossary.rejectDialog.confirm")}
           </button>
         </div>
       </div>

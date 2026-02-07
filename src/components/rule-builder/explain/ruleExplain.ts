@@ -1,5 +1,6 @@
 import { RuleNode } from "../astTypes";
 import { buildGroupExplainModel } from "./groupExplain";
+import { t } from "@/i18n";
 
 function getGroupExplainText(group: RuleNode): string {
   if (group.explain?.mode === "CUSTOM" && group.explain.text) {
@@ -31,7 +32,10 @@ export function generateRuleExplain(rule: RuleNode): string {
     .map((group, idx) => {
       const text = getGroupExplainText(group);
       const priority = group.priority ?? 100;
-      return `\u5224\u65ad\u573a\u666f ${idx + 1}\uff08\u4f18\u5148\u7ea7 ${priority}\uff09\uff1a\n${text}`;
+      return `${t("ruleExplain.groupTitle", {
+        index: idx + 1,
+        priority,
+      })}\n${text}`;
     })
-    .join("\n\n\u6216\n\n");
+    .join(t("ruleExplain.groupSeparator"));
 }

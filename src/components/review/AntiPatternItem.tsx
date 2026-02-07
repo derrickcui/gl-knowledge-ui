@@ -1,6 +1,7 @@
 "use client";
 
 import { AntiPatternFinding } from "./antiPatternTypes";
+import { t } from "@/i18n";
 
 interface Props {
   finding: AntiPatternFinding;
@@ -22,10 +23,10 @@ export default function AntiPatternItem({
 
   const label =
     finding.severity === "ERROR"
-      ? "严重问题"
+      ? t("review.anti.severity.error")
       : finding.severity === "WARNING"
-      ? "潜在问题"
-      : "提示";
+      ? t("review.anti.severity.warning")
+      : t("review.anti.severity.info");
 
   return (
     <div className={`border-l-4 ${color} py-2 pl-3`}>
@@ -33,7 +34,9 @@ export default function AntiPatternItem({
       <div className="text-sm text-slate-700">{finding.message}</div>
       {finding.suggestion && (
         <div className="mt-1 text-xs text-slate-600">
-          建议修复：{finding.suggestion}
+          {t("review.anti.suggestion", {
+            suggestion: finding.suggestion,
+          })}
         </div>
       )}
       {finding.path && (
@@ -43,7 +46,7 @@ export default function AntiPatternItem({
           onMouseLeave={() => onHoverPath?.(null)}
           onClick={() => onClickPath?.(finding.path!)}
         >
-          ↳ 定位到对应规则条件
+          {t("review.anti.locate")}
         </div>
       )}
     </div>

@@ -14,13 +14,8 @@ import {
   fetchCandidateSnapshotRelations,
 } from "@/lib/api";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import { t } from "@/i18n";
 
-/**
- * AuditDrawer
- * - 只读
- * - 展示某一次 Audit Record 对应的 Concept Snapshot
- * - 不负责 fetch 列表，只 fetch snapshot
- */
 export function AuditDrawer({
   open,
   record,
@@ -42,7 +37,7 @@ export function AuditDrawer({
   const [relations, setRelations] = useState<
     CandidateRelationsResponse | null
   >(null);
-  // 关闭时禁止 body 滚动（基础处理）
+
   useEffect(() => {
     if (open) {
       document.body.style.overflow = "hidden";
@@ -65,12 +60,16 @@ export function AuditDrawer({
 
       const isSnapshot = mode === "snapshot";
       if (isSnapshot && !record.snapshotId) {
-        setError("No snapshot available for this record.");
+        setError(t("glossary.audit.snapshotUnavailable"));
         return;
       }
 
       setLoadingMessage(
-        `正在执行加载${isSnapshot ? "快照" : "当前"}数据操作，请稍后...`
+        t("glossary.common.processing", {
+          action: isSnapshot
+            ? t("glossary.common.action.loadSnapshot")
+            : t("glossary.common.action.loadCurrent"),
+        })
       );
       const candidateId = Number(record.conceptId);
       const snapshotId = record.snapshotId ?? "";
@@ -89,13 +88,17 @@ export function AuditDrawer({
         if (candidateRes.data) {
           setCandidate(candidateRes.data);
         } else {
-          setError(candidateRes.error ?? "Failed to load data.");
+          setError(
+            candidateRes.error ?? t("glossary.common.loadFailed")
+          );
         }
 
         if (relationRes.data) {
           setRelations(relationRes.data);
         } else if (!candidateRes.error) {
-          setError(relationRes.error ?? "Failed to load relations.");
+          setError(
+            relationRes.error ?? t("glossary.audit.relationsLoadFailed")
+          );
         }
         setLoadingMessage(null);
       }
@@ -112,13 +115,11 @@ export function AuditDrawer({
 
   return (
     <div className="fixed inset-0 z-50">
-      {/* backdrop */}
       <div
         className="absolute inset-0 bg-black/40"
         onClick={onClose}
       />
 
-      {/* drawer */}
       <div
         className={clsx(
           "absolute right-0 top-0 h-full w-[520px]",
@@ -126,7 +127,6 @@ export function AuditDrawer({
           "flex flex-col"
         )}
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b px-4 py-3">
           <div>
             <div className="text-sm font-medium">
@@ -134,21 +134,21 @@ export function AuditDrawer({
             </div>
             <div className="text-xs text-muted-foreground">
               {mode === "snapshot"
-                ? "Viewing historical snapshot"
-                : "Viewing current data"}
-              {record.version ? ` · ${record.version}` : ""}
+                ? t("glossary.audit.viewingSnapshot")
+                : t("glossary.audit.viewingCurrent")}
+              {record.version ? ` ?? ${record.version}` : ""}
             </div>
           </div>
 
           <button
             onClick={onClose}
             className="rounded p-1 hover:bg-muted"
+            aria-label={t("glossary.common.close")}
           >
             <X size={16} />
           </button>
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-auto p-4 text-sm">
           {loadingMessage && (
             <FeedbackBanner type="info" title={loadingMessage} />
@@ -167,20 +167,14 @@ export function AuditDrawer({
           )}
         </div>
 
-        {/* Footer */}
         <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-          Audit snapshots are read-only and immutable.
+          {t("glossary.audit.snapshotFooter")}
         </div>
       </div>
     </div>
   );
 }
 
-/**
- * SnapshotContent
- * ⚠️ v1：只展示 audit record 自带的信息
- * v2：这里可以 fetch `/concepts/{id}/snapshots/{version}`
- */
 function SnapshotContent({
   record,
   candidate,
@@ -192,31 +186,38 @@ function SnapshotContent({
 }) {
   const lifecycleStatus =
     candidate.lifecycleStatus ?? candidate.status;
+  const relationSummary = relations?.outgoing && relations?.incoming
+    ? t("glossary.audit.relationsSummary", {
+        outgoing: relations.outgoing.length,
+        incoming: relations.incoming.length,
+      })
+    : t("glossary.audit.relationsEmpty");
+
   return (
     <div className="space-y-4">
       <section>
-        <div className="font-medium">Term</div>
+        <div className="font-medium">{t("glossary.audit.term")}</div>
         <div className="text-muted-foreground">
           {candidate.canonical}
         </div>
       </section>
 
       <section>
-        <div className="font-medium">Action</div>
+        <div className="font-medium">{t("glossary.audit.action")}</div>
         <div className="text-muted-foreground">
           {record.action}
         </div>
       </section>
 
       <section>
-        <div className="font-medium">Actor</div>
+        <div className="font-medium">{t("glossary.audit.actor")}</div>
         <div className="text-muted-foreground">
           {record.actor}
         </div>
       </section>
 
       <section>
-        <div className="font-medium">Time</div>
+        <div className="font-medium">{t("glossary.audit.time")}</div>
         <div className="text-muted-foreground">
           {new Date(record.actedAt).toLocaleString()}
         </div>
@@ -224,7 +225,7 @@ function SnapshotContent({
 
       {record.reason && (
         <section>
-          <div className="font-medium">Reason</div>
+          <div className="font-medium">{t("glossary.audit.reason")}</div>
           <div className="text-muted-foreground">
             {record.reason}
           </div>
@@ -233,7 +234,7 @@ function SnapshotContent({
 
       {record.version && (
         <section>
-          <div className="font-medium">Snapshot Version</div>
+          <div className="font-medium">{t("glossary.audit.snapshotVersion")}</div>
           <div className="text-muted-foreground">
             {record.version}
           </div>
@@ -241,7 +242,7 @@ function SnapshotContent({
       )}
 
       <section>
-        <div className="font-medium">Lifecycle</div>
+        <div className="font-medium">{t("glossary.audit.lifecycle")}</div>
         <div className="text-muted-foreground">
           {lifecycleStatus}
         </div>
@@ -249,7 +250,7 @@ function SnapshotContent({
 
       {candidate.definition && (
         <section>
-          <div className="font-medium">Definition</div>
+          <div className="font-medium">{t("glossary.audit.definition")}</div>
           <div className="text-muted-foreground">
             {candidate.definition}
           </div>
@@ -258,7 +259,7 @@ function SnapshotContent({
 
       {candidate.aliases?.length ? (
         <section>
-          <div className="font-medium">Aliases</div>
+          <div className="font-medium">{t("glossary.audit.aliases")}</div>
           <div className="text-muted-foreground">
             {candidate.aliases.join(", ")}
           </div>
@@ -266,11 +267,9 @@ function SnapshotContent({
       ) : null}
 
       <section>
-        <div className="font-medium">Relations</div>
+        <div className="font-medium">{t("glossary.audit.relations")}</div>
         <div className="text-muted-foreground">
-          {relations?.outgoing && relations?.incoming
-            ? `${relations.outgoing.length} outgoing, ${relations.incoming.length} incoming`
-            : "No relations loaded"}
+          {relationSummary}
         </div>
       </section>
     </div>

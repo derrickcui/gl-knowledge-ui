@@ -1,6 +1,7 @@
 import { RuleNode } from "@/components/rule-builder/astTypes";
 import { buildConceptAstFromDraft } from "@/components/rule-builder/conceptConditionCompiler";
 import { buildTopicAstFromDraft } from "@/components/rule-builder/topicConditionCompiler";
+import { t } from "@/i18n";
 
 export type ExplainOverride = {
   mode: "AUTO" | "CUSTOM";
@@ -104,42 +105,56 @@ function buildConceptExplainFromPayload(
   payload: ConceptConditionPayload
 ) {
   const parts: string[] = [];
-  if (payload.location.inBody) parts.push("\u6b63\u6587");
-  if (payload.location.inTitle) parts.push("\u6807\u9898");
+  if (payload.location.inBody)
+    parts.push(t("businessRule.location.body"));
+  if (payload.location.inTitle)
+    parts.push(t("businessRule.location.title"));
   if (payload.location.inParagraph)
-    parts.push("\u540c\u4e00\u6bb5\u843d");
+    parts.push(t("businessRule.location.paragraph"));
   if (payload.location.inSentence)
-    parts.push("\u540c\u4e00\u53e5\u8bdd");
+    parts.push(t("businessRule.location.sentence"));
   const loc = parts.length
-    ? `\u6587\u6863${parts.join(" / ")}`
-    : "\u6587\u6863\u5185\u5bb9";
+    ? t("businessRule.location.documentWith", {
+        parts: parts.join(" / "),
+      })
+    : t("businessRule.location.documentContent");
   const scope =
     payload.scope === "SELF"
-      ? "\u4ec5\u8be5\u6982\u5ff5"
+      ? t("businessRule.scope.self")
       : payload.scope === "DESCENDANT"
-      ? "\u8be5\u6982\u5ff5\u53ca\u5176\u4e0b\u4f4d\u6982\u5ff5"
-      : "\u8be5\u6982\u5ff5\u53ca\u9009\u4e2d\u4e0b\u4f4d\u6982\u5ff5";
+      ? t("businessRule.scope.descendant")
+      : t("businessRule.scope.partial");
   const name =
-    payload.conceptName ??
-    "\u6307\u5b9a\u6982\u5ff5";
-  return `\u5f53\u3010${loc}\u3011\u4e2d\u63d0\u5230\u300c${name}\u300d\uff08${scope}\uff09\u65f6\uff0c\u8be5\u6761\u4ef6\u6210\u7acb\u3002`;
+    payload.conceptName ?? t("businessRule.concept.placeholder");
+  return t("businessRule.explain.concept", {
+    loc,
+    name,
+    scope,
+  });
 }
 
 function buildTopicExplainFromPayload(
   payload: TopicConditionPayload
 ) {
   if (payload.useOriginalRule) {
-    const name = payload.topicName ?? "\u6307\u5b9a\u4e3b\u9898";
-    return `\u5f53\u4e3b\u9898\u300c${name}\u300d\u7684\u5b9a\u4e49\u89c4\u5219\u6210\u7acb\u65f6\uff0c\u8be5\u6761\u4ef6\u6210\u7acb\u3002`;
+    const name = payload.topicName ?? t("businessRule.topic.placeholder");
+    return t("businessRule.explain.topic.original", { name });
   }
   const parts: string[] = [];
-  if (payload.location.inBody) parts.push("\u6b63\u6587");
-  if (payload.location.inTitle) parts.push("\u6807\u9898");
+  if (payload.location.inBody)
+    parts.push(t("businessRule.location.body"));
+  if (payload.location.inTitle)
+    parts.push(t("businessRule.location.title"));
   const loc = parts.length
-    ? `\u6587\u6863${parts.join(" / ")}`
-    : "\u6587\u6863\u5185\u5bb9";
-  const name = payload.topicName ?? "\u6307\u5b9a\u4e3b\u9898";
-  return `\u5f53\u3010${loc}\u3011\u4e2d\u7b26\u5408\u4e3b\u9898\u300c${name}\u300d\u65f6\uff0c\u8be5\u6761\u4ef6\u6210\u7acb\u3002`;
+    ? t("businessRule.location.documentWith", {
+        parts: parts.join(" / "),
+      })
+    : t("businessRule.location.documentContent");
+  const name = payload.topicName ?? t("businessRule.topic.placeholder");
+  return t("businessRule.explain.topic", {
+    loc,
+    name,
+  });
 }
 
 function extractConceptFromNode(node: RuleNode): {
@@ -798,7 +813,7 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
         importanceMode: hasWeights ? "IMPORTANCE" : undefined,
         role: "SCENARIO",
         sticky: true,
-        title: `\u5224\u65ad\u573a\u666f ${index + 1}`,
+        title: t("businessRule.scenarioTitle", { index: index + 1 }),
         proximity: normalizeScenarioProximity(group.proximity),
       },
       priority: group.priority ?? 100,

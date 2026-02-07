@@ -4,6 +4,7 @@ import ExplainBlockView from "../explain/ExplainBlockView";
 import { ExplainBlock } from "../explain/explainTypes";
 import { ExplainDiffItem } from "./explainDiffTypes";
 import { diffStyleForBlock } from "./explainDiffUtils";
+import { t } from "@/i18n";
 
 interface ExplainPayload {
   title?: string;
@@ -28,7 +29,7 @@ export default function ExplainPreviewDiff({
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <ExplainSide
-        title="变更前"
+        title={t("review.explainDiff.before")}
         explain={before}
         diff={diff}
         side="before"
@@ -36,7 +37,7 @@ export default function ExplainPreviewDiff({
         onClickEvidence={onClickEvidence}
       />
       <ExplainSide
-        title="变更后"
+        title={t("review.explainDiff.after")}
         explain={after}
         diff={diff}
         side="after"
@@ -71,7 +72,7 @@ function ExplainSide({
       </div>
       {!explain ? (
         <div className="rounded border border-dashed p-3 text-xs text-slate-400">
-          无内容
+          {t("review.explainDiff.empty")}
         </div>
       ) : (
         <div className="space-y-2">
