@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { t } from "@/i18n";
 import {
   deleteTemplateVersion,
   fetchTemplateById,
@@ -62,7 +63,7 @@ export default function TemplateVersionPage({
     if (!versionRes.data) {
       setFeedback({
         type: "error",
-        title: "版本加载失败",
+        title: t("templates.version.loadFailed"),
         message: versionRes.error ?? "Request failed",
       });
       setCapability(null);
@@ -72,13 +73,13 @@ export default function TemplateVersionPage({
     if (templateRes.data?.name) {
       setTemplateName(templateRes.data.name);
     } else {
-      setTemplateName(`模板 #${String(id)}`);
+      setTemplateName(t("templates.version.templateFallback", { id: String(id) }));
     }
     const parsed = parseTemplateCapabilityState(versionRes.data.capability);
     if (!parsed) {
       setFeedback({
         type: "error",
-        title: "版本能力结构无效",
+        title: t("templates.version.invalidCapability"),
       });
       setCapability(null);
       setLoading(false);
@@ -100,7 +101,7 @@ export default function TemplateVersionPage({
   async function handleSave() {
     if (!capability) return;
     setBusy(true);
-    setFeedback({ type: "info", title: "正在保存版本..." });
+    setFeedback({ type: "info", title: t("templates.version.saving") });
     const res = await updateTemplateVersion(id, version, {
       capability: capability as unknown as Record<string, unknown>,
       explain,
@@ -108,43 +109,43 @@ export default function TemplateVersionPage({
     if (!res.data) {
       setFeedback({
         type: "error",
-        title: "保存失败",
+        title: t("templates.version.saveFailed"),
         message: res.error ?? "Request failed",
       });
       setBusy(false);
       return;
     }
     setStatus(res.data.status);
-    setFeedback({ type: "success", title: "版本已保存" });
+    setFeedback({ type: "success", title: t("templates.version.saved") });
     setBusy(false);
   }
 
   async function handlePublish() {
     setBusy(true);
-    setFeedback({ type: "info", title: `正在发布 v${version}...` });
+    setFeedback({ type: "info", title: t("templates.version.publishing", { version }) });
     const res = await publishTemplateVersion(id, version);
     if (!res.data) {
       setFeedback({
         type: "error",
-        title: "发布失败",
+        title: t("templates.version.publishFailed"),
         message: res.error ?? "Request failed",
       });
       setBusy(false);
       return;
     }
-    setFeedback({ type: "success", title: `v${version} 已发布` });
+    setFeedback({ type: "success", title: t("templates.version.published", { version }) });
     await loadVersion();
     setBusy(false);
   }
 
   async function handleDelete() {
     setBusy(true);
-    setFeedback({ type: "info", title: `正在删除 v${version}...` });
+    setFeedback({ type: "info", title: t("templates.version.deleting", { version }) });
     const res = await deleteTemplateVersion(id, version);
     if (!res.data && res.error) {
       setFeedback({
         type: "error",
-        title: "删除失败",
+        title: t("templates.version.deleteFailed"),
         message: res.error,
       });
       setBusy(false);
@@ -154,11 +155,11 @@ export default function TemplateVersionPage({
   }
 
   if (loading) {
-    return <div className="p-6 text-sm opacity-70">加载中...</div>;
+    return <div className="p-6 text-sm opacity-70">{t("templates.version.loading")}</div>;
   }
 
   if (!capability) {
-    return <div className="p-6 text-sm text-red-600">版本不存在或加载失败。</div>;
+    return <div className="p-6 text-sm text-red-600">{t("templates.version.notFound")}</div>;
   }
 
   return (
@@ -166,9 +167,14 @@ export default function TemplateVersionPage({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">
-            {templateName || `模板 #${String(id)}`} · 版本 v{version}
+            {t("templates.version.title", {
+              name: templateName || t("templates.version.templateFallback", { id: String(id) }),
+              version,
+            })}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">状态: {status || "-"}</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("templates.version.status", { status: status || "-" })}
+          </p>
         </div>
         <button
           type="button"
@@ -176,7 +182,7 @@ export default function TemplateVersionPage({
           disabled={busy}
           onClick={() => router.push(`/knowledge/templates/${encodeURIComponent(String(id))}`)}
         >
-          返回模板
+          {t("templates.detail.backTemplate")}
         </button>
       </div>
 
@@ -190,7 +196,7 @@ export default function TemplateVersionPage({
       )}
 
       <div className="rounded-md border bg-white p-4">
-        <div className="mb-3 text-sm font-semibold">能力定义</div>
+        <div className="mb-3 text-sm font-semibold">{t("templates.version.capabilityDefinition")}</div>
         <TemplateCapabilityEditor value={capability} disabled={busy || locked} onChange={setCapability} />
       </div>
 
@@ -205,7 +211,7 @@ export default function TemplateVersionPage({
           disabled={busy || locked}
           onClick={handleDelete}
         >
-          删除版本
+          {t("templates.version.delete")}
         </button>
         <button
           type="button"
@@ -213,7 +219,7 @@ export default function TemplateVersionPage({
           disabled={busy || locked}
           onClick={handleSave}
         >
-          保存
+          {t("templates.version.save")}
         </button>
         <button
           type="button"
@@ -221,9 +227,11 @@ export default function TemplateVersionPage({
           disabled={busy || locked}
           onClick={handlePublish}
         >
-          发布
+          {t("templates.version.publish")}
         </button>
       </div>
     </div>
   );
 }
+
+

@@ -193,6 +193,23 @@ export default function TopicDetailPage() {
     setPreviewBusy(false);
   }
 
+  async function handleCopyPreviewGql() {
+    if (!previewGql.trim()) return;
+    try {
+      await navigator.clipboard.writeText(previewGql);
+      setPreviewDialogOpen(false);
+      setActionFeedback({
+        type: "success",
+        title: t("ruleEditor.previewGql.copySuccess"),
+      });
+    } catch {
+      setActionFeedback({
+        type: "error",
+        title: t("ruleEditor.previewGql.copyFailed"),
+      });
+    }
+  }
+
   async function handlePublish() {
     if (!topicId || topicStatus === "IN_REVIEW") return;
     setActionBusy(true);
@@ -434,6 +451,14 @@ export default function TopicDetailPage() {
                       {t("ruleEditor.previewGql.hint")}
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
+                    onClick={handleCopyPreviewGql}
+                    disabled={previewBusy || Boolean(previewError) || !previewGql.trim()}
+                  >
+                    {t("ruleEditor.previewGql.copy")}
+                  </button>
                   <button
                     type="button"
                     className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
