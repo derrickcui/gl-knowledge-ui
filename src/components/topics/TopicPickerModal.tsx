@@ -5,7 +5,7 @@ import { searchTopics, TopicDTO } from "@/lib/topic-api";
 import { TopicConditionDraft } from "./topicConditionDraft";
 import { decodeUnicodeEscapes } from "@/lib/text-utils";
 import { t } from "@/i18n";
-import type { RuleTemplateCapability } from "@/components/rule-builder/templateCapabilities";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
 type RangeMode = "ORIGINAL" | "ALL" | "LIMITED";
 
@@ -16,7 +16,9 @@ interface Props {
   initialQuery?: string;
   initialDraft?: TopicConditionDraft | null;
   lockTopicSelection?: boolean;
-  templateCapabilities?: RuleTemplateCapability | null;
+  templateCapabilities?: {
+    allowLocationTitle?: boolean;
+  } | null;
 }
 
 function normalizeLocation(
@@ -123,6 +125,7 @@ export default function TopicPickerModal({
   const [useOriginalRule, setUseOriginalRule] = useState(
     initialUseOriginal
   );
+  const draggable = useDraggableDialog(open);
   const normalizedQuery = decodeUnicodeEscapes(query);
 
   useEffect(() => {
@@ -212,8 +215,16 @@ export default function TopicPickerModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="flex h-[720px] max-h-[90vh] w-[960px] max-w-[95vw] flex-col overflow-hidden rounded-lg bg-white p-5 shadow-xl">
-        <div className="flex items-start justify-between">
+      <div
+        className="flex h-[720px] max-h-[90vh] w-[960px] max-w-[95vw] flex-col overflow-hidden rounded-lg bg-white p-5 shadow-xl"
+        style={draggable.style}
+      >
+        <div
+          className={`flex items-start justify-between select-none ${
+            draggable.dragging ? "cursor-grabbing" : "cursor-grab"
+          }`}
+          {...draggable.handleProps}
+        >
           <div>
             <div className="text-sm font-semibold">{t("topicPicker.title")}</div>
             <div className="text-xs text-slate-500">
@@ -465,7 +476,7 @@ export default function TopicPickerModal({
                           status: selected.status,
                         },
                         location,
-                        rangeMode,
+                        rangeMode: rangeMode === "ALL" ? "ALL" : "LIMITED",
                         useOriginalRule,
                         explainPreview: buildExplainMini({
                           topicName: selected.name,

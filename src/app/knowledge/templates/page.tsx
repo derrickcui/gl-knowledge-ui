@@ -1,218 +1,122 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { t } from "@/i18n";
 import { useEffect, useState } from "react";
+import { useRef } from "react";
+import { useRouter } from "next/navigation";
 import { fetchTemplatesList, RuleTemplateItem } from "@/lib/api";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
 
-const TEMPLATE_LIST_TTL_MS = 30_000;
-const TEMPLATE_LIST_INVALIDATE_KEY = "templates:list:invalidate";
-const templateListCache: {
-  data: RuleTemplateItem[] | null;
-  error: string | null;
-  ts: number;
-  promise: Promise<{ data: RuleTemplateItem[]; error: string | null }> | null;
-} = {
-  data: null,
-  error: null,
-  ts: 0,
-  promise: null,
-};
-
-function clearTemplateListCache() {
-  templateListCache.data = null;
-  templateListCache.error = null;
-  templateListCache.ts = 0;
-  templateListCache.promise = null;
-}
-
-function consumeTemplateListInvalidateFlag() {
-  if (typeof window === "undefined") return;
-  const flag = window.sessionStorage.getItem(TEMPLATE_LIST_INVALIDATE_KEY);
-  if (!flag) return;
-  window.sessionStorage.removeItem(TEMPLATE_LIST_INVALIDATE_KEY);
-  clearTemplateListCache();
-}
-
-async function fetchTemplatesListCached() {
-  const now = Date.now();
-  const fresh =
-    templateListCache.data &&
-    now - templateListCache.ts < TEMPLATE_LIST_TTL_MS;
-  if (fresh) {
-    return {
-      data: templateListCache.data ?? [],
-      error: templateListCache.error,
-    };
-  }
-  if (templateListCache.promise) {
-    return templateListCache.promise;
-  }
-  templateListCache.promise = (async () => {
-    const res = await fetchTemplatesList();
-    if (res.error) {
-      const payload = { data: [], error: res.error };
-      templateListCache.error = res.error;
-      templateListCache.ts = now;
-      return payload;
-    }
-    const data = res.data ?? [];
-    templateListCache.data = data;
-    templateListCache.error = null;
-    templateListCache.ts = now;
-    return { data, error: null };
-  })();
-  try {
-    return await templateListCache.promise;
-  } finally {
-    templateListCache.promise = null;
-  }
-}
-
-const STATUS_STYLES: Record<string, string> = {
-  DRAFT: "bg-amber-100 text-amber-800",
-  PUBLISHED: "bg-emerald-100 text-emerald-800",
-  DEPRECATED: "bg-slate-100 text-slate-700",
-};
-
-function getStatusLabel(status?: string) {
-  if (status === "PUBLISHED") return t("templates.status.published");
-  if (status === "DEPRECATED") return t("templates.status.deprecated");
-  return t("templates.status.draft");
-}
-
-function formatUpdatedAt(value?: string) {
-  if (!value) return "";
-  if (typeof value !== "string") return String(value);
-  const tIndex = value.indexOf("T");
-  if (tIndex === -1) return value;
-  const datePart = value.slice(0, tIndex);
-  let timePart = value.slice(tIndex + 1);
-  const zIndex = timePart.indexOf("Z");
-  if (zIndex !== -1) timePart = timePart.slice(0, zIndex);
-  const dotIndex = timePart.indexOf(".");
-  if (dotIndex !== -1) timePart = timePart.slice(0, dotIndex);
-  const trimmed = timePart.length >= 8 ? timePart.slice(0, 8) : timePart;
-  return `${datePart} ${trimmed}`;
+function statusLabel(status?: string) {
+  const normalized = String(status ?? "").toUpperCase();
+  if (normalized === "ACTIVE") return "启用中";
+  if (normalized === "ARCHIVED") return "已归档";
+  return status || "-";
 }
 
 export default function TemplatesPage() {
   const router = useRouter();
+  const initializedRef = useRef(false);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
   const [templates, setTemplates] = useState<RuleTemplateItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: "error" | "success" | "info";
+    title: string;
+    message?: string;
+  } | null>(null);
+
+  async function loadAll() {
+    setLoading(true);
+    const res = await fetchTemplatesList();
+    if (!res.data) {
+      setFeedback({
+        type: "error",
+        title: "模板加载失败",
+        message: res.error ?? "Request failed",
+      });
+      setTemplates([]);
+    } else {
+      setTemplates(res.data);
+    }
+    setLoading(false);
+  }
 
   useEffect(() => {
-    let mounted = true;
-    async function loadDrafts() {
-      setLoading(true);
-      setError(null);
-      try {
-        consumeTemplateListInvalidateFlag();
-        const res = await fetchTemplatesListCached();
-        if (res.error) throw new Error(res.error);
-        if (mounted) setTemplates(res.data ?? []);
-      } catch (e: any) {
-        if (mounted) setError(e?.message ?? "failed to load");
-      } finally {
-        if (mounted) setLoading(false);
-      }
-    }
-
-    loadDrafts();
-    return () => {
-      mounted = false;
-    };
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+    loadAll();
   }, []);
+
+  const filtered = templates.filter((item) => {
+    const text = `${item.name} ${item.description} ${item.category}`.toLowerCase();
+    const keyword = query.trim().toLowerCase();
+    if (!keyword) return true;
+    return text.includes(keyword);
+  });
 
   return (
     <div className="space-y-4 p-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">{t("templates.list.title")}</h1>
-          <p className="text-sm opacity-70">{t("templates.list.subtitle")}</p>
+          <h1 className="text-xl font-semibold">模板管理</h1>
+          <p className="mt-1 text-sm text-muted-foreground">企业级能力模板与版本治理</p>
         </div>
         <button
           type="button"
-          className="h-9 rounded-md bg-black px-3 text-sm text-white"
+          className="h-9 rounded-md bg-black px-4 text-sm text-white"
           onClick={() => router.push("/knowledge/templates/create")}
         >
-          {t("templates.list.create")}
+          创建模板
         </button>
       </div>
 
-      <div className="overflow-auto rounded-md border">
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr>
-              <th className="border-b px-3 py-2 text-left">
-                {t("templates.list.columns.name")}
-              </th>
-              <th className="border-b px-3 py-2 text-left">
-                {t("templates.list.columns.status")}
-              </th>
-              <th className="border-b px-3 py-2 text-left">
-                {t("templates.list.columns.updatedAt")}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td colSpan={3} className="px-3 py-6 text-center text-sm opacity-70">
-                  {t("templates.list.loading")}
-                </td>
-              </tr>
-            )}
-            {error && (
-              <tr>
-                <td colSpan={3} className="px-3 py-6 text-center text-sm text-red-600">
-                  {error}
-                </td>
-              </tr>
-            )}
-            {!loading && !error && templates.map((tpl) => (
-              <tr key={String(tpl.id)} className="hover:bg-muted/60">
-                <td className="border-b px-3 py-2">
+      {feedback && (
+        <FeedbackBanner
+          type={feedback.type}
+          title={feedback.title}
+          message={feedback.message}
+          onDismiss={() => setFeedback(null)}
+        />
+      )}
+
+      <input
+        type="text"
+        className="h-9 w-full rounded-md border px-3 text-sm"
+        placeholder="搜索模板"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+      />
+
+      <div className="space-y-3">
+        {loading && <div className="text-sm opacity-70">加载中...</div>}
+        {!loading && filtered.length === 0 && (
+          <div className="rounded-md border border-dashed p-4 text-sm text-slate-500">暂无模板</div>
+        )}
+        {!loading &&
+          filtered.map((item) => (
+            <div key={String(item.id)} className="rounded-md border bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-base font-semibold">{item.name}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    当前版本 {item.currentVersion != null ? `v${item.currentVersion}` : "-"}
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">状态: {statusLabel(item.status)}</div>
+                </div>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    className="font-medium hover:underline"
+                    className="h-8 rounded-md border px-3 text-xs"
                     onClick={() =>
-                      router.push(
-                        `/knowledge/templates/${encodeURIComponent(String(tpl.id))}`
-                      )
+                      router.push(`/knowledge/templates/${encodeURIComponent(String(item.id))}`)
                     }
                   >
-                    {tpl.name}
+                    查看详情
                   </button>
-                </td>
-                <td className="border-b px-3 py-2">
-                  <span
-                    className={[
-                      "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                      STATUS_STYLES[tpl.status ?? "DRAFT"],
-                    ].join(" ")}
-                  >
-                    {getStatusLabel(tpl.status)}
-                  </span>
-                </td>
-                <td className="border-b px-3 py-2">
-                  {formatUpdatedAt(tpl.updatedAt)}
-                </td>
-              </tr>
-            ))}
-            {!loading && !error && !templates.length && (
-              <tr>
-                <td
-                  colSpan={3}
-                  className="px-3 py-8 text-center text-sm opacity-60"
-                >
-                  {t("templates.list.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              </div>
+            </div>
+          ))}
       </div>
     </div>
   );

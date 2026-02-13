@@ -1,3 +1,7 @@
+"use client";
+
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
+
 export function ConfirmDialog({
   open,
   subject,
@@ -14,14 +18,23 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const draggable = useDraggableDialog(open);
   if (!open || !subject) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-        <h3 className="text-base font-semibold">
-          Submit for Review
-        </h3>
+      <div
+        className="w-[420px] rounded-lg bg-white p-6 shadow-xl"
+        style={draggable.style}
+      >
+        <div
+          className={`select-none ${draggable.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          {...draggable.handleProps}
+        >
+          <h3 className="text-base font-semibold">
+            Submit for Review
+          </h3>
+        </div>
 
         <p className="mt-2 text-sm text-muted-foreground">
           You are about to submit the following item for review.

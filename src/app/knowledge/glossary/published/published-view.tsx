@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { ConfidenceLabel } from "@/components/glossary/confidence-label";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { t } from "@/i18n";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
 const STATUS_STYLES: Record<string, string> = {
   APPROVED: "bg-green-100 text-green-700",
@@ -707,6 +708,7 @@ function DependencyDialog({
   rows: DependencyRow[];
   onClose: () => void;
 }) {
+  const draggable = useDraggableDialog(open);
   if (!open) return null;
 
   function formatDependencyStatus(status: string) {
@@ -729,8 +731,16 @@ function DependencyDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[520px] rounded-lg bg-white p-6 shadow-xl">
-        <div className="text-base font-semibold">
+      <div
+        className="w-[520px] rounded-lg bg-white p-6 shadow-xl"
+        style={draggable.style}
+      >
+        <div
+          className={`select-none text-base font-semibold ${
+            draggable.dragging ? "cursor-grabbing" : "cursor-grab"
+          }`}
+          {...draggable.handleProps}
+        >
           {t("glossary.dependencies.title", { title })}
         </div>
         <p className="mt-2 text-sm opacity-70">
@@ -838,6 +848,8 @@ function ConceptGraphDialog({
   onExpand: () => void;
   onClose: () => void;
 }) {
+  const draggable = useDraggableDialog(open);
+
   useEffect(() => {
     if (!open || !data || !containerRef.current) return;
 
@@ -926,9 +938,15 @@ function ConceptGraphDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[900px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl">
+      <div
+        className="w-[900px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl"
+        style={draggable.style}
+      >
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div
+            className={`select-none ${draggable.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+            {...draggable.handleProps}
+          >
             <div className="text-base font-semibold">
               {t("glossary.graph.title")}
             </div>

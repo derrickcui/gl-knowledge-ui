@@ -1,967 +1,788 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { t } from "@/i18n";
-import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import {
-  configureTemplate,
+  createRuleTemplateType,
   createTemplateInitial,
-  deleteTemplate,
-  fetchTemplateReferencedTopics,
-  publishTemplate,
+  createTemplateVersion,
+  fetchRuleTemplateTypes,
+  publishTemplateVersion,
+  RuleTemplateTypeListItem,
 } from "@/lib/api";
-import {
-  TemplateCreateSteps,
-  TemplateType,
-} from "@/components/templates/template-create-steps";
+import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import type {
+  GroupOperator,
+  RuleField,
+  StructureRelation,
+  TemplateCapabilityState,
+} from "@/components/templates/capability-types";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
-type InitialTemplateData = {
-  id?: number;
-  name?: string;
-  description?: string;
-  category?: string;
-  status?: string;
-  [key: string]: any;
+const STEPS = [
+  "基本信息",
+  "语义能力",
+  "结构能力",
+  "作用范围",
+  "高级能力",
+  "说明模板",
+  "预览发布",
+] as const;
+
+type ExplainState = {
+  success: string;
+  fail: string;
 };
 
-export default function TemplateCreatePage({
-  initialData,
-  initialTemplateId,
-  initialConfig,
-}: {
-  initialData?: InitialTemplateData | null;
-  initialTemplateId?: number | null;
-  initialConfig?: any | null;
-}) {
+const DEFAULT_CAPABILITY: TemplateCapabilityState = {
+  semantic: {
+    allowModes: ["AND"],
+    allowThreshold: false,
+    allowWeighted: false,
+  },
+  structure: {
+    allowRelation: ["NONE"],
+    allowOrder: false,
+    allowDistance: false,
+  },
+  where: {
+    allowFields: ["CONTENT"],
+  },
+  advanced: {
+    allowNot: false,
+    allowExcludeGroup: false,
+    allowTopicRef: false,
+  },
+};
+
+function toggleItem<T extends string>(list: T[], item: T, checked: boolean): T[] {
+  if (checked) return list.includes(item) ? list : [...list, item];
+  return list.filter((it) => it !== item);
+}
+
+export default function TemplateCreatePage() {
   const router = useRouter();
-  const initRef = useRef(false);
   const [step, setStep] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [templateId, setTemplateId] = useState<number | null>(null);
   const [name, setName] = useState("");
-  const [purpose, setPurpose] = useState("");
-  const [type, setType] = useState<TemplateType>("");
-  const [allowedModes, setAllowedModes] = useState({
-    all: true,
-    accrue: false,
-    partial: false,
-    weighted: false,
+  const [description, setDescription] = useState("");
+  const [category, setCategory] = useState("");
+  const [isEnterprise, setIsEnterprise] = useState(true);
+  const [capability, setCapability] = useState<TemplateCapabilityState>(DEFAULT_CAPABILITY);
+  const [explain, setExplain] = useState<ExplainState>({
+    success: "当文档满足以下条件时，将被视为【____】",
+    fail: "未满足必要条件",
   });
-  const [importanceAllowed, setImportanceAllowed] = useState(false);
-  const [positionRules, setPositionRules] = useState({
-    any: true,
-    paragraph: false,
-    sentence: false,
-    order: false,
-    near: false,
-  });
-  const explainPositiveDefault = useMemo(() => {
-    const value = t("templates.create.explain.positiveDefault");
-    return value === "templates.create.explain.positiveDefault"
-      ? "When the document meets the following conditions,\nwe consider it belongs to [________]."
-      : value;
-  }, []);
-  const explainNegativeDefault = useMemo(() => {
-    const value = t("templates.create.explain.negativeDefault");
-    return value === "templates.create.explain.negativeDefault"
-      ? "When the minimum conditions are not met,\nthe document does not belong to [________]."
-      : value;
-  }, []);
-  const [explainPositive, setExplainPositive] = useState(
-    explainPositiveDefault
-  );
-  const [explainNegative, setExplainNegative] = useState(
-    explainNegativeDefault
-  );
-  const [created, setCreated] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<{
-    type: "info" | "success" | "error";
+  const [feedback, setFeedback] = useState<{
+    type: "error" | "success" | "info";
     title: string;
     message?: string;
   } | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [topicsDialogOpen, setTopicsDialogOpen] = useState(false);
-  const [topicsLoading, setTopicsLoading] = useState(false);
-  const [topicsError, setTopicsError] = useState<string | null>(null);
-  const [referencedTopics, setReferencedTopics] = useState<
-    { id: number | string; name: string; status: string }[]
-  >([]);
-  const [topicsLoaded, setTopicsLoaded] = useState(false);
-  const [templateId, setTemplateId] = useState<number | null>(null);
-  const isPublished =
-    String(initialData?.status ?? "").toUpperCase() === "PUBLISHED";
-  const canDeletePublished =
-    topicsLoaded && !topicsError && referencedTopics.length === 0;
-
-  const formatTopicStatus = (status?: string) => {
-    if (!status) return "-";
-    const normalized = String(status).toUpperCase();
-    if (normalized === "PUBLISHED") return t("templates.status.published");
-    if (normalized === "DRAFT") return t("templates.status.draft");
-    if (normalized === "DEPRECATED") return t("templates.status.deprecated");
-    if (normalized === "IN_REVIEW") return t("review.status.inReview");
-    if (normalized === "REJECTED") return t("review.status.rejected");
-    return status;
-  };
-
-  const loadReferencedTopics = useCallback(async () => {
-    if (!templateId) return;
-    setTopicsLoading(true);
-    setTopicsError(null);
-    const res = await fetchTemplateReferencedTopics(templateId);
-    if (res.data) {
-      setReferencedTopics(res.data);
-    } else {
-      setReferencedTopics([]);
-      setTopicsError(res.error ?? t("templates.create.topicsLoadFailed"));
-    }
-    setTopicsLoading(false);
-    setTopicsLoaded(true);
-  }, [templateId, t]);
-  const showTemplateName =
-    (step > 0 || !!initialTemplateId || !!initialData?.name) &&
-    name.trim().length > 0;
-
-  useEffect(() => {
-    if (allowedModes.weighted && !allowedModes.partial) {
-      setAllowedModes((prev) => ({ ...prev, partial: true }));
-    }
-    if (allowedModes.weighted && !importanceAllowed) {
-      setImportanceAllowed(true);
-    }
-  }, [allowedModes.weighted, allowedModes.partial, importanceAllowed]);
-
-  function buildConfigPayload() {
-    const allowLogsum = allowedModes.partial || allowedModes.weighted;
-    return {
-      allowModes: {
-        ALL: allowedModes.all,
-        ACCRUE: allowedModes.accrue,
-        LOGSUM: allowLogsum,
-      },
-      allowThreshold: allowLogsum,
-      importance: {
-        enabled: importanceAllowed || allowedModes.weighted,
-      },
-      proximity: {
-        enabled: positionRules.near,
-        sentence: positionRules.sentence,
-        paragraph: positionRules.paragraph,
-        order: positionRules.order,
-      },
-      explain: {
-        success: explainPositive,
-        fail: explainNegative,
-      },
-    };
-  }
-
-  useEffect(() => {
-    if (initRef.current) return;
-    if (initialTemplateId) setTemplateId(initialTemplateId);
-    if (initialData) {
-      if (initialData.name) setName(initialData.name);
-      if (initialData.description) setPurpose(initialData.description);
-      if (initialData.category) {
-        setType(String(initialData.category));
-      }
-    }
-    if (initialConfig) {
-      const normalized =
-        initialConfig?.config ?? initialConfig?.data ?? initialConfig;
-      if (normalized.name && !initialData?.name) {
-        setName(normalized.name);
-      }
-      if (normalized.purpose && !initialData?.description) {
-        setPurpose(normalized.purpose);
-      }
-      if (normalized.type) {
-        setType(String(normalized.type));
-      }
-      if (normalized.customType) {
-        setType(String(normalized.customType));
-      }
-      const allowModes =
-        (normalized.allowModes ?? normalized.allow_modes) &&
-        typeof (normalized.allowModes ?? normalized.allow_modes) === "object"
-          ? (normalized.allowModes ?? normalized.allow_modes)
-          : null;
-      const hasAllowedModes =
-        normalized.allowedModes &&
-        typeof normalized.allowedModes === "object";
-      const allowLogsum =
-        allowModes && "LOGSUM" in allowModes
-          ? Boolean(allowModes.LOGSUM)
-          : undefined;
-      const allowThreshold =
-        "allowThreshold" in normalized
-          ? Boolean(normalized.allowThreshold)
-          : undefined;
-      const importanceEnabled =
-        normalized.importance?.enabled ?? normalized.importanceEnabled;
-      if (allowModes) {
-        setAllowedModes((prev) => ({
-          ...prev,
-          all:
-            "ALL" in allowModes ? Boolean(allowModes.ALL) : prev.all,
-          accrue:
-            "ACCRUE" in allowModes
-              ? Boolean(allowModes.ACCRUE)
-              : prev.accrue,
-          partial:
-            allowLogsum !== undefined
-              ? allowLogsum
-              : allowThreshold !== undefined
-              ? allowThreshold
-              : prev.partial,
-          weighted:
-            allowLogsum && importanceEnabled !== undefined
-              ? Boolean(importanceEnabled)
-              : prev.weighted,
-        }));
-      } else if (hasAllowedModes) {
-        setAllowedModes((prev) => ({
-          ...prev,
-          all:
-            "all" in normalized.allowedModes
-              ? Boolean(normalized.allowedModes.all)
-              : prev.all,
-          partial:
-            "partial" in normalized.allowedModes
-              ? Boolean(normalized.allowedModes.partial)
-              : prev.partial,
-          weighted:
-            "weighted" in normalized.allowedModes
-              ? Boolean(normalized.allowedModes.weighted)
-              : prev.weighted,
-        }));
-      } else if (
-        "allowAll" in normalized ||
-        "allowAccrue" in normalized ||
-        "allowLogsum" in normalized
-      ) {
-        setAllowedModes((prev) => ({
-          ...prev,
-          all:
-            "allowAll" in normalized
-              ? Boolean(normalized.allowAll)
-              : prev.all,
-          accrue:
-            "allowAccrue" in normalized
-              ? Boolean(normalized.allowAccrue)
-              : prev.accrue,
-          partial:
-            "allowLogsum" in normalized
-              ? Boolean(normalized.allowLogsum)
-              : "allowThreshold" in normalized
-              ? Boolean(normalized.allowThreshold)
-              : prev.partial,
-          weighted:
-            "allowLogsum" in normalized
-              ? Boolean(normalized.allowLogsum) &&
-                Boolean(
-                  normalized.allowImportance ??
-                    normalized.importance?.enabled
-                )
-              : prev.weighted,
-        }));
-      }
-      if (typeof importanceEnabled === "boolean") {
-        setImportanceAllowed(Boolean(importanceEnabled));
-      } else if (typeof normalized.importanceAllowed === "boolean") {
-        setImportanceAllowed(normalized.importanceAllowed);
-      } else if ("allowImportance" in normalized) {
-        setImportanceAllowed(Boolean(normalized.allowImportance));
-      }
-      const proximity =
-        normalized.proximity && typeof normalized.proximity === "object"
-          ? normalized.proximity
-          : null;
-      const hasPositionRules =
-        normalized.positionRules &&
-        typeof normalized.positionRules === "object";
-      if (proximity) {
-        setPositionRules((prev) => {
-          const paragraph =
-            "paragraph" in proximity
-              ? Boolean(proximity.paragraph)
-              : prev.paragraph;
-          const sentence =
-            "sentence" in proximity
-              ? Boolean(proximity.sentence)
-              : prev.sentence;
-          const order =
-            "order" in proximity ? Boolean(proximity.order) : prev.order;
-          const near =
-            "enabled" in proximity
-              ? Boolean(proximity.enabled)
-              : prev.near;
-          const any = !(paragraph || sentence || order || near);
-          return {
-            ...prev,
-            any,
-            paragraph,
-            sentence,
-            order,
-            near,
-          };
-        });
-      } else if (hasPositionRules) {
-        setPositionRules((prev) => ({
-          ...prev,
-          any:
-            "any" in normalized.positionRules
-              ? Boolean(normalized.positionRules.any)
-              : prev.any,
-          paragraph:
-            "paragraph" in normalized.positionRules
-              ? Boolean(normalized.positionRules.paragraph)
-              : prev.paragraph,
-          sentence:
-            "sentence" in normalized.positionRules
-              ? Boolean(normalized.positionRules.sentence)
-              : prev.sentence,
-          order:
-            "order" in normalized.positionRules
-              ? Boolean(normalized.positionRules.order)
-              : prev.order,
-          near:
-            "near" in normalized.positionRules
-              ? Boolean(normalized.positionRules.near)
-              : prev.near,
-        }));
-      } else if (
-        "allowProximity" in normalized ||
-        "allowOrder" in normalized ||
-        "allowSentence" in normalized ||
-        "allowParagraph" in normalized
-      ) {
-        const nextParagraph =
-          "allowParagraph" in normalized
-            ? Boolean(normalized.allowParagraph)
-            : undefined;
-        const nextSentence =
-          "allowSentence" in normalized
-            ? Boolean(normalized.allowSentence)
-            : undefined;
-        const nextOrder =
-          "allowOrder" in normalized
-            ? Boolean(normalized.allowOrder)
-            : undefined;
-        const nextNear =
-          "allowProximity" in normalized
-            ? Boolean(normalized.allowProximity)
-            : undefined;
-        setPositionRules((prev) => {
-          const paragraph =
-            nextParagraph !== undefined ? nextParagraph : prev.paragraph;
-          const sentence =
-            nextSentence !== undefined ? nextSentence : prev.sentence;
-          const order = nextOrder !== undefined ? nextOrder : prev.order;
-          const near = nextNear !== undefined ? nextNear : prev.near;
-          const any = !(paragraph || sentence || order || near);
-          return {
-            ...prev,
-            any,
-            paragraph,
-            sentence,
-            order,
-            near,
-          };
-        });
-      }
-      const explainPositiveValue =
-        normalized.explain?.success ??
-        normalized.explainPositive ??
-        normalized.explainSuccess;
-      const explainNegativeValue =
-        normalized.explain?.fail ??
-        normalized.explainNegative ??
-        normalized.explainFail;
-      if (explainPositiveValue) {
-        setExplainPositive(String(explainPositiveValue));
-      }
-      if (explainNegativeValue) {
-        setExplainNegative(String(explainNegativeValue));
-      }
-    }
-    initRef.current = true;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (explainPositive === "templates.create.explain.positiveDefault") {
-      setExplainPositive(explainPositiveDefault);
-    }
-  }, [explainPositive, explainPositiveDefault]);
-
-  useEffect(() => {
-    if (explainNegative === "templates.create.explain.negativeDefault") {
-      setExplainNegative(explainNegativeDefault);
-    }
-  }, [explainNegative, explainNegativeDefault]);
-
-  const stepLabels = useMemo(
-    () => [
-      t("templates.create.steps.basic"),
-      t("templates.create.steps.mode"),
-      t("templates.create.steps.advanced"),
-      t("templates.create.steps.explain"),
-    ],
-    []
-  );
 
   const canNext = useMemo(() => {
-    if (step === 0) {
-      return (
-        name.trim().length > 0 &&
-        purpose.trim().length > 0 &&
-        type.trim().length > 0
-      );
-    }
-    if (step === 1) {
-      return (
-        allowedModes.all ||
-        allowedModes.accrue ||
-        allowedModes.partial ||
-        allowedModes.weighted
-      );
-    }
-    if (step === 3) {
-      return explainPositive.trim().length > 0;
-    }
+    if (step === 0) return !!name.trim() && !!description.trim() && !!category.trim();
     return true;
-  }, [
-    step,
-    name,
-    purpose,
-    type,
-    allowedModes.all,
-    allowedModes.accrue,
-    allowedModes.partial,
-    allowedModes.weighted,
-    explainPositive,
-  ]);
+  }, [step, name, description, category]);
 
-  async function handleNext() {
-    if (step === 0 && !templateId) {
-      try {
-        setSubmitting(true);
-        const category = type.trim();
-        if (!category) {
-          setStatusMessage({
-            type: "error",
-            title: t("templates.typeManage.required"),
-          });
-          setSubmitting(false);
-          return;
-        }
-        setStatusMessage({
-          type: "info",
-          title: t("templates.create.status.savingStep1"),
-        });
-        const res = await createTemplateInitial({
-          name,
-          description: purpose,
-          category,
-          createdBy: "ui-user",
-        });
-        if (!res.data) throw new Error(res.error ?? "create failed");
-        setTemplateId(res.data.id);
-        setStatusMessage({
-          type: "success",
-          title: t("templates.create.status.step1Saved"),
-        });
-      } catch (e: any) {
-        setStatusMessage({
-          type: "error",
-          title: t("templates.create.status.saveFailed"),
-          message: e?.message,
-        });
-        setSubmitting(false);
-        return;
-      } finally {
-        setSubmitting(false);
-      }
-    }
-
-    setStep((prev) => Math.min(prev + 1, stepLabels.length - 1));
-  }
-
-  function handlePrev() {
-    setStep((prev) => Math.max(prev - 1, 0));
-  }
-
-  async function handleSaveCurrentStep() {
-    try {
-      if (isPublished) {
-        setStatusMessage({
-          type: "info",
-          title: t("templates.detail.readOnly"),
-        });
-        return;
-      }
-      setSubmitting(true);
-      if (step === 0) {
-        const category = type.trim();
-        if (!category) {
-          setStatusMessage({
-            type: "error",
-            title: t("templates.typeManage.required"),
-          });
-          return;
-        }
-        setStatusMessage({
-          type: "info",
-          title: t("templates.create.status.savingStep1"),
-        });
-        const res = await createTemplateInitial({
-          name,
-          description: purpose,
-          category,
-          createdBy: "ui-user",
-        });
-        if (!res.data) throw new Error(res.error ?? "create failed");
-        setTemplateId(res.data.id);
-        setStatusMessage({
-          type: "success",
-          title: t("templates.create.status.step1Saved"),
-        });
-        return;
-      }
-
-      if (!templateId) {
-        setStatusMessage({
-          type: "error",
-          title: t("templates.create.status.needStep1"),
-        });
-        return;
-      }
-
-      setStatusMessage({
-        type: "info",
-        title: t("templates.create.status.savingConfig"),
-      });
-      const payload = buildConfigPayload();
-      const cfg = await configureTemplate(templateId, payload);
-      if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
-      setStatusMessage({
-        type: "success",
-        title: t("templates.create.status.saved"),
-      });
-    } catch (e: any) {
-      setStatusMessage({
+  async function ensureTemplateCreated(): Promise<number | null> {
+    if (templateId) return templateId;
+    const result = await createTemplateInitial({
+      name: name.trim(),
+      description: description.trim(),
+      category: category.trim(),
+    });
+    if (!result.data) {
+      setFeedback({
         type: "error",
-        title: t("templates.create.status.saveFailed"),
-        message: e?.message,
+        title: "创建模板失败",
+        message: result.error ?? "Request failed",
       });
-    } finally {
-      setSubmitting(false);
+      return null;
     }
+    setTemplateId(result.data.id);
+    return result.data.id;
   }
 
-  async function handleDeleteTemplate() {
-    try {
-      if (isPublished && !canDeletePublished) {
-        setStatusMessage({
-          type: "info",
-          title: t("templates.create.status.deleteNotAllowed"),
-        });
-        return;
-      }
-      if (!templateId) {
-        setStatusMessage({
-          type: "error",
-          title: t("templates.create.status.needStep1"),
-        });
-        return;
-      }
-      setSubmitting(true);
-      setStatusMessage({
-        type: "info",
-        title: t("templates.create.status.deleting"),
-      });
-      const res = await deleteTemplate(templateId);
-      if (!res.data) throw new Error(res.error ?? "delete failed");
-      setStatusMessage({
-        type: "success",
-        title: t("templates.create.status.deleted"),
-      });
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(
-          "templates:list:invalidate",
-          String(Date.now())
-        );
-      }
-      router.push("/knowledge/templates");
-    } catch (e: any) {
-      setStatusMessage({
+  async function handleSaveDraftVersion() {
+    setBusy(true);
+    setFeedback({ type: "info", title: "正在保存草稿版本..." });
+    const id = await ensureTemplateCreated();
+    if (!id) {
+      setBusy(false);
+      return;
+    }
+    const versionRes = await createTemplateVersion(id, {
+      capability: capability as unknown as Record<string, unknown>,
+      explain,
+    });
+    if (!versionRes.data) {
+      setFeedback({
         type: "error",
-        title: t("templates.create.status.deleteFailed"),
-        message: e?.message,
+        title: "保存失败",
+        message: versionRes.error ?? "Request failed",
       });
-    } finally {
-      setSubmitting(false);
+      setBusy(false);
+      return;
     }
+    setFeedback({ type: "success", title: "草稿版本已保存" });
+    setBusy(false);
   }
 
-  async function handleOpenReferencedTopics() {
-    if (!templateId) return;
-    setTopicsDialogOpen(true);
-    if (!topicsLoaded && !topicsLoading) {
-      await loadReferencedTopics();
+  async function handlePublish() {
+    setBusy(true);
+    setFeedback({ type: "info", title: "正在发布版本..." });
+    const id = await ensureTemplateCreated();
+    if (!id) {
+      setBusy(false);
+      return;
     }
-  }
-
-  useEffect(() => {
-    if (!templateId) return;
-    loadReferencedTopics();
-  }, [templateId, loadReferencedTopics]);
-
-  function handleCreate() {
-    (async () => {
-      try {
-        if (isPublished) {
-          setStatusMessage({
-            type: "info",
-            title: t("templates.detail.readOnly"),
-          });
-          return;
-        }
-        setSubmitting(true);
-        setStatusMessage({
-          type: "info",
-          title: t("templates.create.status.publishing"),
-        });
-
-        let id = templateId;
-        if (!id) {
-          const category = type.trim();
-          if (!category) {
-            setStatusMessage({
-              type: "error",
-              title: t("templates.typeManage.required"),
-            });
-            setSubmitting(false);
-            return;
-          }
-          const res = await createTemplateInitial({
-            name,
-            description: purpose,
-            category,
-            createdBy: "ui-user",
-          });
-          if (!res.data) throw new Error(res.error ?? "create failed");
-          id = res.data.id;
-          setTemplateId(id);
-        }
-
-        const payload = buildConfigPayload();
-        const cfg = await configureTemplate(id, payload);
-        if (!cfg.data) throw new Error(cfg.error ?? "configure failed");
-
-        setStatusMessage({
-          type: "info",
-          title: t("templates.create.status.configuredPublishing"),
-        });
-        const pub = await publishTemplate(id);
-        if (!pub.data) throw new Error(pub.error ?? "Publish failed");
-
-        setStatusMessage({
-          type: "success",
-          title: t("templates.create.status.published"),
-        });
-        setCreated(true);
-      } catch (e: any) {
-        setStatusMessage({
-          type: "error",
-          title: t("templates.create.status.operationFailed"),
-          message: e?.message,
-        });
-      } finally {
-        setSubmitting(false);
-      }
-    })();
+    const versionRes = await createTemplateVersion(id, {
+      capability: capability as unknown as Record<string, unknown>,
+      explain,
+    });
+    if (!versionRes.data) {
+      setFeedback({
+        type: "error",
+        title: "发布失败",
+        message: versionRes.error ?? "Request failed",
+      });
+      setBusy(false);
+      return;
+    }
+    const version = versionRes.data.version;
+    if (version != null) {
+      await publishTemplateVersion(id, String(version));
+    }
+    setFeedback({ type: "success", title: "模板版本已发布" });
+    router.push(`/knowledge/templates/${encodeURIComponent(String(id))}`);
   }
 
   return (
     <div className="space-y-4 p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold">
-            {showTemplateName ? name : t("templates.create.title")}
-          </h1>
-          <p className="text-sm opacity-70">
-            {showTemplateName
-              ? t("templates.create.configSubtitle")
-              : t("templates.create.subtitle")}
-          </p>
-        </div>
-        <button
-          type="button"
-          className="h-9 rounded-md border px-3 text-sm"
-          onClick={() => router.push("/knowledge/templates")}
-        >
-          {t("templates.create.back")}
-        </button>
+      <div>
+        <h1 className="text-xl font-semibold">创建规则模板</h1>
       </div>
 
-      <div className="rounded-lg border bg-white p-4">
-        <div className="flex flex-wrap items-center gap-3 text-sm font-medium">
-          {stepLabels.map((label, index) => (
-            <div
-              key={label}
-              className={[
-                "flex items-center gap-2 rounded-full px-3 py-1",
-                index === step
+      {feedback && (
+        <FeedbackBanner
+          type={feedback.type}
+          title={feedback.title}
+          message={feedback.message}
+          onDismiss={() => setFeedback(null)}
+        />
+      )}
+
+      <div className="rounded-md border bg-white p-4">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {STEPS.map((item, idx) => (
+            <span
+              key={item}
+              className={`rounded-full px-3 py-1 ${
+                idx === step
                   ? "bg-black text-white"
-                  : index < step
-                    ? "bg-emerald-100 text-emerald-800"
-                    : "bg-muted text-muted-foreground",
-              ].join(" ")}
+                  : idx < step
+                  ? "bg-emerald-100 text-emerald-800"
+                  : "bg-slate-100 text-slate-600"
+              }`}
             >
-              <span>{index + 1}</span>
-              <span>{label}</span>
-            </div>
+              {item}
+            </span>
           ))}
         </div>
       </div>
 
-      <div className="rounded-lg border bg-white p-6">
-        <TemplateCreateSteps
-          step={step}
-          name={name}
-          purpose={purpose}
-          type={type}
-          allowedModes={allowedModes}
-          importanceAllowed={importanceAllowed}
-          positionRules={positionRules}
-          explainPositive={explainPositive}
-          explainNegative={explainNegative}
-          onNameChange={setName}
-          onPurposeChange={setPurpose}
-          onTypeChange={setType}
-          onAllowedModeChange={(key, value) =>
-            setAllowedModes((prev) => ({
-              ...prev,
-              [key]: value,
-            }))
-          }
-          onImportanceAllowedChange={setImportanceAllowed}
-          onPositionRuleChange={(key, value) =>
-            setPositionRules((prev) => ({
-              ...prev,
-              [key]: value,
-            }))
-          }
-          onExplainPositiveChange={setExplainPositive}
-          onExplainNegativeChange={setExplainNegative}
-        />
+      <div className="rounded-md border bg-white p-4">
+        {step === 0 && (
+          <BasicInfoSection
+            name={name}
+            description={description}
+            category={category}
+            isEnterprise={isEnterprise}
+            onNameChange={setName}
+            onDescriptionChange={setDescription}
+            onCategoryChange={setCategory}
+            onEnterpriseChange={setIsEnterprise}
+            disabled={busy}
+          />
+        )}
+        {step === 1 && <SemanticSection capability={capability} onChange={setCapability} />}
+        {step === 2 && <StructureSection capability={capability} onChange={setCapability} />}
+        {step === 3 && <WhereSection capability={capability} onChange={setCapability} />}
+        {step === 4 && <AdvancedSection capability={capability} onChange={setCapability} />}
+        {step === 5 && <ExplainSection explain={explain} onChange={setExplain} />}
+        {step === 6 && <PreviewSection capability={capability} explain={explain} />}
       </div>
 
-      <div className="flex items-center justify-between rounded-lg border bg-white p-4">
+      <div className="flex items-center justify-between rounded-md border bg-white p-4">
         <button
           type="button"
           className="h-9 rounded-md border px-3 text-sm"
-          onClick={handlePrev}
-          disabled={step === 0}
+          disabled={step === 0 || busy}
+          onClick={() => setStep((prev) => Math.max(0, prev - 1))}
         >
-          {t("templates.create.prev")}
+          上一步
         </button>
-        <div className="flex items-center gap-3">
-          {statusMessage && (
-            <div className="mr-4 w-[360px]">
-              <FeedbackBanner
-                type={statusMessage.type}
-                title={statusMessage.title}
-                message={statusMessage.message}
-                onDismiss={() => setStatusMessage(null)}
-              />
-            </div>
-          )}
-          {created && (
-            <div className="text-xs text-emerald-700">
-              {t("templates.create.createdHint")}
-            </div>
-          )}
-          {step < stepLabels.length - 1 ? (
-            <>
-              <button
-                type="button"
-                className="h-9 rounded-md border px-3 text-sm"
-                onClick={handleOpenReferencedTopics}
-                disabled={!templateId}
-              >
-                {t("templates.create.referencedTopics")}
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md border border-rose-300 px-3 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                onClick={() => setDeleteConfirmOpen(true)}
-                disabled={
-                  submitting ||
-                  !templateId ||
-                  (isPublished && !canDeletePublished)
-                }
-              >
-                {t("templates.create.delete")}
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md border px-3 text-sm"
-                onClick={handleSaveCurrentStep}
-                disabled={submitting || isPublished}
-              >
-                {t("templates.create.save")}
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
-                onClick={handleNext}
-                disabled={!canNext}
-              >
-                {t("templates.create.next")}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="h-9 rounded-md border px-3 text-sm"
-                onClick={handleOpenReferencedTopics}
-                disabled={!templateId}
-              >
-                {t("templates.create.referencedTopics")}
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md border border-rose-300 px-3 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-                onClick={() => setDeleteConfirmOpen(true)}
-                disabled={
-                  submitting ||
-                  !templateId ||
-                  (isPublished && !canDeletePublished)
-                }
-              >
-                {t("templates.create.delete")}
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md border px-3 text-sm"
-                onClick={handleSaveCurrentStep}
-                disabled={submitting || isPublished}
-              >
-                {t("templates.create.save")}
-              </button>
-              <button
-                type="button"
-                className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
-                onClick={handleCreate}
-                disabled={!canNext || submitting || isPublished}
-              >
-                {t("templates.create.publish")}
-              </button>
-            </>
-          )}
-        </div>
+
+        {step < STEPS.length - 1 ? (
+          <button
+            type="button"
+            className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
+            disabled={!canNext || busy}
+            onClick={() => setStep((prev) => Math.min(STEPS.length - 1, prev + 1))}
+          >
+            下一步
+          </button>
+        ) : (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="h-9 rounded-md border px-3 text-sm"
+              disabled={busy}
+              onClick={handleSaveDraftVersion}
+            >
+              保存草稿
+            </button>
+            <button
+              type="button"
+              className="h-9 rounded-md bg-black px-4 text-sm text-white disabled:opacity-60"
+              disabled={busy}
+              onClick={handlePublish}
+            >
+              发布版本
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BasicInfoSection(props: {
+  name: string;
+  description: string;
+  category: string;
+  isEnterprise: boolean;
+  onNameChange: (value: string) => void;
+  onDescriptionChange: (value: string) => void;
+  onCategoryChange: (value: string) => void;
+  onEnterpriseChange: (value: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">基本信息</h2>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">模板名称</label>
+        <input
+          className="h-9 w-full rounded-md border px-3 text-sm"
+          value={props.name}
+          disabled={props.disabled}
+          onChange={(e) => props.onNameChange(e.target.value)}
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">模板说明</label>
+        <textarea
+          className="min-h-[96px] w-full rounded-md border px-3 py-2 text-sm"
+          value={props.description}
+          disabled={props.disabled}
+          onChange={(e) => props.onDescriptionChange(e.target.value)}
+        />
+      </div>
+      <CategoryPicker
+        value={props.category}
+        onChange={props.onCategoryChange}
+        disabled={props.disabled}
+      />
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={props.isEnterprise}
+          disabled={props.disabled}
+          onChange={(e) => props.onEnterpriseChange(e.target.checked)}
+        />
+        是否企业通用
+      </label>
+    </section>
+  );
+}
+
+function CategoryPicker({
+  value,
+  onChange,
+  disabled = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  const [query, setQuery] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [options, setOptions] = useState<RuleTemplateTypeListItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const createDialogDrag = useDraggableDialog(createOpen);
+
+  useEffect(() => {
+    setQuery(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      setError(null);
+      const res = await fetchRuleTemplateTypes(query.trim() ? { search: query.trim() } : undefined);
+      if (!active) return;
+      if (res.data) {
+        setOptions(res.data);
+      } else {
+        setOptions([]);
+        setError(res.error ?? "分类加载失败");
+      }
+      setLoading(false);
+    }, 250);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [open, query]);
+
+  async function handleCreateType() {
+    const trimmed = newName.trim();
+    if (!trimmed) return;
+    setCreating(true);
+    setCreateError(null);
+    const result = await createRuleTemplateType({
+      name: trimmed,
+      description: newDescription.trim() || undefined,
+      createdBy: "ui-user",
+    });
+    if (!result.data) {
+      setCreateError(result.error ?? "创建分类失败");
+      setCreating(false);
+      return;
+    }
+    onChange(trimmed);
+    setQuery(trimmed);
+    setCreateOpen(false);
+    setNewName("");
+    setNewDescription("");
+    setCreating(false);
+  }
+
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium">分类</label>
+      <div className="relative flex items-center gap-2">
+        <input
+          className="h-9 flex-1 rounded-md border px-3 text-sm"
+          value={query}
+          disabled={disabled}
+          placeholder="输入分类后搜索并选择"
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setQuery(next);
+            onChange(next);
+            setOpen(true);
+          }}
+        />
+        <button
+          type="button"
+          className="h-9 rounded-md border px-3 text-sm disabled:opacity-50"
+          disabled={disabled}
+          onClick={() => {
+            setCreateError(null);
+            setNewName(query.trim());
+            setNewDescription("");
+            setCreateOpen(true);
+          }}
+        >
+          新增
+        </button>
+
+        {open && (
+          <div className="absolute left-0 top-10 z-20 max-h-64 w-[calc(100%-84px)] overflow-auto rounded-md border bg-white p-1 shadow-lg">
+            {loading && <div className="px-2 py-2 text-xs text-slate-500">搜索中...</div>}
+            {!loading && error && <div className="px-2 py-2 text-xs text-red-600">{error}</div>}
+            {!loading && !error && options.length === 0 && (
+              <div className="px-2 py-2 text-xs text-slate-500">未找到分类</div>
+            )}
+            {!loading &&
+              !error &&
+              options.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="w-full rounded px-2 py-2 text-left text-sm hover:bg-slate-50"
+                  onClick={() => {
+                    onChange(item.name);
+                    setQuery(item.name);
+                    setOpen(false);
+                  }}
+                >
+                  {item.name}
+                </button>
+              ))}
+          </div>
+        )}
       </div>
 
-      {deleteConfirmOpen && (
+      {createOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-base font-semibold">
-              {t("templates.create.deleteConfirmTitle")}
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {t("templates.create.deleteConfirmMessage")}
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                className="rounded-md border px-3 py-1 text-sm"
-                onClick={() => setDeleteConfirmOpen(false)}
-              >
-                {t("templates.create.deleteConfirmCancel")}
-              </button>
-              <button
-                className="rounded-md bg-black px-4 py-1.5 text-sm text-white"
-                onClick={() => {
-                  setDeleteConfirmOpen(false);
-                  handleDeleteTemplate();
-                }}
-              >
-                {t("templates.create.deleteConfirmOk")}
-              </button>
+          <div
+            className="w-[420px] rounded-md bg-white p-4 shadow-xl"
+            style={createDialogDrag.style}
+          >
+            <div
+              className={`select-none text-sm font-semibold ${
+                createDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"
+              }`}
+              {...createDialogDrag.handleProps}
+            >
+              新增分类
             </div>
-          </div>
-        </div>
-      )}
-
-      {topicsDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-[520px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-base font-semibold">
-                  {t("templates.create.referencedTopicsTitle")}
-                </h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {t("templates.create.referencedTopicsDesc")}
-                </p>
-              </div>
-              <button
-                className="rounded-md border px-3 py-1 text-sm"
-                onClick={() => setTopicsDialogOpen(false)}
-              >
-                {t("templates.create.referencedTopicsClose")}
-              </button>
+            <div className="mt-3 space-y-2">
+              <label className="text-xs text-slate-500">分类名称</label>
+              <input
+                className="h-9 w-full rounded-md border px-3 text-sm"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+              />
+              <label className="text-xs text-slate-500">描述</label>
+              <textarea
+                className="min-h-[84px] w-full rounded-md border px-3 py-2 text-sm"
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder="请输入分类描述（可选）"
+              />
+              {createError && <div className="text-xs text-red-600">{createError}</div>}
             </div>
-
-            <div className="mt-4 max-h-[360px] overflow-auto rounded-md border">
-              {topicsLoading && (
-                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  {t("templates.create.referencedTopicsLoading")}
-                </div>
-              )}
-              {!topicsLoading && topicsError && (
-                <div className="px-4 py-6 text-center text-sm text-red-600">
-                  {topicsError}
-                </div>
-              )}
-              {!topicsLoading && !topicsError && referencedTopics.length === 0 && (
-                <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                  {t("templates.create.referencedTopicsEmpty")}
-                </div>
-              )}
-              {!topicsLoading && !topicsError && referencedTopics.length > 0 && (
-                <table className="w-full border-collapse text-sm">
-                  <thead>
-                    <tr>
-                      <th className="border-b px-3 py-2 text-left">
-                        {t("templates.create.referencedTopicsColumns.name")}
-                      </th>
-                      <th className="border-b px-3 py-2 text-left">
-                        {t("templates.create.referencedTopicsColumns.status")}
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {referencedTopics.map((topic) => (
-                      <tr key={String(topic.id)} className="hover:bg-muted/60">
-                        <td className="border-b px-3 py-2">
-                          {topic.name}
-                        </td>
-                        <td className="border-b px-3 py-2">
-                          {formatTopicStatus(topic.status)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="h-8 rounded-md border px-3 text-xs"
+                onClick={() => setCreateOpen(false)}
+                disabled={creating}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="h-8 rounded-md bg-black px-3 text-xs text-white disabled:opacity-60"
+                onClick={handleCreateType}
+                disabled={creating || !newName.trim()}
+              >
+                {creating ? "创建中..." : "确认新增"}
+              </button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function SemanticSection({
+  capability,
+  onChange,
+}: {
+  capability: TemplateCapabilityState;
+  onChange: (next: TemplateCapabilityState) => void;
+}) {
+  const modes: { value: GroupOperator; label: string }[] = [
+    { value: "AND", label: "必须满足全部条件" },
+    { value: "OR", label: "满足任意条件" },
+    { value: "ACCRUE", label: "满足越多越容易成立" },
+    { value: "AT_LEAST", label: "至少满足 N 个" },
+    { value: "WEIGHTED", label: "综合权重判断" },
+  ];
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">语义能力</h2>
+      <div className="space-y-2 text-sm">
+        {modes.map((mode) => (
+          <label key={mode.value} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={capability.semantic.allowModes.includes(mode.value)}
+              onChange={(e) =>
+                onChange({
+                  ...capability,
+                  semantic: {
+                    ...capability.semantic,
+                    allowModes: toggleItem(capability.semantic.allowModes, mode.value, e.target.checked),
+                  },
+                })
+              }
+            />
+            {mode.label}
+          </label>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.semantic.allowThreshold}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              semantic: { ...capability.semantic, allowThreshold: e.target.checked },
+            })
+          }
+        />
+        允许设置至少满足数量
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.semantic.allowWeighted}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              semantic: { ...capability.semantic, allowWeighted: e.target.checked },
+            })
+          }
+        />
+        允许设置权重
+      </label>
+    </section>
+  );
+}
+
+function StructureSection({
+  capability,
+  onChange,
+}: {
+  capability: TemplateCapabilityState;
+  onChange: (next: TemplateCapabilityState) => void;
+}) {
+  const relations: { value: StructureRelation; label: string }[] = [
+    { value: "NONE", label: "无特殊结构" },
+    { value: "NEAR", label: "彼此靠近" },
+    { value: "SENTENCE", label: "同一句中" },
+    { value: "PARAGRAPH", label: "同一段中" },
+  ];
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">结构能力</h2>
+      <div className="space-y-2 text-sm">
+        {relations.map((relation) => (
+          <label key={relation.value} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={capability.structure.allowRelation.includes(relation.value)}
+              onChange={(e) =>
+                onChange({
+                  ...capability,
+                  structure: {
+                    ...capability.structure,
+                    allowRelation: toggleItem(capability.structure.allowRelation, relation.value, e.target.checked),
+                  },
+                })
+              }
+            />
+            {relation.label}
+          </label>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.structure.allowOrder}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              structure: { ...capability.structure, allowOrder: e.target.checked },
+            })
+          }
+        />
+        允许顺序判断
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.structure.allowDistance}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              structure: { ...capability.structure, allowDistance: e.target.checked },
+            })
+          }
+        />
+        允许距离设置
+      </label>
+    </section>
+  );
+}
+
+function WhereSection({
+  capability,
+  onChange,
+}: {
+  capability: TemplateCapabilityState;
+  onChange: (next: TemplateCapabilityState) => void;
+}) {
+  const fields: { value: RuleField; label: string }[] = [
+    { value: "CONTENT", label: "文档正文" },
+    { value: "TITLE", label: "标题" },
+    { value: "COLUMN", label: "栏目字段" },
+  ];
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">作用范围</h2>
+      <div className="space-y-2 text-sm">
+        {fields.map((field) => (
+          <label key={field.value} className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={capability.where.allowFields.includes(field.value)}
+              onChange={(e) =>
+                onChange({
+                  ...capability,
+                  where: {
+                    allowFields: toggleItem(capability.where.allowFields, field.value, e.target.checked),
+                  },
+                })
+              }
+            />
+            {field.label}
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AdvancedSection({
+  capability,
+  onChange,
+}: {
+  capability: TemplateCapabilityState;
+  onChange: (next: TemplateCapabilityState) => void;
+}) {
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">高级能力</h2>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.advanced.allowNot}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              advanced: { ...capability.advanced, allowNot: e.target.checked },
+            })
+          }
+        />
+        允许单条件排除
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.advanced.allowExcludeGroup}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              advanced: { ...capability.advanced, allowExcludeGroup: e.target.checked },
+            })
+          }
+        />
+        允许整组排除
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={capability.advanced.allowTopicRef}
+          onChange={(e) =>
+            onChange({
+              ...capability,
+              advanced: { ...capability.advanced, allowTopicRef: e.target.checked },
+            })
+          }
+        />
+        允许引用主题
+      </label>
+    </section>
+  );
+}
+
+function ExplainSection({
+  explain,
+  onChange,
+}: {
+  explain: ExplainState;
+  onChange: (next: ExplainState) => void;
+}) {
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">说明模板</h2>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">成功说明模板</label>
+        <textarea
+          className="min-h-[100px] w-full rounded-md border px-3 py-2 text-sm"
+          value={explain.success}
+          onChange={(e) => onChange({ ...explain, success: e.target.value })}
+        />
+      </div>
+      <div className="space-y-2">
+        <label className="text-sm font-medium">失败说明模板</label>
+        <textarea
+          className="min-h-[100px] w-full rounded-md border px-3 py-2 text-sm"
+          value={explain.fail}
+          onChange={(e) => onChange({ ...explain, fail: e.target.value })}
+        />
+      </div>
+    </section>
+  );
+}
+
+function PreviewSection({
+  capability,
+  explain,
+}: {
+  capability: TemplateCapabilityState;
+  explain: ExplainState;
+}) {
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold">预览发布</h2>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-md border p-3">
+          <div className="text-sm font-semibold">能力 JSON 预览</div>
+          <pre className="mt-2 overflow-auto rounded bg-slate-50 p-2 text-xs">
+            {JSON.stringify(capability, null, 2)}
+          </pre>
+        </div>
+        <div className="rounded-md border p-3 text-sm">
+          <div className="font-semibold">规则页效果预览</div>
+          <div className="mt-2 text-xs text-slate-600">
+            语义模式数量: {capability.semantic.allowModes.length}
+          </div>
+          <div className="text-xs text-slate-600">
+            结构关系数量: {capability.structure.allowRelation.length}
+          </div>
+          <div className="text-xs text-slate-600">
+            作用范围数量: {capability.where.allowFields.length}
+          </div>
+          <div className="mt-3 rounded-md border bg-slate-50 p-2">
+            <div className="text-xs font-semibold text-slate-500">成功说明模板</div>
+            <div className="mt-1 text-xs">{explain.success || "-"}</div>
+          </div>
+          <div className="mt-2 rounded-md border bg-slate-50 p-2">
+            <div className="text-xs font-semibold text-slate-500">失败说明模板</div>
+            <div className="mt-1 text-xs">{explain.fail || "-"}</div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

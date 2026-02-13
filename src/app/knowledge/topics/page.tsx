@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -7,7 +7,6 @@ import {
   createTopic,
   fetchTopics,
   TopicDTO,
-  saveTopicDraft,
   submitTopicReview,
   fetchTopicReviews,
   publishTopic,
@@ -15,10 +14,8 @@ import {
 import { fetchTemplatesList, RuleTemplateItem } from "@/lib/api";
 import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-import { normalizeForRuleBuilder, createScenario } from "@/components/rule-builder/ruleGroupOps";
-import { ruleNodeToBusinessRule } from "@/lib/business-rule";
-import { RuleNode } from "@/components/rule-builder/astTypes";
 import { t } from "@/i18n";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
 const TOPIC_LIST_TTL_MS = 30_000;
 const topicListCache: {
@@ -116,141 +113,6 @@ function formatUpdatedAt(updatedAt?: string | null) {
   return parsed.toISOString().slice(0, 10);
 }
 
-function extractTemplateVersion(
-  template: RuleTemplateItem | null,
-  config?: any | null
-) {
-  if (!template && !config) return null;
-  const normalizedConfig = config?.config ?? config?.data ?? config;
-  return (
-    template?.version ??
-    template?.templateVersion ??
-    template?.revision ??
-    template?.rev ??
-    template?.publishedVersion ??
-    template?.configVersion ??
-    normalizedConfig?.version ??
-    null
-  );
-}
-
-function extractTemplateCapabilities(config: any): string {
-  if (!config) return "";
-  const normalized = config?.config ?? config?.data ?? config;
-  const caps = normalized.capabilities ?? normalized.features ?? null;
-  if (Array.isArray(caps)) {
-    return caps.filter(Boolean).join(t("topics.capabilities.listSeparator"));
-  }
-  if (typeof caps === "string") return caps;
-
-  const allowedModes =
-    normalized.allowedModes ?? normalized.allowed_modes ?? null;
-  const importanceAllowed =
-    normalized.importanceAllowed ??
-    normalized.importance_allowed ??
-    normalized.allowImportance ??
-    false;
-  const positionRules =
-    normalized.positionRules ?? normalized.position_rules ?? null;
-
-  const parts: string[] = [];
-  if (allowedModes && typeof allowedModes === "object") {
-    const modeLabels: string[] = [];
-    if (allowedModes.all)
-      modeLabels.push(t("topics.capabilities.mode.allAny"));
-    if (allowedModes.partial)
-      modeLabels.push(t("topics.capabilities.mode.partial"));
-    if (allowedModes.weighted)
-      modeLabels.push(t("topics.capabilities.mode.weighted"));
-    if (modeLabels.length === 1) {
-      parts.push(
-        t("topics.capabilities.onlySupports", {
-          modes: modeLabels[0],
-        })
-      );
-    } else if (modeLabels.length > 1) {
-      parts.push(
-        t("topics.capabilities.supports", {
-          modes: modeLabels.join(" / "),
-        })
-      );
-    }
-  } else if (
-    "allowAll" in normalized ||
-    "allowAccrue" in normalized ||
-    "allowLogsum" in normalized ||
-    "allowThreshold" in normalized
-  ) {
-    const modeLabels: string[] = [];
-    if (normalized.allowAll)
-      modeLabels.push(t("topics.capabilities.mode.allAny"));
-    if (normalized.allowAccrue)
-      modeLabels.push(t("topics.capabilities.mode.accrue"));
-    if (normalized.allowLogsum || normalized.allowThreshold)
-      modeLabels.push(t("topics.capabilities.mode.partial"));
-    if (modeLabels.length === 1) {
-      parts.push(
-        t("topics.capabilities.onlySupports", {
-          modes: modeLabels[0],
-        })
-      );
-    } else if (modeLabels.length > 1) {
-      parts.push(
-        t("topics.capabilities.supports", {
-          modes: modeLabels.join(" / "),
-        })
-      );
-    }
-  }
-
-  if (importanceAllowed) {
-    parts.push(t("topics.capabilities.importance"));
-  }
-
-  if (positionRules && typeof positionRules === "object") {
-    const positionLabels: Record<string, string> = {
-      paragraph: t("topics.capabilities.position.paragraph"),
-      sentence: t("topics.capabilities.position.sentence"),
-      order: t("topics.capabilities.position.order"),
-      near: t("topics.capabilities.position.near"),
-    };
-    const enabled = Object.entries(positionRules)
-      .filter(([key, value]) => key !== "any" && Boolean(value))
-      .map(([key]) => positionLabels[key] ?? key);
-    if (enabled.length) {
-      parts.push(
-        t("topics.capabilities.positionRelation", {
-          positions: enabled.join(" / "),
-        })
-      );
-    }
-  } else if (
-    normalized.allowProximity ||
-    normalized.allowOrder ||
-    normalized.allowSentence ||
-    normalized.allowParagraph
-  ) {
-    const enabled: string[] = [];
-    if (normalized.allowSentence)
-      enabled.push(t("topics.capabilities.position.sentence"));
-    if (normalized.allowParagraph)
-      enabled.push(t("topics.capabilities.position.paragraph"));
-    if (normalized.allowOrder)
-      enabled.push(t("topics.capabilities.position.order"));
-    if (normalized.allowProximity)
-      enabled.push(t("topics.capabilities.position.near"));
-    if (enabled.length) {
-      parts.push(
-        t("topics.capabilities.positionRelation", {
-          positions: enabled.join(" / "),
-        })
-      );
-    }
-  }
-
-  return parts.join(t("topics.capabilities.separator"));
-}
-
 export default function TopicsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -267,11 +129,6 @@ export default function TopicsPage() {
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] =
     useState<RuleTemplateItem | null>(null);
-  const [selectedTemplateVersion, setSelectedTemplateVersion] =
-    useState<number | string | null>(null);
-  const [templateConfigs, setTemplateConfigs] = useState<
-    Record<string, any | null>
-  >({});
   const [createOpen, setCreateOpen] = useState(false);
   const [createName, setCreateName] = useState("");
   const [createDescription, setCreateDescription] = useState("");
@@ -280,14 +137,6 @@ export default function TopicsPage() {
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [pendingReviewTopic, setPendingReviewTopic] =
     useState<TopicDTO | null>(null);
-
-  function buildDefaultRule(): RuleNode {
-    return normalizeForRuleBuilder({
-      type: "GROUP",
-      params: { operator: "ANY", role: "RULE", sticky: true },
-      children: [createScenario(0)],
-    });
-  }
 
   async function loadTopics(showLoading = true, force = false) {
     if (showLoading) {
@@ -637,7 +486,6 @@ export default function TopicsPage() {
         name={createName}
         description={createDescription}
         template={selectedTemplate}
-        templateVersion={selectedTemplateVersion}
         onChangeName={setCreateName}
         onChangeDescription={setCreateDescription}
         onBack={() => {
@@ -650,7 +498,6 @@ export default function TopicsPage() {
           setCreateDescription("");
           setCreateError(null);
           setSelectedTemplate(null);
-          setSelectedTemplateVersion(null);
         }}
         onCreate={async () => {
           if (!createName.trim() || !createDescription.trim()) return;
@@ -660,32 +507,15 @@ export default function TopicsPage() {
           const result = await createTopic({
             name: createName.trim(),
             description: createDescription.trim() || undefined,
-            templateId: selectedTemplate.id,
-            templateVersion: selectedTemplateVersion,
+            template: selectedTemplate.id,
           });
           if (result.data) {
-            const draftRule = ruleNodeToBusinessRule(
-              buildDefaultRule()
-            );
-            const draftResult = await saveTopicDraft(
-              result.data.id,
-              { rule: draftRule }
-            );
-            if (!draftResult.data) {
-              setCreateLoading(false);
-              setCreateError(
-                draftResult.error ??
-                  "Unable to initialize topic draft."
-              );
-              return;
-            }
             await loadTopics(false);
             setCreateLoading(false);
             setCreateOpen(false);
             setCreateName("");
             setCreateDescription("");
             setSelectedTemplate(null);
-            setSelectedTemplateVersion(null);
             router.push(
               `/knowledge/topics/${encodeURIComponent(
                 result.data.id
@@ -711,20 +541,12 @@ export default function TopicsPage() {
       />
       <SelectTemplateDialog
         open={templateDialogOpen}
-        templateConfigs={templateConfigs}
-        onConfigsLoaded={setTemplateConfigs}
         onCancel={() => {
           setTemplateDialogOpen(false);
           setSelectedTemplate(null);
         }}
         onNext={(template) => {
           setSelectedTemplate(template);
-          setSelectedTemplateVersion(
-            extractTemplateVersion(
-              template,
-              templateConfigs[String(template.id)]
-            )
-          );
           setTemplateDialogOpen(false);
           setCreateOpen(true);
         }}
@@ -739,7 +561,6 @@ function CreateTopicDialog({
   name,
   description,
   template,
-  templateVersion,
   onChangeName,
   onChangeDescription,
   onBack,
@@ -752,7 +573,6 @@ function CreateTopicDialog({
   name: string;
   description: string;
   template: RuleTemplateItem | null;
-  templateVersion: number | string | null;
   onChangeName: (value: string) => void;
   onChangeDescription: (value: string) => void;
   onBack: () => void;
@@ -760,20 +580,25 @@ function CreateTopicDialog({
   onCreate: () => void;
   error: string | null;
 }) {
+  const createDialogDrag = useDraggableDialog(open);
   if (!open) return null;
 
   const canCreate =
     !!template &&
-    !!templateVersion &&
     name.trim().length > 0 &&
     description.trim().length > 0 &&
     !loading;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[520px] rounded-lg bg-white p-6 shadow-xl">
-        <div className="text-base font-semibold">
-          {t("topics.create.basic.title")}
+      <div className="w-[520px] rounded-lg bg-white p-6 shadow-xl" style={createDialogDrag.style}>
+        <div
+          className={`select-none ${createDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          {...createDialogDrag.handleProps}
+        >
+          <div className="text-base font-semibold">
+            {t("topics.create.basic.title")}
+          </div>
         </div>
         <div className="mt-2 text-sm text-muted-foreground">
           {t("topics.create.basic.selectedTemplate", {
@@ -781,11 +606,6 @@ function CreateTopicDialog({
               ? template.name
               : t("topics.create.basic.none"),
           })}
-          {template && templateVersion
-            ? ` · ${t("topics.create.basic.version", {
-                version: templateVersion,
-              })}`
-            : ""}
         </div>
         {error && (
           <div className="mt-3">
@@ -863,14 +683,20 @@ function SubmitReviewDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const reviewDialogDrag = useDraggableDialog(open);
   if (!open || !topic) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-        <h3 className="text-base font-semibold">
-          {t("topics.review.confirmTitle")}
-        </h3>
+      <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl" style={reviewDialogDrag.style}>
+        <div
+          className={`select-none ${reviewDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          {...reviewDialogDrag.handleProps}
+        >
+          <h3 className="text-base font-semibold">
+            {t("topics.review.confirmTitle")}
+          </h3>
+        </div>
         <p className="mt-2 text-sm text-muted-foreground">
           {t("topics.review.confirmHint")}
         </p>
@@ -908,14 +734,10 @@ function SubmitReviewDialog({
 
 function SelectTemplateDialog({
   open,
-  templateConfigs,
-  onConfigsLoaded,
   onCancel,
   onNext,
 }: {
   open: boolean;
-  templateConfigs: Record<string, any | null>;
-  onConfigsLoaded: (next: Record<string, any | null>) => void;
   onCancel: () => void;
   onNext: (template: RuleTemplateItem) => void;
 }) {
@@ -937,29 +759,6 @@ function SelectTemplateDialog({
         if (!mounted) return;
         const list = res.data ?? [];
         setTemplates(list);
-        const configEntries = await Promise.all(
-          list.map(async (tpl) => {
-            try {
-              const resp = await fetch(
-                `/api/templates/${encodeURIComponent(
-                  String(tpl.id)
-                )}/config`,
-                { cache: "no-store" }
-              );
-              if (!resp.ok) return [String(tpl.id), null] as const;
-              const json = await resp.json();
-              return [String(tpl.id), json?.data ?? json] as const;
-            } catch {
-              return [String(tpl.id), null] as const;
-            }
-          })
-        );
-        if (!mounted) return;
-        const nextConfigs: Record<string, any | null> = {};
-        configEntries.forEach(([id, cfg]) => {
-          nextConfigs[id] = cfg ?? null;
-        });
-        onConfigsLoaded(nextConfigs);
       } catch (e: any) {
         if (mounted) setError(e?.message ?? "Unable to load templates.");
       } finally {
@@ -972,10 +771,11 @@ function SelectTemplateDialog({
     };
   }, [open]);
 
+  const templateDialogDrag = useDraggableDialog(open);
   if (!open) return null;
 
   const filtered = templates.filter((tpl) => {
-    const text = `${tpl.name ?? ""} ${tpl.purpose ?? ""} ${tpl.description ?? ""}`
+    const text = `${tpl.name ?? ""} ${tpl.description ?? ""}`
       .toLowerCase()
       .trim();
     const needle = query.trim().toLowerCase();
@@ -985,17 +785,18 @@ function SelectTemplateDialog({
 
   const selectedTemplate =
     templates.find((tpl) => String(tpl.id) === String(selectedId)) ?? null;
-  const selectedVersion = extractTemplateVersion(
-    selectedTemplate,
-    templateConfigs[String(selectedTemplate?.id ?? "")]
-  );
-  const canProceed = !!selectedTemplate && !!selectedVersion && !loading;
+  const canProceed = !!selectedTemplate && !loading;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[640px] rounded-lg bg-white p-6 shadow-xl">
-        <div className="text-base font-semibold">
-          {t("topics.create.selectTemplate.title")}
+      <div className="w-[640px] rounded-lg bg-white p-6 shadow-xl" style={templateDialogDrag.style}>
+        <div
+          className={`select-none ${templateDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          {...templateDialogDrag.handleProps}
+        >
+          <div className="text-base font-semibold">
+            {t("topics.create.selectTemplate.title")}
+          </div>
         </div>
         <div className="mt-2 text-sm text-muted-foreground">
           {t("topics.create.selectTemplate.subtitle")}
@@ -1037,39 +838,11 @@ function SelectTemplateDialog({
               >
                 <div className="font-medium">{tpl.name}</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  {tpl.purpose ?? tpl.description ?? ""}
+                  {tpl.description ?? ""}
                 </div>
-                {extractTemplateCapabilities(
-                  templateConfigs[String(tpl.id)]
-                ) && (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {t("topics.create.selectTemplate.capabilitiesLabel")}：
-                    {extractTemplateCapabilities(
-                      templateConfigs[String(tpl.id)]
-                    )}
-                  </div>
-                )}
-                {extractTemplateVersion(
-                  tpl,
-                  templateConfigs[String(tpl.id)]
-                ) && (
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    {t("topics.create.selectTemplate.versionLabel")}{" "}
-                    {extractTemplateVersion(
-                      tpl,
-                      templateConfigs[String(tpl.id)]
-                    )}
-                  </div>
-                )}
               </button>
             ))}
         </div>
-
-        {selectedTemplate && !selectedVersion && (
-          <div className="mt-3 text-xs text-amber-600">
-            {t("topics.create.selectTemplate.missingVersion")}
-          </div>
-        )}
 
         <div className="mt-6 flex justify-end gap-2">
           <button
@@ -1093,3 +866,4 @@ function SelectTemplateDialog({
     </div>
   );
 }
+

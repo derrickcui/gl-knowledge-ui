@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { t } from "@/i18n";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
 interface Props {
   open: boolean;
@@ -11,13 +12,22 @@ interface Props {
 
 export default function RejectDialog({ open, onClose, onSubmit }: Props) {
   const [reason, setReason] = useState("");
+  const draggable = useDraggableDialog(open);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-      <div className="w-[420px] space-y-3 rounded bg-white p-4 shadow-lg">
-        <h3 className="text-sm font-semibold">{t("review.reject.title")}</h3>
+      <div
+        className="w-[420px] space-y-3 rounded bg-white p-4 shadow-lg"
+        style={draggable.style}
+      >
+        <div
+          className={`select-none ${draggable.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          {...draggable.handleProps}
+        >
+          <h3 className="text-sm font-semibold">{t("review.reject.title")}</h3>
+        </div>
         <div className="text-xs text-slate-600">
           {t("review.reject.hint")}
         </div>

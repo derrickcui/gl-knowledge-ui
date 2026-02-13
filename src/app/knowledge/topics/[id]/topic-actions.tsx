@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { t } from "@/i18n";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
 interface Props {
   status: string;
@@ -25,6 +26,8 @@ export function TopicActions({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] =
     useState(false);
+  const submitDialogDrag = useDraggableDialog(confirmOpen);
+  const deleteDialogDrag = useDraggableDialog(deleteConfirmOpen);
   const isInReview = status === "IN_REVIEW";
   const isDisabled = isInReview || busy;
 
@@ -90,10 +93,15 @@ export function TopicActions({
 
       {confirmOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-base font-semibold">
-              {t("topicActions.submitReviewTitle")}
-            </h3>
+          <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl" style={submitDialogDrag.style}>
+            <div
+              className={`select-none ${submitDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+              {...submitDialogDrag.handleProps}
+            >
+              <h3 className="text-base font-semibold">
+                {t("topicActions.submitReviewTitle")}
+              </h3>
+            </div>
             <p className="mt-2 text-sm text-muted-foreground">
               {t("topicActions.submitReviewHint")}
             </p>
@@ -132,10 +140,15 @@ export function TopicActions({
 
       {deleteConfirmOpen && onDeleteDraft && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-            <h3 className="text-base font-semibold">
-              {t("topicActions.deleteDraftTitle")}
-            </h3>
+          <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl" style={deleteDialogDrag.style}>
+            <div
+              className={`select-none ${deleteDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+              {...deleteDialogDrag.handleProps}
+            >
+              <h3 className="text-base font-semibold">
+                {t("topicActions.deleteDraftTitle")}
+              </h3>
+            </div>
             <p className="mt-2 text-sm text-muted-foreground">
               {t("topicActions.deleteDraftHint")}
             </p>

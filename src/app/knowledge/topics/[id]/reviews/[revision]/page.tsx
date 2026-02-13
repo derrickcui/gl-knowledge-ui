@@ -10,12 +10,7 @@ import {
   fetchTopicReviewDetail,
   submitTopicReviewDecision,
 } from "@/lib/topic-api";
-import { businessRuleToRuleNode } from "@/lib/business-rule";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-import { RuleNode } from "@/components/rule-builder/astTypes";
-import { normalizeForRuleBuilder } from "@/components/rule-builder/ruleGroupOps";
-import { RuleBuilder } from "../../rule-builder";
-import { ExplainPreview } from "../../explain-preview";
 import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
 import { t } from "@/i18n";
 
@@ -35,13 +30,11 @@ export default function TopicReviewPage() {
   const revision = Number(params?.revision ?? 0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [topicName, setTopicName] = useState(t("common.topic"));
+  const [topicName, setTopicName] = useState<string>(String(t("common.topic")));
   const [reviewStatus, setReviewStatus] = useState("IN_REVIEW");
-  const [rule, setRule] = useState<RuleNode | null>(null);
+  const [rule, setRule] = useState<unknown | null>(null);
   const [explain, setExplain] = useState<any>(null);
-  const [activePath, setActivePath] = useState<number[]>([0]);
-  const [reviewDecision, setReviewDecision] =
-    useState<ReviewDecision>("");
+  const [reviewDecision, setReviewDecision] = useState<ReviewDecision>("");
   const [reviewComment, setReviewComment] = useState("");
   const [expectedHash, setExpectedHash] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{
@@ -63,29 +56,21 @@ export default function TopicReviewPage() {
       }
       const reviewsResult = await fetchTopicReviews(topicId);
       if (reviewsResult.data) {
-        const matched = reviewsResult.data.find(
-          (item) => item.revision === revision
-        );
+        const matched = reviewsResult.data.find((item) => item.revision === revision);
         if (matched?.reviewId) {
           try {
-            const packet = await fetchReviewPacketBusiness(
-              String(matched.reviewId)
-            );
+            const packet = await fetchReviewPacketBusiness(String(matched.reviewId));
             setExpectedHash(packet?.contentHash ?? null);
           } catch {
             setExpectedHash(null);
           }
         }
       }
-      const detailResult = await fetchTopicReviewDetail(
-        topicId,
-        revision
-      );
+      const detailResult = await fetchTopicReviewDetail(topicId, revision);
       if (!active) return;
       if (detailResult.data) {
         setReviewStatus(detailResult.data.status);
-        const node = businessRuleToRuleNode(detailResult.data.rule);
-        setRule(normalizeForRuleBuilder(node));
+        setRule(detailResult.data.rule ?? null);
         setExplain(detailResult.data.explain ?? null);
       } else {
         setError(detailResult.error ?? t("review.error.load"));
@@ -99,17 +84,15 @@ export default function TopicReviewPage() {
     };
   }, [topicId, revision]);
 
+  const explainBlocks = useMemo(() => {
+    if (explain?.blocks && Array.isArray(explain.blocks)) return explain.blocks;
+    return [];
+  }, [explain]);
+
   const canSubmit =
     reviewDecision !== "" &&
     !!expectedHash &&
-    (reviewDecision === "APPROVE" ||
-      reviewComment.trim().length > 0);
-
-  const explainEmptyMessage = useMemo(() => {
-    if (!rule) return t("review.explain.empty");
-    const groups = rule.children ?? [];
-    return groups.length === 0 ? t("review.explain.empty") : "";
-  }, [rule]);
+    (reviewDecision === "APPROVE" || reviewComment.trim().length > 0);
 
   return (
     <div className="space-y-6 p-6">
@@ -126,9 +109,7 @@ export default function TopicReviewPage() {
             <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               {t("review.title")}
             </div>
-            <div className="mt-1 text-xl font-semibold">
-              {topicName}
-            </div>
+            <div className="mt-1 text-xl font-semibold">{topicName}</div>
             <div className="mt-1 text-xs text-muted-foreground">
               {t("review.revision", { revision })}
             </div>
@@ -154,34 +135,45 @@ export default function TopicReviewPage() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
-            {rule && (
-              <RuleBuilder
-                rule={rule}
-                activePath={activePath}
-                onSelect={setActivePath}
-                onChange={(next) =>
-                  setRule(normalizeForRuleBuilder(next))
-                }
-                onAddScenario={() => {}}
-                readOnly
-              />
-            )}
-            <ExplainPreview
-              explain={explain ?? undefined}
-              rule={rule ?? undefined}
-              emptyMessage={explainEmptyMessage || undefined}
-            />
+            <div className="rounded-lg border bg-white p-4">
+              <div className="text-sm font-semibold">Rule Content</div>
+              <pre className="mt-3 max-h-[420px] overflow-auto rounded-md bg-slate-50 p-3 text-xs">
+                {JSON.stringify(rule, null, 2)}
+              </pre>
+            </div>
+
+            <div className="rounded-lg border bg-white p-4">
+              <div className="text-sm font-semibold">Explain</div>
+              {explainBlocks.length === 0 ? (
+                <div className="mt-3 rounded-md border border-dashed p-3 text-sm text-slate-500">
+                  {t("review.explain.empty")}
+                </div>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {explainBlocks.map((block: any, index: number) => (
+                    <div key={`explain-${index}`} className="rounded-md border p-3">
+                      <div className="text-sm font-medium">{block.title ?? `Block ${index + 1}`}</div>
+                      {Array.isArray(block.lines) && block.lines.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
+                          {block.lines.map((line: string, lineIndex: number) => (
+                            <li key={`line-${lineIndex}`}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="mt-2 text-sm text-slate-500">-</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm font-semibold">
-              {t("review.actions.title")}
-            </div>
+            <div className="text-sm font-semibold">{t("review.actions.title")}</div>
             <div className="mt-4 space-y-4 text-sm">
               <div className="space-y-2">
-                <div className="font-medium">
-                  {t("review.actions.decision")}
-                </div>
+                <div className="font-medium">{t("review.actions.decision")}</div>
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
@@ -203,9 +195,7 @@ export default function TopicReviewPage() {
               </div>
 
               <div className="space-y-2">
-                <div className="font-medium">
-                  {t("review.actions.comment")}
-                </div>
+                <div className="font-medium">{t("review.actions.comment")}</div>
                 <textarea
                   className="min-h-[96px] w-full rounded-md border px-3 py-2 text-sm"
                   placeholder={
@@ -214,14 +204,10 @@ export default function TopicReviewPage() {
                       : t("review.actions.commentApprove")
                   }
                   value={reviewComment}
-                  onChange={(event) =>
-                    setReviewComment(event.target.value)
-                  }
+                  onChange={(event) => setReviewComment(event.target.value)}
                 />
                 {!expectedHash && (
-                  <div className="text-xs text-amber-600">
-                    {t("review.actions.missingHash")}
-                  </div>
+                  <div className="text-xs text-amber-600">{t("review.actions.missingHash")}</div>
                 )}
               </div>
 
@@ -232,16 +218,12 @@ export default function TopicReviewPage() {
                 onClick={async () => {
                   if (!canSubmit || submitting) return;
                   setSubmitting(true);
-                  const result = await submitTopicReviewDecision(
-                    topicId,
-                    revision,
-                    {
-                      decision: reviewDecision,
-                      reviewer: "systemUser",
-                      comment: reviewComment.trim() || undefined,
-                      expectedHash: expectedHash ?? undefined,
-                    }
-                  );
+                  const result = await submitTopicReviewDecision(topicId, revision, {
+                    decision: reviewDecision,
+                    reviewer: "systemUser",
+                    comment: reviewComment.trim() || undefined,
+                    expectedHash: expectedHash ?? undefined,
+                  });
                   if (result.data) {
                     setActionFeedback({
                       type: "success",
@@ -252,16 +234,13 @@ export default function TopicReviewPage() {
                     setActionFeedback({
                       type: "error",
                       title: t("review.submit.failure"),
-                      message:
-                        result.error ?? t("review.submit.failureMessage"),
+                      message: result.error ?? t("review.submit.failureMessage"),
                     });
                   }
                   setSubmitting(false);
                 }}
               >
-                {submitting
-                  ? t("review.submit.loading")
-                  : t("review.submit.confirm")}
+                {submitting ? t("review.submit.loading") : t("review.submit.confirm")}
               </button>
             </div>
           </div>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { t } from "@/i18n";
+import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
 export function ApproveDialog({
   open,
@@ -22,6 +23,7 @@ export function ApproveDialog({
   onConfirm: (reason: string) => void;
 }) {
   const [reason, setReason] = useState("");
+  const draggable = useDraggableDialog(open);
 
   useEffect(() => {
     if (!open) setReason("");
@@ -31,10 +33,15 @@ export function ApproveDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl">
-        <h3 className="text-base font-semibold">
-          {t("glossary.approveDialog.title")}
-        </h3>
+      <div className="w-[420px] rounded-lg bg-white p-6 shadow-xl" style={draggable.style}>
+        <div
+          className={`select-none ${draggable.dragging ? "cursor-grabbing" : "cursor-grab"}`}
+          {...draggable.handleProps}
+        >
+          <h3 className="text-base font-semibold">
+            {t("glossary.approveDialog.title")}
+          </h3>
+        </div>
         <p className="mt-2 text-sm text-muted-foreground">
           {t("glossary.approveDialog.subtitle")}
         </p>

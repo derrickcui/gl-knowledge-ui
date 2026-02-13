@@ -1,7 +1,6 @@
 import { ApiResult } from "@/lib/api";
 import type { ExplainBlock } from "@/components/explain/explainTypes";
 import type { AntiPatternReport } from "@/components/review/antiPatternTypes";
-import type { BusinessRule } from "@/lib/business-rule";
 import { decodeUnicodeEscapes } from "@/lib/text-utils";
 
 const TOPICS_API_PROXY = "/api/topics";
@@ -80,7 +79,7 @@ type CreateTopicResponse = {
 
 type CreateTopicApiResponse = {
   success: boolean;
-  data: CreateTopicResponse;
+  data: unknown;
   error: string | null;
 };
 
@@ -90,6 +89,8 @@ type TopicDetailResponse = {
   status: string;
   description?: string | null;
   usedBy?: string[];
+  template_id?: number | string | null;
+  template_version?: number | string | null;
   updatedAt?: string | null;
 };
 
@@ -99,20 +100,21 @@ type TopicDetailApiResponse = {
   error: string | null;
 };
 
-type ExplainPreviewViewModel = {
+export type ExplainPreviewViewModel = {
   title?: string;
   blocks: ExplainBlock[];
 };
 
 type TopicDraftBusinessRequest = {
-  rule: BusinessRule;
-  templateId?: number | string | null;
-  templateVersion?: number | string | null;
+  rule: {
+    root: unknown;
+  };
   updatedBy?: string | null;
 };
 
 type TopicDraftBusinessResponse = {
-  rule: BusinessRule;
+  rule: unknown;
+  capability?: unknown;
   explain?: ExplainPreviewViewModel;
   updatedAt?: string;
 };
@@ -124,12 +126,13 @@ type TopicDraftBusinessApiResponse = {
 };
 
 type RulePreviewBusinessRequest = {
-  rule: BusinessRule;
+  rule: unknown;
 };
 
 type RulePreviewBusinessResult = {
   valid: boolean;
   errors: string[];
+  gql?: string | null;
   explain?: ExplainPreviewViewModel;
   antiPatterns?: AntiPatternReport;
 };
@@ -176,7 +179,7 @@ type TopicReviewListApiResponse = {
 
 export type TopicReviewDetailResponse = {
   revision: number;
-  rule: BusinessRule;
+  rule: unknown;
   explain?: ExplainPreviewViewModel;
   gql?: string | null;
   status: string;
@@ -250,6 +253,60 @@ function normalizeTopicDetail(item: TopicDetailResponse): TopicDetailResponse {
   };
 }
 
+function normalizeCreateTopicResponse(
+  payload: unknown
+): CreateTopicResponse | null {
+  function asId(value: unknown): string | null {
+    if (value == null) return null;
+    if (typeof value === "string" || typeof value === "number") {
+      const id = String(value).trim();
+      return id ? id : null;
+    }
+    return null;
+  }
+
+  function findId(value: unknown, depth = 0): string | null {
+    if (depth > 4 || value == null) return null;
+    const direct = asId(value);
+    if (direct) return direct;
+    if (typeof value !== "object") return null;
+    const obj = value as Record<string, unknown>;
+
+    const keys = ["id", "topic_id", "topicId", "topicID"];
+    for (const key of keys) {
+      const id = asId(obj[key]);
+      if (id) return id;
+    }
+
+    const branches = ["data", "topic", "result", "item", "entity"];
+    for (const key of branches) {
+      const id = findId(obj[key], depth + 1);
+      if (id) return id;
+    }
+
+    return null;
+  }
+
+  function findStatus(value: unknown, depth = 0): string | null {
+    if (depth > 4 || !value || typeof value !== "object") return null;
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.status === "string" && obj.status.trim()) {
+      return obj.status;
+    }
+    const branches = ["data", "topic", "result", "item", "entity"];
+    for (const key of branches) {
+      const status = findStatus(obj[key], depth + 1);
+      if (status) return status;
+    }
+    return null;
+  }
+
+  const id = findId(payload);
+  if (!id) return null;
+  const status = findStatus(payload) ?? "DRAFT";
+  return { id, status };
+}
+
 export async function fetchTopics(): Promise<
   ApiResult<TopicListResponse>
 > {
@@ -315,15 +372,19 @@ export async function searchTopics(params?: {
 export async function createTopic(params: {
   name: string;
   description?: string;
-  templateId?: number | string | null;
-  templateVersion?: number | string | null;
+  template?: number | string | null;
 }): Promise<ApiResult<CreateTopicResponse>> {
+  const payload = {
+    name: params.name,
+    description: params.description,
+    templateId: params.template,
+  };
   const result = await requestJson<CreateTopicApiResponse>(
     TOPICS_API_PROXY,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
+      body: JSON.stringify(payload),
     }
   );
 
@@ -338,7 +399,19 @@ export async function createTopic(params: {
     };
   }
 
-  return { data: result.data.data, error: null };
+  const normalized = normalizeCreateTopicResponse(result.data.data);
+  if (!normalized) {
+    const shape =
+      result.data.data && typeof result.data.data === "object"
+        ? Object.keys(result.data.data as Record<string, unknown>).join(",")
+        : typeof result.data.data;
+    return {
+      data: null,
+      error: `Invalid create topic response: missing topic id (shape: ${shape || "unknown"}).`,
+    };
+  }
+
+  return { data: normalized, error: null };
 }
 
 export async function fetchTopicById(

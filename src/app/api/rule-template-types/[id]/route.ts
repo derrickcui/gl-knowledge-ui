@@ -6,12 +6,13 @@ const TEMPLATE_API_BASE =
 
 export async function GET(
   _request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await context.params;
     const upstream = await fetch(
       `${TEMPLATE_API_BASE}/api/rule-template-types/${encodeURIComponent(
-        context.params.id
+        id
       )}`,
       { cache: "no-store" }
     );
@@ -36,13 +37,14 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await context.params;
     const body = await request.text();
     const upstream = await fetch(
       `${TEMPLATE_API_BASE}/api/rule-template-types/${encodeURIComponent(
-        context.params.id
+        id
       )}`,
       {
         method: "PUT",
@@ -74,12 +76,13 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  context: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await context.params;
     const upstream = await fetch(
       `${TEMPLATE_API_BASE}/api/rule-template-types/${encodeURIComponent(
-        context.params.id
+        id
       )}`,
       { method: "DELETE" }
     );

@@ -8,7 +8,6 @@ import {
   searchGlossaryConcepts,
 } from "@/lib/glossary-api";
 import { ConceptConditionDraft } from "./conceptConditionDraft";
-import type { RuleTemplateCapability } from "@/components/rule-builder/templateCapabilities";
 import { t } from "@/i18n";
 
 type RelationMode = "SELF" | "DESCENDANT" | "SUBSET";
@@ -19,7 +18,11 @@ interface Props {
   onConfirm: (draft: ConceptConditionDraft) => void;
   initialQuery?: string;
   initialDraft?: ConceptConditionDraft | null;
-  templateCapabilities?: RuleTemplateCapability | null;
+  templateCapabilities?: {
+    allowLocationTitle?: boolean;
+    allowLocationParagraph?: boolean;
+    allowLocationSentence?: boolean;
+  } | null;
 }
 
 export default function ConceptPickerModal({
@@ -30,6 +33,14 @@ export default function ConceptPickerModal({
   initialDraft = null,
   templateCapabilities,
 }: Props) {
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragState, setDragState] = useState<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    pointerId: number;
+  } | null>(null);
   const initialConceptId = initialDraft?.concept.id ?? null;
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<GlossaryGraphResult[]>([]);
@@ -205,6 +216,13 @@ export default function ConceptPickerModal({
   }, [open, query]);
 
   useEffect(() => {
+    if (!open) {
+      setDragOffset({ x: 0, y: 0 });
+      setDragState(null);
+    }
+  }, [open]);
+
+  useEffect(() => {
     if (!open || !initialDraft) return;
     const hit = results.find(
       (item) => String(item.center.id) === initialDraft.concept.id
@@ -281,8 +299,43 @@ export default function ConceptPickerModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="flex h-[720px] max-h-[90vh] w-[960px] max-w-[95vw] flex-col overflow-hidden rounded-lg bg-white p-5 shadow-xl">
-        <div className="flex items-start justify-between">
+      <div
+        className="flex h-[720px] max-h-[90vh] w-[960px] max-w-[95vw] flex-col overflow-hidden rounded-lg bg-white p-5 shadow-xl"
+        style={{ transform: `translate(${dragOffset.x}px, ${dragOffset.y}px)` }}
+      >
+        <div
+          className={`flex items-start justify-between gap-3 select-none ${
+            dragState ? "cursor-grabbing" : "cursor-grab"
+          }`}
+          onPointerDown={(event) => {
+            if (event.button !== 0) return;
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setDragState({
+              startX: event.clientX,
+              startY: event.clientY,
+              originX: dragOffset.x,
+              originY: dragOffset.y,
+              pointerId: event.pointerId,
+            });
+          }}
+          onPointerMove={(event) => {
+            if (!dragState || dragState.pointerId !== event.pointerId) return;
+            const nextX = dragState.originX + (event.clientX - dragState.startX);
+            const nextY = dragState.originY + (event.clientY - dragState.startY);
+            setDragOffset({ x: nextX, y: nextY });
+          }}
+          onPointerUp={(event) => {
+            if (!dragState || dragState.pointerId !== event.pointerId) return;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            setDragState(null);
+          }}
+          onPointerCancel={(event) => {
+            if (!dragState || dragState.pointerId !== event.pointerId) return;
+            event.currentTarget.releasePointerCapture(event.pointerId);
+            setDragState(null);
+          }}
+        >
           <div>
             <div className="text-sm font-semibold">
               {t("conceptPicker.title")}
@@ -295,6 +348,7 @@ export default function ConceptPickerModal({
             type="button"
             className="text-xs text-slate-500 hover:underline"
             onClick={onClose}
+            onPointerDown={(event) => event.stopPropagation()}
           >
             {t("conceptPicker.close")}
           </button>

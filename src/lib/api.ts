@@ -431,18 +431,6 @@ export async function submitChange(
  * Rule Templates
  * ========================= */
 
-export type RuleTemplateCreateRequest = {
-  name: string;
-  purpose: string;
-  type?: string;
-  customType?: string;
-  allowedModes?: Record<string, boolean> | null;
-  importanceAllowed?: boolean;
-  positionRules?: Record<string, boolean> | null;
-  explainPositive?: string | null;
-  explainNegative?: string | null;
-};
-
 export type RuleTemplateTypeCreateRequest = {
   name: string;
   description?: string | null;
@@ -472,43 +460,117 @@ export type RuleTemplateTypeListItem = {
   [key: string]: any;
 };
 
-export type RuleTemplateCreateResponse = {
-  id: number;
-};
-
 export type RuleTemplateItem = {
   id: number | string;
   name: string;
-  status?: string;
-  updatedAt?: string;
-  purpose?: string;
-  description?: string;
-  category?: string;
-  [key: string]: any;
-};
-
-export type RuleTemplateReferencedTopicItem = {
-  id: number | string;
-  name: string;
+  description: string;
+  category: string;
   status: string;
+  currentVersion: number | null;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
-function normalizeTemplateList(payload: any): RuleTemplateItem[] {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.items)) return payload.items;
-  if (Array.isArray(payload?.data?.items)) return payload.data.items;
-  if (Array.isArray(payload?.data)) return payload.data;
-  return [];
+export type RuleTemplateVersionSummary = {
+  version: number;
+  status: string;
+  createdAt: string;
+  createdBy: string;
+};
+
+export type RuleTemplateDetail = RuleTemplateItem & {
+  versions: RuleTemplateVersionSummary[];
+};
+
+export type RuleTemplateVersionPayload = {
+  capability: Record<string, unknown>;
+  explain: {
+    success: string;
+    fail: string;
+  };
+};
+
+export type RuleTemplateVersionDetail = {
+  templateId: number | string;
+  version: number;
+  status: string;
+  capability: Record<string, unknown>;
+  explain: {
+    success: string;
+    fail: string;
+  };
+};
+
+function unwrapTemplateApiData<T>(payload: unknown): T | null {
+  if (payload == null) return null;
+  let current: unknown = payload;
+  // Support common API envelope nesting: { data: ... } or { data: { data: ... } }.
+  for (let i = 0; i < 2; i += 1) {
+    if (
+      current &&
+      typeof current === "object" &&
+      "data" in (current as Record<string, unknown>)
+    ) {
+      current = (current as Record<string, unknown>).data;
+    } else {
+      break;
+    }
+  }
+  return (current ?? null) as T | null;
 }
 
-function normalizeTemplatePayload(payload: any) {
-  if (!payload) return null;
-  return payload?.data?.data ?? payload?.data ?? payload;
+function extractTemplateApiError(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  if ("success" in (payload as Record<string, unknown>) && (payload as any).success === false) {
+    const err = (payload as any).error;
+    if (typeof err === "string" && err.trim()) return err;
+    return SERVICE_ERROR_MESSAGE;
+  }
+  return null;
 }
 
-function normalizeTemplateDetail(payload: any): RuleTemplateItem | null {
-  if (!payload) return null;
-  return normalizeTemplatePayload(payload);
+function normalizeTemplateDetailPayload(
+  raw: unknown
+): RuleTemplateDetail | null {
+  if (!raw || typeof raw !== "object") return null;
+  const payload = raw as Record<string, unknown>;
+  const root =
+    payload.template && typeof payload.template === "object"
+      ? (payload.template as Record<string, unknown>)
+      : payload;
+  const versionsRaw =
+    Array.isArray(payload.versions)
+      ? payload.versions
+      : Array.isArray(root.versions)
+      ? root.versions
+      : [];
+
+  const versions = versionsRaw
+    .filter((item) => item && typeof item === "object")
+    .map((item) => {
+      const v = item as Record<string, unknown>;
+      return {
+        version: Number(v.version ?? 0),
+        status: String(v.status ?? ""),
+        createdAt: String(v.createdAt ?? ""),
+        createdBy: String(v.createdBy ?? ""),
+      };
+    });
+
+  return {
+    id: (root.id ?? "") as number | string,
+    name: String(root.name ?? root.title ?? ""),
+    description: String(root.description ?? ""),
+    category: String(root.category ?? ""),
+    status: String(root.status ?? ""),
+    currentVersion:
+      root.currentVersion == null ? null : Number(root.currentVersion),
+    createdAt:
+      root.createdAt == null ? undefined : String(root.createdAt),
+    updatedAt:
+      root.updatedAt == null ? undefined : String(root.updatedAt),
+    versions,
+  };
 }
 
 function normalizeRuleTemplateTypeList(payload: any): RuleTemplateTypeListItem[] {
@@ -517,19 +579,6 @@ function normalizeRuleTemplateTypeList(payload: any): RuleTemplateTypeListItem[]
   if (Array.isArray(payload?.data?.items)) return payload.data.items;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
-}
-
-export async function createTemplate(
-  payload: RuleTemplateCreateRequest
-): Promise<ApiResult<RuleTemplateCreateResponse>> {
-  return requestJson<RuleTemplateCreateResponse>(
-    `/api/templates`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    }
-  );
 }
 
 export async function fetchRuleTemplateTypes(params?: {
@@ -594,55 +643,39 @@ export async function fetchTemplatesList(params?: {
     { cache: "no-store" }
   );
   if (!res.data) return { data: null, error: res.error };
-  return { data: normalizeTemplateList(res.data), error: null };
+  const envelopeError = extractTemplateApiError(res.data);
+  if (envelopeError) return { data: null, error: envelopeError };
+  const data = unwrapTemplateApiData<unknown>(res.data);
+  const list = Array.isArray(data)
+    ? data
+    : data &&
+      typeof data === "object" &&
+      Array.isArray((data as { items?: unknown[] }).items)
+    ? (data as { items: unknown[] }).items
+    : null;
+  if (!list) {
+    return { data: null, error: "Invalid template list response." };
+  }
+  return { data: list as RuleTemplateItem[], error: null };
 }
 
 export async function fetchTemplateById(
   id: number | string
-): Promise<ApiResultWithStatus<RuleTemplateItem | null>> {
+): Promise<ApiResultWithStatus<RuleTemplateDetail>> {
   const res = await requestJsonWithStatus<unknown>(
     `/api/templates/${id}`,
     { cache: "no-store" }
   );
   if (!res.data) return { data: null, error: res.error, status: res.status };
-  return {
-    data: normalizeTemplateDetail(res.data),
-    error: null,
-    status: res.status,
-  };
-}
-
-export async function fetchTemplateReferencedTopics(
-  id: number | string
-): Promise<ApiResult<RuleTemplateReferencedTopicItem[]>> {
-  const res = await requestJson<unknown>(
-    `/api/templates/${id}/topics`,
-    { cache: "no-store" }
+  const envelopeError = extractTemplateApiError(res.data);
+  if (envelopeError) return { data: null, error: envelopeError, status: res.status };
+  const data = normalizeTemplateDetailPayload(
+    unwrapTemplateApiData<unknown>(res.data)
   );
-  if (!res.data) return { data: null, error: res.error };
-  const payload: any = res.data;
-  const list = Array.isArray(payload)
-    ? payload
-    : Array.isArray(payload?.data)
-    ? payload.data
-    : [];
-  return { data: list as RuleTemplateReferencedTopicItem[], error: null };
-}
-
-export async function publishTemplate(
-  id: number
-): Promise<ApiResult<unknown>> {
-  return requestJson<unknown>(`/api/templates/${id}/publish`, {
-    method: "POST",
-  });
-}
-
-export async function deleteTemplate(
-  id: number
-): Promise<ApiResult<unknown>> {
-  return requestJson<unknown>(`/api/templates/${id}`, {
-    method: "DELETE",
-  });
+  if (!data || !data.name) {
+    return { data: null, error: "Invalid template detail response.", status: res.status };
+  }
+  return { data, error: null, status: res.status };
 }
 
 // Initial create shape expected by backend (step 1)
@@ -650,12 +683,10 @@ export type RuleTemplateCreateInitialRequest = {
   name: string;
   description: string;
   category: string;
-  createdBy: string;
 };
 
 export type RuleTemplateCreateInitialResponse = {
   id: number;
-  status: string;
 };
 
 export async function createTemplateInitial(
@@ -667,22 +698,96 @@ export async function createTemplateInitial(
     body: JSON.stringify(payload),
   });
   if (!res.data) return { data: null, error: res.error };
-  return {
-    data: normalizeTemplatePayload(res.data) as RuleTemplateCreateInitialResponse,
-    error: null,
-  };
+  const envelopeError = extractTemplateApiError(res.data);
+  if (envelopeError) return { data: null, error: envelopeError };
+  const data = unwrapTemplateApiData<RuleTemplateCreateInitialResponse>(res.data);
+  if (!data) {
+    return { data: null, error: "Invalid template create response." };
+  }
+  return { data, error: null };
 }
 
-// Configure template (called after initial create)
-export async function configureTemplate(
-  id: number,
-  payload: Record<string, any>
+export async function createTemplateVersion(
+  id: number | string,
+  payload: RuleTemplateVersionPayload
+): Promise<ApiResult<RuleTemplateVersionDetail>> {
+  const res = await requestJson<unknown>(
+    `/api/templates/${id}/versions`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  const envelopeError = extractTemplateApiError(res.data);
+  if (envelopeError) return { data: null, error: envelopeError };
+  const data = unwrapTemplateApiData<RuleTemplateVersionDetail>(res.data);
+  if (!data) {
+    return { data: null, error: "Invalid template version create response." };
+  }
+  return { data, error: null };
+}
+
+export async function fetchTemplateVersionById(
+  id: number | string,
+  version: string | number
+): Promise<ApiResult<RuleTemplateVersionDetail>> {
+  const res = await requestJson<unknown>(
+    `/api/templates/${id}/versions/${encodeURIComponent(String(version))}`,
+    { cache: "no-store" }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  const envelopeError = extractTemplateApiError(res.data);
+  if (envelopeError) return { data: null, error: envelopeError };
+  const data = unwrapTemplateApiData<RuleTemplateVersionDetail>(res.data);
+  if (!data) {
+    return { data: null, error: "Invalid template version detail response." };
+  }
+  return { data, error: null };
+}
+
+export async function updateTemplateVersion(
+  id: number | string,
+  version: string | number,
+  payload: RuleTemplateVersionPayload
+): Promise<ApiResult<RuleTemplateVersionDetail>> {
+  const res = await requestJson<unknown>(
+    `/api/templates/${id}/versions/${encodeURIComponent(String(version))}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  const envelopeError = extractTemplateApiError(res.data);
+  if (envelopeError) return { data: null, error: envelopeError };
+  const data = unwrapTemplateApiData<RuleTemplateVersionDetail>(res.data);
+  if (!data) {
+    return { data: null, error: "Invalid template version update response." };
+  }
+  return { data, error: null };
+}
+
+export async function deleteTemplateVersion(
+  id: number | string,
+  version: string | number
 ): Promise<ApiResult<unknown>> {
-  return requestJson<unknown>(`/api/templates/${id}/config`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  return requestJson<unknown>(
+    `/api/templates/${id}/versions/${encodeURIComponent(String(version))}`,
+    { method: "DELETE" }
+  );
+}
+
+export async function publishTemplateVersion(
+  id: number | string,
+  version: string | number
+): Promise<ApiResult<unknown>> {
+  return requestJson<unknown>(
+    `/api/templates/${id}/versions/${encodeURIComponent(String(version))}/publish`,
+    { method: "POST" }
+  );
 }
 
 export async function decideChange(params: {

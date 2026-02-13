@@ -56,6 +56,13 @@ export type BusinessCondition =
       negate?: boolean;
       explain?: ExplainOverride;
       payload: TopicConditionPayload;
+    }
+  | {
+      id: string;
+      kind: "TERM_SET";
+      negate?: boolean;
+      explain?: ExplainOverride;
+      payload: TermSetConditionPayload;
     };
 
 export type LocationPayload = {
@@ -81,6 +88,26 @@ export type TopicConditionPayload = {
   topicVersion?: string | number;
   location: LocationPayload;
   useOriginalRule?: boolean;
+};
+
+export type TermSetExpressionPayload = {
+  id: string;
+  source: "CONCEPT" | "TERM" | "CUSTOM";
+  label: string;
+  conceptId?: string;
+  flags?: {
+    includeSynonyms?: boolean;
+    includeDescendants?: boolean;
+    fuzzy?: boolean;
+    caseInsensitive?: boolean;
+  };
+};
+
+export type TermSetConditionPayload = {
+  name?: string;
+  matchMode: "ANY" | "ALL";
+  terms: TermSetExpressionPayload[];
+  note?: string;
 };
 
 function defaultLocation(): LocationPayload {
@@ -293,20 +320,21 @@ function normalizeGroupProximity(
 ): GroupProximity | undefined {
   if (!raw || raw.relation === "NONE") return undefined;
 
-  // NEAR：距离关系
+  const range = raw.range ?? "DOCUMENT";
+
   if (raw.relation === "NEAR") {
     return {
-      type: "NEAR",
+      mode: "NEAR",
       distance: Math.max(1, Math.round(Number(raw.distance ?? 3))),
-      scope: raw.range ?? "DOCUMENT",
+      ordered: false,
+      scope: range === "DOCUMENT" ? undefined : range,
     };
   }
 
-  // ORDER：顺序关系（不带距离）
   if (raw.relation === "ORDER") {
     return {
-      type: "ORDER",
-      scope: raw.range ?? "DOCUMENT",
+      mode: range,
+      ordered: true,
     };
   }
 
@@ -318,34 +346,61 @@ function normalizeScenarioProximity(
   raw?: GroupProximity | null
 ): ScenarioProximityConfig | undefined {
   if (!raw) return undefined;
-  if (raw.mode === "DOCUMENT" && !raw.ordered) return undefined;
+  const legacy = raw as Partial<{
+    type: "NEAR" | "ORDER";
+    scope: "DOCUMENT" | "PARAGRAPH" | "SENTENCE";
+    distance: number;
+    ordered: boolean;
+  }>;
+  const legacyMode =
+    !raw.mode && legacy.type === "NEAR"
+      ? "NEAR"
+      : !raw.mode && legacy.type === "ORDER"
+      ? legacy.scope ?? "DOCUMENT"
+      : raw.mode;
+  const legacyOrdered =
+    raw.ordered ??
+    (legacy.type === "ORDER"
+      ? true
+      : legacy.type === "NEAR"
+      ? false
+      : undefined);
+  const legacyScope =
+    legacy.type === "NEAR" ? legacy.scope : undefined;
+
+  const mode = legacyMode ?? raw.mode;
+  const ordered = legacyOrdered ?? raw.ordered;
+  const scope = raw.mode ? undefined : legacyScope;
+  const distance = raw.distance ?? legacy.distance;
+
+  if (mode === "DOCUMENT" && !ordered) return undefined;
   const range =
-    raw.mode === "SENTENCE"
+    mode === "SENTENCE"
       ? "SENTENCE"
-      : raw.mode === "PARAGRAPH"
+      : mode === "PARAGRAPH"
       ? "PARAGRAPH"
-      : raw.mode === "DOCUMENT"
+      : mode === "DOCUMENT"
       ? "DOCUMENT"
       : "DOCUMENT";
   const relation =
-    raw.mode === "DOCUMENT"
+    mode === "DOCUMENT"
       ? "ORDER"
-      : raw.ordered
+      : ordered
       ? "ORDER"
       : "NEAR";
-  const distance = relation === "NEAR" ? raw.distance ?? 3 : undefined;
+  const normalizedDistance = relation === "NEAR" ? distance ?? 3 : undefined;
   const distancePreset =
     relation === "NEAR"
-      ? distance === 3
+      ? normalizedDistance === 3
         ? "TIGHT"
-        : distance === 8
+        : normalizedDistance === 8
         ? "NEAR"
         : "CUSTOM"
       : undefined;
   return {
     relation,
     range,
-    distance,
+    distance: normalizedDistance,
     distancePreset,
   };
 }
