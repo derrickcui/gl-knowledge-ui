@@ -12,12 +12,11 @@ export function RuleEditorLayout({
   modals?: ReactNode;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <div>{header}</div>
-      <div>{workspace}</div>
+      <div className="min-h-0 flex-1">{workspace}</div>
       <div>{footer}</div>
       {modals}
     </div>
   );
 }
-

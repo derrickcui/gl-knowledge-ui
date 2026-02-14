@@ -354,7 +354,7 @@ export default function TopicDetailPage() {
   }, [topicId]);
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="flex h-full min-h-0 flex-col gap-6 p-6">
       {error && <FeedbackBanner type="error" title={error} />}
       {actionFeedback && (
         <FeedbackBanner
@@ -367,7 +367,7 @@ export default function TopicDetailPage() {
       {loading ? (
         <div className="text-sm opacity-60">{t("common.loading")}</div>
       ) : (
-        <>
+        <div className="flex min-h-0 flex-1 flex-col gap-6">
           {searchParams.get("fromReview") && (
             <FromReviewBanner
               reviewId={searchParams.get("fromReview") ?? ""}
@@ -382,6 +382,7 @@ export default function TopicDetailPage() {
             />
           )}
 
+          <div className="min-h-0 flex-1">
             {editorState ? (
               <RuleEditor
                 rule={editorState.rule}
@@ -395,6 +396,7 @@ export default function TopicDetailPage() {
                 actionBusy={actionBusy || previewBusy}
                 onBack={() => router.push("/knowledge/topics")}
                 onSave={topicStatus === "IN_REVIEW" ? undefined : handleSaveDraft}
+                onDeleteDraft={topicStatus === "IN_REVIEW" ? undefined : handleDeleteDraft}
                 onPreview={handlePreviewGql}
                 onSubmit={topicStatus === "IN_REVIEW" ? undefined : handleSubmitReview}
                 onPublish={topicStatus === "IN_REVIEW" ? undefined : handlePublish}
@@ -417,15 +419,6 @@ export default function TopicDetailPage() {
                 {t("topicDetail.draft.missingCapability")}
               </div>
             )}
-          <div className="flex justify-end">
-            <button
-              type="button"
-              className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
-              onClick={handleDeleteDraft}
-              disabled={actionBusy || topicStatus === "IN_REVIEW"}
-            >
-              {t("topicActions.deleteDraft")}
-            </button>
           </div>
           {previewDialogOpen ? (
             <div
@@ -481,7 +474,7 @@ export default function TopicDetailPage() {
               </div>
             </div>
           ) : null}
-        </>
+        </div>
       )}
     </div>
   );

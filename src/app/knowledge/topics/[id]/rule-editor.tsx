@@ -13,7 +13,6 @@ import { validateTree } from "./rule-editor/validation";
 import { HeaderBar } from "./rule-editor/HeaderBar";
 import { MainWorkspace } from "./rule-editor/MainWorkspace";
 import { RightSidebar } from "./rule-editor/RightSidebar";
-import { FooterBar } from "./rule-editor/FooterBar";
 import { StatusSummary } from "./rule-editor/StatusSummary";
 import { ValidationPanel } from "./rule-editor/ValidationPanel";
 import { DiffPreviewPanel } from "./rule-editor/DiffPreviewPanel";
@@ -46,6 +45,7 @@ export type RuleEditorProps = {
   actionBusy?: boolean;
   onBack?: () => void;
   onSave?: () => void;
+  onDeleteDraft?: () => void;
   onPreview?: () => void;
   onSubmit?: () => void;
   onPublish?: () => void;
@@ -65,6 +65,7 @@ export function RuleEditor({
   actionBusy = false,
   onBack,
   onSave,
+  onDeleteDraft,
   onPreview,
   onSubmit,
   onPublish,
@@ -194,6 +195,7 @@ export function RuleEditor({
           busy={actionBusy}
           onBack={onBack}
           onSave={onSave}
+          onDeleteDraft={onDeleteDraft}
           onPreview={onPreview}
           onSubmit={onSubmit}
           onPublish={onPublish}
@@ -242,23 +244,20 @@ export function RuleEditor({
               explainPanel={<ExplainPanel explain={explain} />}
               validationPanel={<ValidationPanel issues={validationIssues} />}
               diffPreviewPanel={<DiffPreviewPanel diff={diff} />}
+              statusSummary={
+                <StatusSummary
+                  dirty={dirty}
+                  issuesCount={validationIssues.length}
+                  diffAdded={diff.added}
+                  diffRemoved={diff.removed}
+                  diffChanged={diff.changed}
+                />
+              }
             />
           }
         />
       }
-      footer={
-        <FooterBar
-          statusSummary={
-            <StatusSummary
-              dirty={dirty}
-              issuesCount={validationIssues.length}
-              diffAdded={diff.added}
-              diffRemoved={diff.removed}
-              diffChanged={diff.changed}
-            />
-          }
-        />
-      }
+      footer={null}
       modals={
         <GlobalModals
           termSelectorModal={

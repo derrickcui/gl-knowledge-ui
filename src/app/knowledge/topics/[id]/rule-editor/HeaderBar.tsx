@@ -13,6 +13,7 @@ type HeaderBarProps = {
   busy?: boolean;
   onBack?: () => void;
   onSave?: () => void;
+  onDeleteDraft?: () => void;
   onPreview?: () => void;
   onSubmit?: () => void;
   onPublish?: () => void;
@@ -27,6 +28,7 @@ export function HeaderBar({
   busy = false,
   onBack,
   onSave,
+  onDeleteDraft,
   onPreview,
   onSubmit,
   onPublish,
@@ -76,6 +78,14 @@ export function HeaderBar({
               disabled={busy || !onSave}
             >
               {t("ruleEditor.header.saveDraft")}
+            </button>
+            <button
+              type="button"
+              className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+              onClick={onDeleteDraft}
+              disabled={busy || !onDeleteDraft}
+            >
+              {t("topicActions.deleteDraft")}
             </button>
             <button
               type="button"

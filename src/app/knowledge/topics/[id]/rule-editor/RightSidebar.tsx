@@ -5,11 +5,13 @@ export function RightSidebar({
   explainPanel,
   validationPanel,
   diffPreviewPanel,
+  statusSummary,
 }: {
   propertyPanel: ReactNode;
   explainPanel: ReactNode;
   validationPanel: ReactNode;
   diffPreviewPanel: ReactNode;
+  statusSummary?: ReactNode;
 }) {
   return (
     <div className="space-y-4">
@@ -17,7 +19,7 @@ export function RightSidebar({
       {explainPanel}
       {validationPanel}
       {diffPreviewPanel}
+      {statusSummary}
     </div>
   );
 }
-
