@@ -120,6 +120,15 @@ export function AppDrawer() {
             nested
             active={isActive("/knowledge/templates")}
           />
+
+          <DrawerItem
+            href="/runtime"
+            label={t("drawer.runtimeScenes")}
+            icon={<Layers className="h-4 w-4" />}
+            collapsed={collapsed}
+            nested
+            active={isActive("/runtime")}
+          />
         </DrawerGroup>
 
         <DrawerItem

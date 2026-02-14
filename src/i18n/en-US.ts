@@ -583,6 +583,7 @@
   "drawer.glossary": "Glossary",
   "drawer.topics": "Topics",
   "drawer.templates": "Rule Templates",
+  "drawer.runtimeScenes": "Runtime Data Scenes",
   "drawer.settings": "Settings",
   "drawer.language": "Language",
   "topics.create.selectTemplate.title": "Create Topic Â· Select Template",

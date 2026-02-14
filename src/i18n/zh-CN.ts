@@ -527,6 +527,7 @@
   "drawer.glossary": "术语库",
   "drawer.topics": "主题",
   "drawer.templates": "规则模板",
+  "drawer.runtimeScenes": "数据运行场景",
   "drawer.settings": "设置",
   "drawer.language": "语言",
   "topics.create.selectTemplate.title": "新建主题 · 选择模板",

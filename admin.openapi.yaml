@@ -1,0 +1,776 @@
+openapi: 3.0.3
+info:
+  title: RuleOps Admin Runtime API
+  version: 1.0.0
+  description: Runtime environment management, preview, and Solr dataset metadata APIs.
+servers:
+  - url: http://localhost:8080
+
+tags:
+  - name: Runtime
+    description: Runtime control plane APIs
+  - name: RuntimeMapping
+    description: Runtime field mapping management APIs
+  - name: RuntimeDeployment
+    description: Topic deployment/binding APIs
+
+paths:
+  /api/runtime/datasets:
+    get:
+      tags: [Runtime]
+      summary: List datasets and fields from Solr
+      operationId: listRuntimeDatasets
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeDatasetsApiResponse'
+
+  /api/runtime/environments:
+    post:
+      tags: [Runtime]
+      summary: Create runtime environment
+      operationId: createRuntimeEnvironment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRuntimeEnvironmentRequest'
+            example:
+              name: Policy Runtime DEV
+              code: POLICY_DEV
+              description: Development runtime environment for policy rules
+              envType: DEV
+              searchEngineType: SOLR
+              searchEndpoint: http://localhost:8983/
+              datasetName: policy_docs_v1
+              scopeType: LAST_N
+              scopeValue: 1000
+              fieldMappings:
+                - logicalField: DOC_TITLE
+                  physicalField: title
+                  fieldType: text
+                - logicalField: DOC_TEXT
+                  physicalField: content
+                  fieldType: text
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
+    get:
+      tags: [Runtime]
+      summary: List runtime environments
+      operationId: listRuntimeEnvironments
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Fuzzy match by runtime environment name.
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Backward-compatible generic keyword filter.
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [DRAFT, ACTIVE, ARCHIVED]
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvironmentListApiResponse'
+
+  /api/runtime/environments/{id}:
+    get:
+      tags: [Runtime]
+      summary: Get runtime environment detail
+      operationId: getRuntimeEnvironmentById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
+    put:
+      tags: [Runtime]
+      summary: Update runtime environment (DRAFT only)
+      operationId: updateRuntimeEnvironment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRuntimeEnvironmentRequest'
+            example:
+              name: Policy Runtime DEV V2
+              searchEndpoint: http://localhost:8983/
+              datasetName: policy_docs_v2
+              scopeType: CUSTOM
+              scopeQuery: publish_date:[NOW-30DAY TO NOW]
+              fieldMappings:
+                - logicalField: DOC_TITLE
+                  physicalField: title
+                  fieldType: text
+                - logicalField: DOC_TEXT
+                  physicalField: body
+                  fieldType: text
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
+
+  /api/runtime/environments/{id}/activate:
+    post:
+      tags: [Runtime]
+      summary: Activate runtime environment and create immutable snapshot
+      operationId: activateRuntimeEnvironment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeTransitionRequest'
+            example:
+              operator: admin
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
+
+  /api/runtime/environments/{id}/archive:
+    post:
+      tags: [Runtime]
+      summary: Archive runtime environment
+      operationId: archiveRuntimeEnvironment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
+
+  /api/runtime/preview:
+    post:
+      tags: [Runtime]
+      summary: Preview rule compilation in runtime environment
+      operationId: runtimePreview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimePreviewRequest'
+            example:
+              environmentId: 3
+              limit: 20
+              ruleJson:
+                root:
+                  type: FIELD
+                  field: TITLE
+                  child:
+                    type: TERM_SET
+                    matchMode: ANY
+                    terms:
+                      - conceptId: talent_subsidy
+                        source: TERM
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimePreviewApiResponse'
+
+  /api/runtime/environments/{id}/mappings:
+    get:
+      tags: [RuntimeMapping]
+      summary: Get field mappings of runtime environment
+      operationId: getRuntimeEnvironmentMappings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeFieldMappingsApiResponse'
+    put:
+      tags: [RuntimeMapping]
+      summary: Replace field mappings of runtime environment (DRAFT only)
+      operationId: replaceRuntimeEnvironmentMappings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeFieldMappingsReplaceRequest'
+            example:
+              fieldMappings:
+                - logicalField: DOC_TITLE
+                  physicalField: title
+                  fieldType: text
+                - logicalField: DOC_TEXT
+                  physicalField: body
+                  fieldType: text
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeFieldMappingsApiResponse'
+
+  /api/runtime/topic-deployments:
+    post:
+      tags: [RuntimeDeployment]
+      summary: Deploy topic to runtime environment and bind frozen snapshot
+      description: |
+        This endpoint is for admin deployment workflow.
+        It binds a topic to runtime_environment_id and runtime_snapshot_version.
+      operationId: deployTopicToRuntime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicRuntimeDeployRequest'
+            example:
+              topicId: topic-8d0f
+              environmentId: 3
+              snapshotVersion: 2
+              expectedHash: 7fd9f25a
+              operator: admin
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicRuntimeDeploymentApiResponse'
+
+  /api/runtime/topic-deployments/{topicId}:
+    get:
+      tags: [RuntimeDeployment]
+      summary: Query current runtime deployment binding of topic
+      operationId: getTopicRuntimeDeployment
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicRuntimeDeploymentApiResponse'
+
+  /api/runtime/topic-deployments/{topicId}/rollback:
+    post:
+      tags: [RuntimeDeployment]
+      summary: Rollback topic runtime binding to a previous snapshot version
+      operationId: rollbackTopicRuntimeDeployment
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicRuntimeRollbackRequest'
+            example:
+              environmentId: 3
+              snapshotVersion: 2
+              expectedHash: 7fd9f25a
+              operator: admin
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicRuntimeDeploymentApiResponse'
+
+components:
+  schemas:
+    ApiError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+
+    RuntimeFieldMappingItem:
+      type: object
+      properties:
+        logicalField:
+          type: string
+          description: Logical field code, e.g. DOC_TITLE, DOC_TEXT.
+        physicalField:
+          type: string
+          description: Actual index field name.
+        fieldType:
+          type: string
+      required: [logicalField, physicalField]
+
+    CreateRuntimeEnvironmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        envType:
+          type: string
+          enum: [DEV, TEST, PROD]
+        searchEngineType:
+          type: string
+          enum: [SOLR, ELASTICSEARCH]
+          default: SOLR
+        searchEndpoint:
+          type: string
+        datasetName:
+          type: string
+        scopeType:
+          type: string
+          enum: [LAST_N, FULL, CUSTOM]
+        scopeValue:
+          type: integer
+          format: int32
+        scopeQuery:
+          type: string
+        createdBy:
+          type: string
+        fieldMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeFieldMappingItem'
+      required: [name, code, envType, datasetName, fieldMappings]
+
+    UpdateRuntimeEnvironmentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        searchEngineType:
+          type: string
+          enum: [SOLR, ELASTICSEARCH]
+        searchEndpoint:
+          type: string
+        datasetName:
+          type: string
+        scopeType:
+          type: string
+          enum: [LAST_N, FULL, CUSTOM]
+        scopeValue:
+          type: integer
+          format: int32
+        scopeQuery:
+          type: string
+        fieldMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeFieldMappingItem'
+
+    RuntimeEnvironmentView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        code:
+          type: string
+        description:
+          type: string
+        envType:
+          type: string
+          enum: [DEV, TEST, PROD]
+        status:
+          type: string
+          enum: [DRAFT, ACTIVE, ARCHIVED]
+        searchEngineType:
+          type: string
+          enum: [SOLR, ELASTICSEARCH]
+        searchEndpoint:
+          type: string
+        datasetName:
+          type: string
+        scopeType:
+          type: string
+          enum: [LAST_N, FULL, CUSTOM]
+        scopeValue:
+          type: integer
+          format: int32
+        scopeQuery:
+          type: string
+        version:
+          type: integer
+          format: int32
+        locked:
+          type: boolean
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        fieldMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeFieldMappingItem'
+
+    RuntimeEnvironmentListItemView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        envType:
+          type: string
+          enum: [DEV, TEST, PROD]
+        datasetName:
+          type: string
+        scopeLabel:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, ACTIVE, ARCHIVED]
+        editable:
+          type: boolean
+        activatable:
+          type: boolean
+      required: [id, name, envType, datasetName, scopeLabel, status, editable, activatable]
+
+    RuntimeTransitionRequest:
+      type: object
+      properties:
+        operator:
+          type: string
+
+    RuntimePreviewRequest:
+      type: object
+      properties:
+        environmentId:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int32
+          default: 20
+        ruleJson:
+          type: object
+          description: UiRuleViewModel payload.
+      required: [environmentId, ruleJson]
+
+    RuntimePreviewHit:
+      type: object
+      properties:
+        id:
+          type: string
+        score:
+          type: number
+          format: double
+        fields:
+          type: object
+          additionalProperties: true
+
+    RuntimePreviewResponse:
+      type: object
+      properties:
+        environmentId:
+          type: integer
+          format: int64
+        datasetName:
+          type: string
+        gql:
+          type: string
+        lucene:
+          type: string
+        scopedQuery:
+          type: string
+        limit:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+        hits:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimePreviewHit'
+
+    RuntimeDatasetFieldView:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        indexed:
+          type: boolean
+        stored:
+          type: boolean
+        multiValued:
+          type: boolean
+      required: [name, indexed, stored, multiValued]
+
+    RuntimeDatasetView:
+      type: object
+      properties:
+        dataset:
+          type: string
+        documentCount:
+          type: integer
+          format: int64
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeDatasetFieldView'
+      required: [dataset, documentCount, fields]
+
+    RuntimeEnvironmentPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeEnvironmentView'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+      required: [items, page, size, total]
+
+    RuntimeEnvironmentApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeEnvironmentView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    RuntimeEnvironmentListApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeEnvironmentListItemView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    RuntimeEnvironmentPageApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeEnvironmentPage'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    RuntimePreviewApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimePreviewResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    RuntimeDatasetsApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeDatasetView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    RuntimeFieldMappingsReplaceRequest:
+      type: object
+      properties:
+        fieldMappings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeFieldMappingItem'
+      required: [fieldMappings]
+
+    RuntimeFieldMappingsApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeFieldMappingItem'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    TopicRuntimeDeployRequest:
+      type: object
+      properties:
+        topicId:
+          type: string
+        environmentId:
+          type: integer
+          format: int64
+        snapshotVersion:
+          type: integer
+          format: int32
+        expectedHash:
+          type: string
+        operator:
+          type: string
+      required: [topicId, environmentId, snapshotVersion, expectedHash]
+
+    TopicRuntimeRollbackRequest:
+      type: object
+      properties:
+        environmentId:
+          type: integer
+          format: int64
+        snapshotVersion:
+          type: integer
+          format: int32
+        expectedHash:
+          type: string
+        operator:
+          type: string
+      required: [environmentId, snapshotVersion, expectedHash]
+
+    TopicRuntimeDeploymentView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        environmentId:
+          type: integer
+          format: int64
+        snapshotVersion:
+          type: integer
+          format: int32
+        status:
+          type: string
+          enum: [UNBOUND, BOUND, ROLLED_BACK]
+        deployedAt:
+          type: string
+          format: date-time
+        deployedBy:
+          type: string
+        bindingHash:
+          type: string
+          description: Use as expectedHash for next deploy/rollback request.
+      required: [topicId, status, bindingHash]
+
+    TopicRuntimeDeploymentApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicRuntimeDeploymentView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
