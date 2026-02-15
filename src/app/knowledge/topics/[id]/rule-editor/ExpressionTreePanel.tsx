@@ -13,10 +13,15 @@ export function ExpressionTreePanel({
   onToggleCollapse,
   onCreateRoot,
   onAddChild,
+  onSetPositionRelation,
+  onEditPositionRelation,
+  onCancelPositionRelation,
+  onPatchNode,
   onDelete,
-  onWrap,
   onMoveChild,
   onEditTermSet,
+  activePreviewNodeId,
+  onDebugNode,
   diffMode,
   onToggleDiffMode,
   diffStatusById,
@@ -30,10 +35,15 @@ export function ExpressionTreePanel({
   onToggleCollapse: (id: string) => void;
   onCreateRoot: (type: UiNodeType) => void;
   onAddChild: (parentId: string, type: UiNodeType) => void;
+  onSetPositionRelation: (parentId: string) => void;
+  onEditPositionRelation: (parentId: string) => void;
+  onCancelPositionRelation: (parentId: string) => void;
+  onPatchNode: (nodeId: string, updater: (node: UiExpressionNode) => UiExpressionNode) => void;
   onDelete: (nodeId: string) => void;
-  onWrap: (nodeId: string, wrapper: "LOGIC" | "NOT" | "PROXIMITY") => void;
   onMoveChild: (parentId: string, childId: string, direction: "up" | "down") => void;
   onEditTermSet: (nodeId: string) => void;
+  activePreviewNodeId: string | undefined;
+  onDebugNode: (nodeId: string) => void;
   diffMode: boolean;
   onToggleDiffMode: () => void;
   diffStatusById: Record<string, NodeDiffStatus>;
@@ -68,7 +78,7 @@ export function ExpressionTreePanel({
             <button
               type="button"
               className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
-              onClick={() => onCreateRoot("LOGIC")}
+              onClick={() => onCreateRoot("FIELD")}
               disabled={readOnly}
             >
               {t("ruleEditor.treePanel.empty.createRoot")}
@@ -87,10 +97,15 @@ export function ExpressionTreePanel({
             onSelect={onSelect}
             onToggleCollapse={onToggleCollapse}
             onAddChild={onAddChild}
+            onSetPositionRelation={onSetPositionRelation}
+            onEditPositionRelation={onEditPositionRelation}
+            onCancelPositionRelation={onCancelPositionRelation}
+            onPatchNode={onPatchNode}
             onDelete={onDelete}
-            onWrap={onWrap}
             onMoveChild={onMoveChild}
             onEditTermSet={onEditTermSet}
+            activePreviewNodeId={activePreviewNodeId}
+            onDebugNode={onDebugNode}
             diffMode={diffMode}
             diffStatusById={diffStatusById}
           />

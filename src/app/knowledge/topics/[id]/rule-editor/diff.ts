@@ -71,10 +71,12 @@ function visit(node: UiExpressionNode, map: Map<string, string>) {
   map.set(node.id, signature(node));
   switch (node.type) {
     case "LOGIC":
+    case "POSITION_RELATION":
     case "PROXIMITY":
       node.children.forEach((child) => visit(child, map));
       return;
     case "FIELD":
+    case "STRUCTURE":
     case "NOT":
     case "SCORE":
       if (node.child) visit(node.child, map);
@@ -88,13 +90,17 @@ function visit(node: UiExpressionNode, map: Map<string, string>) {
 function signature(node: UiExpressionNode): string {
   switch (node.type) {
     case "LOGIC":
-      return `${node.type}:${node.operator}:${node.children.length}`;
+      return `${node.type}:${node.operator}:${node.threshold ?? ""}:${node.importanceWeight ?? node.weight ?? ""}:${node.children.length}`;
+    case "STRUCTURE":
+      return `${node.type}:${node.scope}:${node.child?.id ?? ""}`;
+    case "POSITION_RELATION":
+      return `${node.type}:${node.mode}:${node.relation ?? "NEAR"}:${node.ordered}:${node.strict}:${node.distance ?? ""}:${node.children.length}`;
     case "PROXIMITY":
       return `${node.type}:${node.relation}:${node.ordered}:${node.distance ?? ""}:${node.children.length}`;
     case "FIELD":
       return `${node.type}:${node.field}:${node.child?.id ?? ""}`;
     case "TERM_SET":
-      return `${node.type}:${node.matchMode}:${node.terms.map((item) => item.conceptId).join(",")}`;
+      return `${node.type}:${node.matchMode}:${node.importanceWeight ?? node.weight ?? ""}:${node.terms.map((item) => item.conceptId).join(",")}`;
     case "NOT":
       return `${node.type}:${node.child?.id ?? ""}`;
     case "SCORE":

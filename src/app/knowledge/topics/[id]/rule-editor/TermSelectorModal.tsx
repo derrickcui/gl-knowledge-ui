@@ -241,8 +241,9 @@ export function TermSelectorModal({
           </button>
           <button
             type="button"
-            className="rounded bg-black px-3 py-1.5 text-sm text-white"
+            className="rounded bg-black px-3 py-1.5 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => onConfirm(Object.values(selected))}
+            disabled={selectedList.length === 0}
           >
             {t("ruleEditor.termSelector.confirm", { count: selectedList.length })}
           </button>

@@ -1,18 +1,21 @@
-﻿import { createId } from "./utils";
+import { createId } from "./utils";
 import type {
-  ProximityRelation,
   UiCapabilityViewModel,
   UiExpressionNode,
   UiNodeType,
+  UiPositionRelationNode,
 } from "./types";
+import { canUsePositionMode, canUsePositionRelation } from "./capability-policy";
 
 export function createNode(type: UiNodeType): UiExpressionNode {
   const id = createId();
   switch (type) {
     case "LOGIC":
       return { id, type, operator: "AND", children: [] };
-    case "PROXIMITY":
-      return { id, type, relation: "NEAR", ordered: false, distance: 5, children: [] };
+    case "STRUCTURE":
+      return { id, type, scope: "PARAGRAPH", child: null };
+    case "POSITION_RELATION":
+      return createPositionRelationNode("PROXIMITY");
     case "FIELD":
       return { id, type, field: "CONTENT", child: null };
     case "TERM_SET":
@@ -24,6 +27,29 @@ export function createNode(type: UiNodeType): UiExpressionNode {
     case "TOPIC_REF":
       return { id, type, topicId: "" };
   }
+}
+
+export function createPositionRelationNode(mode: "PROXIMITY" | "ORDER"): UiPositionRelationNode {
+  if (mode === "ORDER") {
+    return {
+      id: createId(),
+      type: "POSITION_RELATION",
+      mode,
+      relation: "NEAR",
+      strict: true,
+      distance: undefined,
+      children: [],
+    };
+  }
+  return {
+    id: createId(),
+    type: "POSITION_RELATION",
+    mode,
+    relation: "NEAR",
+    ordered: false,
+    distance: 5,
+    children: [],
+  };
 }
 
 export function updateNode(
@@ -39,7 +65,15 @@ export function updateNode(
         ...root,
         children: root.children.map((child) => updateNode(child, nodeId, updater)),
       };
+    case "POSITION_RELATION":
+      return {
+        ...root,
+        children: root.children
+          .map((child) => updateNode(child, nodeId, updater))
+          .filter((child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET"),
+      };
     case "FIELD":
+    case "STRUCTURE":
     case "NOT":
     case "SCORE":
       return {
@@ -62,18 +96,64 @@ export function insertChild(
       case "LOGIC":
       case "PROXIMITY":
         return { ...node, children: [...node.children, newNode] };
+      case "POSITION_RELATION":
+        if (newNode.type !== "TERM_SET") return node;
+        return { ...node, children: [...node.children, newNode] };
       case "FIELD":
+      case "STRUCTURE":
       case "NOT":
       case "SCORE":
-        return { ...node, child: newNode };
+        if (!node.child) {
+          return { ...node, child: newNode };
+        }
+        return {
+          ...node,
+          child: placeNodeAboveExisting(newNode, node.child),
+        };
       default:
         return node;
     }
   });
 }
 
+function placeNodeAboveExisting(
+  inserted: UiExpressionNode,
+  existing: UiExpressionNode
+): UiExpressionNode {
+  switch (inserted.type) {
+    case "LOGIC":
+    case "POSITION_RELATION":
+    case "PROXIMITY":
+      return {
+        ...inserted,
+        children: [existing, ...inserted.children],
+      };
+    case "FIELD":
+    case "STRUCTURE":
+    case "NOT":
+    case "SCORE":
+      return {
+        ...inserted,
+        child: existing,
+      };
+    case "TERM_SET":
+    case "TOPIC_REF":
+      return {
+        id: createId(),
+        type: "LOGIC",
+        operator: "AND",
+        children: [existing, inserted],
+      };
+  }
+}
+
 export function removeNode(root: UiExpressionNode, nodeId: string): UiExpressionNode | null {
-  if (root.id === nodeId) return null;
+  if (root.id === nodeId) {
+    if (root.type === "FIELD") {
+      throw new Error("FIELD node cannot be deleted");
+    }
+    return null;
+  }
   switch (root.type) {
     case "LOGIC":
     case "PROXIMITY":
@@ -83,7 +163,18 @@ export function removeNode(root: UiExpressionNode, nodeId: string): UiExpression
           .map((child) => removeNode(child, nodeId))
           .filter((child): child is UiExpressionNode => Boolean(child)),
       };
+    case "POSITION_RELATION":
+      return {
+        ...root,
+        children: root.children
+          .map((child) => removeNode(child, nodeId))
+          .filter(
+            (child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> =>
+              Boolean(child) && child.type === "TERM_SET"
+          ),
+      };
     case "FIELD":
+    case "STRUCTURE":
     case "NOT":
     case "SCORE":
       return {
@@ -101,61 +192,72 @@ export function getAllowedChildTypes(
   capability: UiCapabilityViewModel
 ): UiNodeType[] {
   const allow: UiNodeType[] = [];
-  if (parentNode.type === "LOGIC") {
-    if (capability.semantic.allowNested) {
-      allow.push("LOGIC");
-    }
-    allow.push("TERM_SET");
-    if (capability.structure.allowRelation.some((item) => item !== "NONE")) {
-      allow.push("PROXIMITY");
-    }
-    if (capability.advanced.allowNot) {
-      allow.push("NOT");
-    }
-    if (capability.advanced.allowScore) {
-      allow.push("SCORE");
-    }
-    if (capability.advanced.allowTopicRef) {
-      allow.push("TOPIC_REF");
-    }
-    return allow;
-  }
-
-  if (parentNode.type === "PROXIMITY") {
-    allow.push("TERM_SET");
-    if (capability.semantic.allowNested) {
-      allow.push("LOGIC");
-    }
-    if (capability.advanced.allowTopicRef) {
-      allow.push("TOPIC_REF");
-    }
-    return allow;
-  }
-
   if (parentNode.type === "FIELD") {
+    if (parentNode.child) return allow;
     allow.push("LOGIC");
     return allow;
   }
-
-  if (parentNode.type === "NOT" || parentNode.type === "SCORE") {
+  if (parentNode.type === "STRUCTURE") {
+    if (parentNode.child) return allow;
+    allow.push("LOGIC");
+    return allow;
+  }
+  if (parentNode.type === "LOGIC") {
     allow.push("TERM_SET");
+    if (canUsePositionRelation(capability)) {
+      allow.push("POSITION_RELATION");
+    }
     allow.push("LOGIC");
-    if (capability.structure.allowRelation.some((item) => item !== "NONE")) {
-      allow.push("PROXIMITY");
-    }
-    if (capability.advanced.allowTopicRef) {
-      allow.push("TOPIC_REF");
-    }
     return allow;
   }
-
+  if (parentNode.type === "POSITION_RELATION") {
+    allow.push("TERM_SET");
+    return allow;
+  }
   return allow;
+}
+
+export function supportsPositionRelation(capability: UiCapabilityViewModel): boolean {
+  return canUsePositionRelation(capability);
+}
+
+export function canCreatePositionMode(
+  capability: UiCapabilityViewModel,
+  mode: "PROXIMITY" | "ORDER"
+): boolean {
+  return canUsePositionMode(capability, mode);
+}
+
+export function findParent(root: UiExpressionNode, nodeId: string): UiExpressionNode | null {
+  switch (root.type) {
+    case "LOGIC":
+    case "POSITION_RELATION":
+    case "PROXIMITY": {
+      for (const child of root.children) {
+        if (child.id === nodeId) return root;
+        const found = findParent(child, nodeId);
+        if (found) return found;
+      }
+      return null;
+    }
+    case "FIELD":
+    case "STRUCTURE":
+    case "NOT":
+    case "SCORE":
+      if (!root.child) return null;
+      if (root.child.id === nodeId) return root;
+      return findParent(root.child, nodeId);
+    case "TERM_SET":
+    case "TOPIC_REF":
+      return null;
+  }
 }
 
 export function findNode(root: UiExpressionNode, nodeId: string): UiExpressionNode | null {
   if (root.id === nodeId) return root;
   switch (root.type) {
     case "LOGIC":
+    case "POSITION_RELATION":
     case "PROXIMITY":
       for (const child of root.children) {
         const found = findNode(child, nodeId);
@@ -163,6 +265,7 @@ export function findNode(root: UiExpressionNode, nodeId: string): UiExpressionNo
       }
       return null;
     case "FIELD":
+    case "STRUCTURE":
     case "NOT":
     case "SCORE":
       return root.child ? findNode(root.child, nodeId) : null;
@@ -172,75 +275,6 @@ export function findNode(root: UiExpressionNode, nodeId: string): UiExpressionNo
   }
 }
 
-export function wrapNode(
-  root: UiExpressionNode,
-  nodeId: string,
-  wrapper: "LOGIC" | "NOT" | "PROXIMITY"
-): { root: UiExpressionNode; wrapperId: string } {
-  const [next, wrapperId] = wrapNodeInternal(root, nodeId, wrapper);
-  return { root: next, wrapperId: wrapperId ?? root.id };
-}
-
-function wrapNodeInternal(
-  node: UiExpressionNode,
-  nodeId: string,
-  wrapper: "LOGIC" | "NOT" | "PROXIMITY"
-): [UiExpressionNode, string | null] {
-  if (node.id === nodeId) {
-    const wrapped = wrapCurrent(node, wrapper);
-    return [wrapped, wrapped.id];
-  }
-  switch (node.type) {
-    case "LOGIC":
-    case "PROXIMITY": {
-      let wrapperId: string | null = null;
-      const children = node.children.map((child) => {
-        const [nextChild, nextWrapperId] = wrapNodeInternal(child, nodeId, wrapper);
-        if (nextWrapperId) wrapperId = nextWrapperId;
-        return nextChild;
-      });
-      return [{ ...node, children }, wrapperId];
-    }
-    case "FIELD":
-    case "NOT":
-    case "SCORE": {
-      if (!node.child) return [node, null];
-      const [nextChild, wrapperId] = wrapNodeInternal(node.child, nodeId, wrapper);
-      return [{ ...node, child: nextChild }, wrapperId];
-    }
-    case "TERM_SET":
-    case "TOPIC_REF":
-      return [node, null];
-  }
-}
-
-function wrapCurrent(node: UiExpressionNode, wrapper: "LOGIC" | "NOT" | "PROXIMITY"): UiExpressionNode {
-  if (wrapper === "LOGIC") {
-    return {
-      id: createId(),
-      type: "LOGIC",
-      operator: "AND",
-      children: [node],
-    };
-  }
-  if (wrapper === "NOT") {
-    return {
-      id: createId(),
-      type: "NOT",
-      child: node,
-    };
-  }
-  const proximity: ProximityRelation = "NEAR";
-  return {
-    id: createId(),
-    type: "PROXIMITY",
-    relation: proximity,
-    ordered: false,
-    distance: 5,
-    children: [node],
-  };
-}
-
 export function moveChild(
   root: UiExpressionNode,
   parentId: string,
@@ -248,7 +282,7 @@ export function moveChild(
   direction: "up" | "down"
 ): UiExpressionNode {
   return updateNode(root, parentId, (node) => {
-    if (node.type !== "LOGIC" && node.type !== "PROXIMITY") return node;
+    if (node.type !== "LOGIC" && node.type !== "POSITION_RELATION" && node.type !== "PROXIMITY") return node;
     const index = node.children.findIndex((item) => item.id === childId);
     if (index < 0) return node;
     const target = direction === "up" ? index - 1 : index + 1;
@@ -256,7 +290,14 @@ export function moveChild(
     const next = [...node.children];
     const [moved] = next.splice(index, 1);
     next.splice(target, 0, moved);
+    if (node.type === "POSITION_RELATION") {
+      return {
+        ...node,
+        children: next.filter(
+          (child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET"
+        ),
+      };
+    }
     return { ...node, children: next };
   });
 }
-

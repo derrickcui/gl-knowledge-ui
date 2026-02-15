@@ -1,323 +1,332 @@
 openapi: 3.0.3
 info:
-  title: RuleOps Admin Runtime API
-  version: 1.0.0
-  description: Runtime environment management, preview, and Solr dataset metadata APIs.
+  title: RuleOps Rule Preview API
+  version: 2.1.0
+  description: APIs for in-memory rule editing, full preview, and node-level preview.
 servers:
   - url: http://localhost:8080
 
 tags:
   - name: Runtime
-    description: Runtime control plane APIs
-  - name: RuntimeMapping
-    description: Runtime field mapping management APIs
-  - name: RuntimeDeployment
-    description: Topic deployment/binding APIs
+    description: Runtime environment selection for preview
+  - name: RulePreview
+    description: Rule preview and preview document detail
 
 paths:
-  /api/runtime/datasets:
+  /api/runtime/active:
     get:
       tags: [Runtime]
-      summary: List datasets and fields from Solr
-      operationId: listRuntimeDatasets
+      summary: List active runtime environments
+      operationId: listActiveRuntimeEnvironments
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeDatasetsApiResponse'
+                type: array
+                items:
+                  $ref: '#/components/schemas/RuntimeActiveItem'
 
-  /api/runtime/environments:
+  /api/rules/preview:
     post:
-      tags: [Runtime]
-      summary: Create runtime environment
-      operationId: createRuntimeEnvironment
+      tags: [RulePreview]
+      deprecated: true
+      summary: Execute full rule preview
+      description: Deprecated. Use POST /api/rules/runtime/execute with mode=FULL.
+      operationId: previewRule
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateRuntimeEnvironmentRequest'
-            example:
-              name: Policy Runtime DEV
-              code: POLICY_DEV
-              description: Development runtime environment for policy rules
-              envType: DEV
-              searchEngineType: SOLR
-              searchEndpoint: http://localhost:8983/
-              datasetName: policy_docs_v1
-              scopeType: LAST_N
-              scopeValue: 1000
-              fieldMappings:
-                - logicalField: DOC_TITLE
-                  physicalField: title
-                  fieldType: text
-                - logicalField: DOC_TEXT
-                  physicalField: content
-                  fieldType: text
+              $ref: '#/components/schemas/RulePreviewRequest'
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
-    get:
-      tags: [Runtime]
-      summary: List runtime environments
-      operationId: listRuntimeEnvironments
-      parameters:
-        - name: name
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Fuzzy match by runtime environment name.
-        - name: keyword
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Backward-compatible generic keyword filter.
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [DRAFT, ACTIVE, ARCHIVED]
-      responses:
-        '200':
-          description: Success
+                $ref: '#/components/schemas/RulePreviewResponse'
+              example:
+                mode: FULL
+                nodeId: null
+                total: 311
+                previousTotal: null
+                items: []
+        '400':
+          description: Validation or mapping error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimeEnvironmentListApiResponse'
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
-  /api/runtime/environments/{id}:
-    get:
-      tags: [Runtime]
-      summary: Get runtime environment detail
-      operationId: getRuntimeEnvironmentById
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
-    put:
-      tags: [Runtime]
-      summary: Update runtime environment (DRAFT only)
-      operationId: updateRuntimeEnvironment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
+  /api/rules/preview/node:
+    post:
+      tags: [RulePreview]
+      deprecated: true
+      summary: Execute node subtree preview
+      description: Deprecated. Use POST /api/rules/runtime/execute with mode=NODE.
+      operationId: previewRuleNode
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateRuntimeEnvironmentRequest'
+              $ref: '#/components/schemas/NodePreviewRequest'
             example:
-              name: Policy Runtime DEV V2
-              searchEndpoint: http://localhost:8983/
-              datasetName: policy_docs_v2
-              scopeType: CUSTOM
-              scopeQuery: publish_date:[NOW-30DAY TO NOW]
-              fieldMappings:
-                - logicalField: DOC_TITLE
-                  physicalField: title
-                  fieldType: text
-                - logicalField: DOC_TEXT
-                  physicalField: body
-                  fieldType: text
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
-
-  /api/runtime/environments/{id}/activate:
-    post:
-      tags: [Runtime]
-      summary: Activate runtime environment and create immutable snapshot
-      operationId: activateRuntimeEnvironment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RuntimeTransitionRequest'
-            example:
-              operator: admin
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
-
-  /api/runtime/environments/{id}/archive:
-    post:
-      tags: [Runtime]
-      summary: Archive runtime environment
-      operationId: archiveRuntimeEnvironment
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeEnvironmentApiResponse'
-
-  /api/runtime/preview:
-    post:
-      tags: [Runtime]
-      summary: Preview rule compilation in runtime environment
-      operationId: runtimePreview
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RuntimePreviewRequest'
-            example:
-              environmentId: 3
-              limit: 20
               ruleJson:
                 root:
                   type: FIELD
-                  field: TITLE
+                  field: CONTENT
                   child:
-                    type: TERM_SET
-                    matchMode: ANY
-                    terms:
-                      - conceptId: talent_subsidy
-                        source: TERM
+                    type: LOGIC
+                    operator: AND
+                    children: []
+              nodeId: 848a3813-a382-421c-b1f2-4f5f86f09a2a
+              runtimeEnvironmentId: 1
+              limit: 20
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RuntimePreviewApiResponse'
+                $ref: '#/components/schemas/RulePreviewResponse'
+              example:
+                mode: NODE
+                nodeId: 848a3813-a382-421c-b1f2-4f5f86f09a2a
+                total: 860
+                previousTotal: null
+                items: []
+        '400':
+          description: Validation or mapping error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment or node unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Execution timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
-  /api/runtime/environments/{id}/mappings:
-    get:
-      tags: [RuntimeMapping]
-      summary: Get field mappings of runtime environment
-      operationId: getRuntimeEnvironmentMappings
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeFieldMappingsApiResponse'
-    put:
-      tags: [RuntimeMapping]
-      summary: Replace field mappings of runtime environment (DRAFT only)
-      operationId: replaceRuntimeEnvironmentMappings
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: integer
-            format: int64
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RuntimeFieldMappingsReplaceRequest'
-            example:
-              fieldMappings:
-                - logicalField: DOC_TITLE
-                  physicalField: title
-                  fieldType: text
-                - logicalField: DOC_TEXT
-                  physicalField: body
-                  fieldType: text
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RuntimeFieldMappingsApiResponse'
-
-  /api/runtime/topic-deployments:
+  /api/rules/runtime/execute:
     post:
-      tags: [RuntimeDeployment]
-      summary: Deploy topic to runtime environment and bind frozen snapshot
-      description: |
-        This endpoint is for admin deployment workflow.
-        It binds a topic to runtime_environment_id and runtime_snapshot_version.
-      operationId: deployTopicToRuntime
+      tags: [RulePreview]
+      summary: Execute runtime rule in FULL, NODE or IMPACT mode
+      description: Preferred unified runtime execution endpoint for preview and analysis. IMPACT mode enforces count-only analysis, max 15 conditions, and a server-side timeout guard.
+      x-max-condition-count: 15
+      x-impact-timeout-ms: 2000
+      operationId: executeRuntimeRule
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TopicRuntimeDeployRequest'
-            example:
-              topicId: topic-8d0f
-              environmentId: 3
-              snapshotVersion: 2
-              expectedHash: 7fd9f25a
-              operator: admin
+              $ref: '#/components/schemas/RuleRuntimeExecuteRequest'
+            examples:
+              fullMode:
+                summary: FULL mode request
+                value:
+                  mode: FULL
+                  runtimeEnvironmentId: 1
+                  rule:
+                    root:
+                      type: LOGIC
+                      nodeId: root-1
+                      operator: AND
+                      children:
+                        - type: FIELD
+                          nodeId: field-1
+                          field: CONTENT
+                          child:
+                            type: TERM_SET
+                            nodeId: term-1
+                            matchMode: ANY
+                            terms:
+                              - source: CONCEPT
+                                conceptId: "20"
+                                conceptName: 人才
+                                includeDescendants: false
+                    references: []
+                  options:
+                    page: 1
+                    size: 20
+                    withHighlight: true
+                    withItems: true
+              nodeMode:
+                summary: NODE mode request
+                value:
+                  mode: NODE
+                  runtimeEnvironmentId: 1
+                  nodeId: term-1
+                  rule:
+                    root:
+                      type: LOGIC
+                      nodeId: root-1
+                      operator: AND
+                      children:
+                        - type: FIELD
+                          nodeId: field-1
+                          field: CONTENT
+                          child:
+                            type: TERM_SET
+                            nodeId: term-1
+                            matchMode: ANY
+                            terms:
+                              - source: CONCEPT
+                                conceptId: "20"
+                                conceptName: 人才
+                                includeDescendants: false
+                    references: []
+                  options:
+                    page: 1
+                    size: 20
+                    withHighlight: true
+                    withItems: true
+              impactMode:
+                summary: IMPACT mode request
+                value:
+                  mode: IMPACT
+                  runtimeEnvironmentId: 1
+                  rule:
+                    root:
+                      type: LOGIC
+                      nodeId: root-1
+                      operator: AND
+                      children:
+                        - type: TERM_SET
+                          nodeId: term-1
+                          matchMode: ANY
+                          terms:
+                            - source: CONCEPT
+                              conceptId: "20"
+                              conceptName: 博士
+                              includeDescendants: false
+                        - type: TERM_SET
+                          nodeId: term-2
+                          matchMode: ANY
+                          terms:
+                            - source: CONCEPT
+                              conceptId: "36"
+                              conceptName: 人力社保部门
+                              includeDescendants: false
+                    references: []
+                  options:
+                    withItems: false
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopicRuntimeDeploymentApiResponse'
+                $ref: '#/components/schemas/RuleRuntimeExecuteResponse'
+              examples:
+                fullMode:
+                  summary: FULL mode response
+                  value:
+                    mode: FULL
+                    runtimeEnvironmentId: 1
+                    total: 311
+                    page: 1
+                    size: 20
+                    took: 43
+                    items:
+                      - id: doc-1
+                        title: 关于人才补贴政策
+                        matchedReasons:
+                          - field: DOC_TEXT
+                            label: 正文
+                            displayText: 正文包含“人才”
+                            matchedTerms: [人才]
+                        highlightFragments:
+                          - "...符合<mark>人才</mark>补贴条件..."
+                    metadata:
+                      engineVersion: "1.0"
+                      executionId: "d4be8a53-c283-4fd2-8a75-d5f88f6ab020"
+                nodeMode:
+                  summary: NODE mode response
+                  value:
+                    mode: NODE
+                    runtimeEnvironmentId: 1
+                    nodeId: term-1
+                    page: 1
+                    size: 20
+                    fullTotal: 311
+                    nodeTotal: 860
+                    delta: 549
+                    took: 65
+                    items:
+                      - id: doc-2
+                        title: 2023年度领军人才项目
+                        matchedReasons:
+                          - field: DOC_TEXT
+                            label: 正文
+                            displayText: 正文包含“博士”
+                            matchedTerms: [博士]
+                        highlightFragments:
+                          - "...出站<mark>博士</mark>后可申报..."
+                    metadata:
+                      engineVersion: "1.0"
+                      executionId: "2fe20bf6-184f-4f3a-a05d-f7c83d39ce8b"
+                impactMode:
+                  summary: IMPACT mode response
+                  value:
+                    mode: IMPACT
+                    runtimeEnvironmentId: 1
+                    fullTotal: 311
+                    conditionCount: 2
+                    took: 210
+                    analysis:
+                      - nodeId: term-1
+                        label: 博士
+                        removedTotal: 720
+                        contribution: 409
+                        impactLevel: HIGH
+                      - nodeId: term-2
+                        label: 人力社保部门
+                        removedTotal: 323
+                        contribution: 12
+                        impactLevel: LOW
+                    metadata:
+                      engineVersion: "1.0"
+                      executionId: "9369a176-387e-43d8-bf28-f75f01386158"
+        '400':
+          description: Validation or mapping error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment or node unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
-  /api/runtime/topic-deployments/{topicId}:
+  /api/rules/preview/document/{docId}:
     get:
-      tags: [RuntimeDeployment]
-      summary: Query current runtime deployment binding of topic
-      operationId: getTopicRuntimeDeployment
+      tags: [RulePreview]
+      deprecated: true
+      summary: Get preview document detail
+      description: Deprecated legacy endpoint kept for compatibility.
+      operationId: getPreviewDocumentDetail
       parameters:
-        - name: topicId
+        - name: docId
           in: path
           required: true
           schema:
@@ -328,126 +337,17 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopicRuntimeDeploymentApiResponse'
-
-  /api/runtime/topic-deployments/{topicId}/rollback:
-    post:
-      tags: [RuntimeDeployment]
-      summary: Rollback topic runtime binding to a previous snapshot version
-      operationId: rollbackTopicRuntimeDeployment
-      parameters:
-        - name: topicId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TopicRuntimeRollbackRequest'
-            example:
-              environmentId: 3
-              snapshotVersion: 2
-              expectedHash: 7fd9f25a
-              operator: admin
-      responses:
-        '200':
-          description: Success
+                $ref: '#/components/schemas/PreviewDocumentDetailResponse'
+        '404':
+          description: Document not found in preview scope
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/TopicRuntimeDeploymentApiResponse'
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
-    ApiError:
-      type: object
-      properties:
-        code:
-          type: string
-        message:
-          type: string
-      required: [code, message]
-
-    RuntimeFieldMappingItem:
-      type: object
-      properties:
-        logicalField:
-          type: string
-          description: Logical field code, e.g. DOC_TITLE, DOC_TEXT.
-        physicalField:
-          type: string
-          description: Actual index field name.
-        fieldType:
-          type: string
-      required: [logicalField, physicalField]
-
-    CreateRuntimeEnvironmentRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        code:
-          type: string
-        description:
-          type: string
-        envType:
-          type: string
-          enum: [DEV, TEST, PROD]
-        searchEngineType:
-          type: string
-          enum: [SOLR, ELASTICSEARCH]
-          default: SOLR
-        searchEndpoint:
-          type: string
-        datasetName:
-          type: string
-        scopeType:
-          type: string
-          enum: [LAST_N, FULL, CUSTOM]
-        scopeValue:
-          type: integer
-          format: int32
-        scopeQuery:
-          type: string
-        createdBy:
-          type: string
-        fieldMappings:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeFieldMappingItem'
-      required: [name, code, envType, datasetName, fieldMappings]
-
-    UpdateRuntimeEnvironmentRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        searchEngineType:
-          type: string
-          enum: [SOLR, ELASTICSEARCH]
-        searchEndpoint:
-          type: string
-        datasetName:
-          type: string
-        scopeType:
-          type: string
-          enum: [LAST_N, FULL, CUSTOM]
-        scopeValue:
-          type: integer
-          format: int32
-        scopeQuery:
-          type: string
-        fieldMappings:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeFieldMappingItem'
-
-    RuntimeEnvironmentView:
+    RuntimeActiveItem:
       type: object
       properties:
         id:
@@ -455,322 +355,522 @@ components:
           format: int64
         name:
           type: string
-        code:
-          type: string
-        description:
-          type: string
-        envType:
-          type: string
-          enum: [DEV, TEST, PROD]
-        status:
-          type: string
-          enum: [DRAFT, ACTIVE, ARCHIVED]
-        searchEngineType:
-          type: string
-          enum: [SOLR, ELASTICSEARCH]
-        searchEndpoint:
-          type: string
-        datasetName:
-          type: string
-        scopeType:
-          type: string
-          enum: [LAST_N, FULL, CUSTOM]
-        scopeValue:
-          type: integer
-          format: int32
-        scopeQuery:
-          type: string
-        version:
-          type: integer
-          format: int32
-        locked:
-          type: boolean
-        createdBy:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        fieldMappings:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeFieldMappingItem'
-
-    RuntimeEnvironmentListItemView:
-      type: object
-      properties:
-        id:
-          type: integer
-          format: int64
-        name:
-          type: string
-        envType:
-          type: string
-          enum: [DEV, TEST, PROD]
         datasetName:
           type: string
         scopeLabel:
           type: string
-        status:
-          type: string
-          enum: [DRAFT, ACTIVE, ARCHIVED]
-        editable:
-          type: boolean
-        activatable:
-          type: boolean
-      required: [id, name, envType, datasetName, scopeLabel, status, editable, activatable]
+      required: [id, name, datasetName, scopeLabel]
 
-    RuntimeTransitionRequest:
+    RulePreviewRequest:
       type: object
       properties:
-        operator:
-          type: string
-
-    RuntimePreviewRequest:
-      type: object
-      properties:
-        environmentId:
+        ruleJson:
+          type: object
+          additionalProperties: true
+        runtimeEnvironmentId:
           type: integer
           format: int64
         limit:
           type: integer
           format: int32
+          minimum: 1
+          maximum: 100
           default: 20
+      required: [ruleJson, runtimeEnvironmentId]
+
+    NodePreviewRequest:
+      type: object
+      properties:
         ruleJson:
           type: object
-          description: UiRuleViewModel payload.
-      required: [environmentId, ruleJson]
+          additionalProperties: true
+        nodeId:
+          type: string
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          default: 20
+      required: [ruleJson, nodeId, runtimeEnvironmentId]
 
-    RuntimePreviewHit:
+    RuleRuntimeExecuteRequest:
+      oneOf:
+        - $ref: '#/components/schemas/RuleRuntimeExecuteFullRequest'
+        - $ref: '#/components/schemas/RuleRuntimeExecuteNodeRequest'
+        - $ref: '#/components/schemas/RuleRuntimeExecuteImpactRequest'
+      discriminator:
+        propertyName: mode
+        mapping:
+          FULL: '#/components/schemas/RuleRuntimeExecuteFullRequest'
+          NODE: '#/components/schemas/RuleRuntimeExecuteNodeRequest'
+          IMPACT: '#/components/schemas/RuleRuntimeExecuteImpactRequest'
+
+    RuleRuntimeExecuteFullRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [FULL]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        options:
+          $ref: '#/components/schemas/RuleRuntimeExecuteOptions'
+      required: [mode, runtimeEnvironmentId, rule]
+
+    RuleRuntimeExecuteNodeRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [NODE]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        nodeId:
+          type: string
+        options:
+          $ref: '#/components/schemas/RuleRuntimeExecuteOptions'
+      required: [mode, runtimeEnvironmentId, rule, nodeId]
+
+    RuleRuntimeExecuteImpactRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [IMPACT]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        options:
+          $ref: '#/components/schemas/RuleRuntimeExecuteImpactOptions'
+      required: [mode, runtimeEnvironmentId, rule]
+
+    RuleRuntimeExecuteOptions:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 1
+        size:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          default: 20
+        withHighlight:
+          type: boolean
+          default: true
+        withItems:
+          type: boolean
+          default: true
+
+    RuleRuntimeExecuteImpactOptions:
+      type: object
+      properties:
+        withHighlight:
+          type: boolean
+          enum: [false]
+          default: false
+        withItems:
+          type: boolean
+          enum: [false]
+          default: false
+
+    UiRuleViewModel:
+      type: object
+      properties:
+        root:
+          $ref: '#/components/schemas/UiExpressionNode'
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiRuleReference'
+      required: [root]
+
+    UiExpressionNode:
+      oneOf:
+        - $ref: '#/components/schemas/UiLogicNode'
+        - $ref: '#/components/schemas/UiProximityNode'
+        - $ref: '#/components/schemas/UiFieldNode'
+        - $ref: '#/components/schemas/UiTermSetNode'
+        - $ref: '#/components/schemas/UiNotNode'
+        - $ref: '#/components/schemas/UiScoreNode'
+        - $ref: '#/components/schemas/UiTopicRefNode'
+      discriminator:
+        propertyName: type
+        mapping:
+          LOGIC: '#/components/schemas/UiLogicNode'
+          PROXIMITY: '#/components/schemas/UiProximityNode'
+          FIELD: '#/components/schemas/UiFieldNode'
+          TERM_SET: '#/components/schemas/UiTermSetNode'
+          NOT: '#/components/schemas/UiNotNode'
+          SCORE: '#/components/schemas/UiScoreNode'
+          TOPIC_REF: '#/components/schemas/UiTopicRefNode'
+
+    UiLogicNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [LOGIC]
+        nodeId:
+          type: string
+        operator:
+          type: string
+        threshold:
+          type: integer
+          format: int32
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, children]
+
+    UiProximityNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [PROXIMITY]
+        nodeId:
+          type: string
+        relation:
+          type: string
+        ordered:
+          type: boolean
+        distance:
+          type: integer
+          format: int32
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, children]
+
+    UiFieldNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [FIELD]
+        nodeId:
+          type: string
+        field:
+          type: string
+        child:
+          $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, field, child]
+
+    UiTermSetNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [TERM_SET]
+        nodeId:
+          type: string
+        terms:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiExpression'
+        matchMode:
+          type: string
+          enum: [ANY, ALL]
+      required: [type, terms]
+
+    UiNotNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [NOT]
+        nodeId:
+          type: string
+        child:
+          $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, child]
+
+    UiScoreNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [SCORE]
+        nodeId:
+          type: string
+        operator:
+          type: string
+        threshold:
+          type: integer
+          format: int32
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, children]
+
+    UiTopicRefNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [TOPIC_REF]
+        nodeId:
+          type: string
+        topicId:
+          type: string
+      required: [type, topicId]
+
+    UiExpression:
+      type: object
+      properties:
+        source:
+          type: string
+          enum: [CONCEPT, TERM]
+        conceptId:
+          type: string
+          description: Required. For CONCEPT use concept id; for TERM use literal term text.
+        conceptName:
+          type: string
+        includeDescendants:
+          type: boolean
+      required: [source, conceptId]
+
+    UiRuleReference:
+      type: object
+      properties:
+        type:
+          type: string
+        topicId:
+          type: string
+        mode:
+          type: string
+      required: [type, topicId]
+
+    MatchedReasonView:
+      type: object
+      properties:
+        field:
+          type: string
+        label:
+          type: string
+        displayText:
+          type: string
+        matchedTerms:
+          type: array
+          items:
+            type: string
+      required: [field, label, displayText, matchedTerms]
+
+    RulePreviewItem:
       type: object
       properties:
         id:
           type: string
-        score:
-          type: number
-          format: double
-        fields:
-          type: object
-          additionalProperties: true
+        title:
+          type: string
+        matchedReasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchedReasonView'
+        highlightFragments:
+          type: array
+          items:
+            type: string
+      required: [id, title, matchedReasons, highlightFragments]
 
-    RuntimePreviewResponse:
+    ImpactConditionView:
       type: object
       properties:
-        environmentId:
+        nodeId:
+          type: string
+        label:
+          type: string
+        removedTotal:
           type: integer
           format: int64
-        datasetName:
-          type: string
-        gql:
-          type: string
-        lucene:
-          type: string
-        scopedQuery:
-          type: string
-        limit:
+        contribution:
           type: integer
-          format: int32
+          format: int64
+        impactLevel:
+          type: string
+          enum: [HIGH, MEDIUM, LOW, NONE]
+      required: [nodeId, label, removedTotal, contribution, impactLevel]
+
+    RulePreviewResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [FULL, NODE]
+        nodeId:
+          type: string
+          nullable: true
         total:
           type: integer
           format: int64
-        hits:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimePreviewHit'
-
-    RuntimeDatasetFieldView:
-      type: object
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-        indexed:
-          type: boolean
-        stored:
-          type: boolean
-        multiValued:
-          type: boolean
-      required: [name, indexed, stored, multiValued]
-
-    RuntimeDatasetView:
-      type: object
-      properties:
-        dataset:
-          type: string
-        documentCount:
+        previousTotal:
           type: integer
           format: int64
-        fields:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeDatasetFieldView'
-      required: [dataset, documentCount, fields]
-
-    RuntimeEnvironmentPage:
-      type: object
-      properties:
+          nullable: true
         items:
           type: array
           items:
-            $ref: '#/components/schemas/RuntimeEnvironmentView'
+            $ref: '#/components/schemas/RulePreviewItem'
+      required: [mode, total, items]
+
+    RuleRuntimeExecuteResponse:
+      oneOf:
+        - $ref: '#/components/schemas/RuleRuntimeExecuteFullResponse'
+        - $ref: '#/components/schemas/RuleRuntimeExecuteNodeResponse'
+        - $ref: '#/components/schemas/RuleRuntimeExecuteImpactResponse'
+      discriminator:
+        propertyName: mode
+        mapping:
+          FULL: '#/components/schemas/RuleRuntimeExecuteFullResponse'
+          NODE: '#/components/schemas/RuleRuntimeExecuteNodeResponse'
+          IMPACT: '#/components/schemas/RuleRuntimeExecuteImpactResponse'
+
+    RuleRuntimeExecuteFullResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [FULL]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        total:
+          type: integer
+          format: int64
         page:
           type: integer
           format: int32
         size:
           type: integer
           format: int32
-        total:
+        took:
           type: integer
           format: int64
-      required: [items, page, size, total]
-
-    RuntimeEnvironmentApiResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/RuntimeEnvironmentView'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
-
-    RuntimeEnvironmentListApiResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
+        items:
           type: array
           items:
-            $ref: '#/components/schemas/RuntimeEnvironmentListItemView'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
+            $ref: '#/components/schemas/RulePreviewItem'
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, total, page, size, took, items, metadata]
 
-    RuntimeEnvironmentPageApiResponse:
+    RuleRuntimeExecuteNodeResponse:
       type: object
       properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/RuntimeEnvironmentPage'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
-
-    RuntimePreviewApiResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/RuntimePreviewResponse'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
-
-    RuntimeDatasetsApiResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeDatasetView'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
-
-    RuntimeFieldMappingsReplaceRequest:
-      type: object
-      properties:
-        fieldMappings:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeFieldMappingItem'
-      required: [fieldMappings]
-
-    RuntimeFieldMappingsApiResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/RuntimeFieldMappingItem'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
-
-    TopicRuntimeDeployRequest:
-      type: object
-      properties:
-        topicId:
+        mode:
           type: string
-        environmentId:
+          enum: [NODE]
+        runtimeEnvironmentId:
           type: integer
           format: int64
-        snapshotVersion:
+        nodeId:
+          type: string
+        nodeTotal:
+          type: integer
+          format: int64
+        fullTotal:
+          type: integer
+          format: int64
+        delta:
+          type: integer
+          format: int64
+        page:
           type: integer
           format: int32
-        expectedHash:
-          type: string
-        operator:
-          type: string
-      required: [topicId, environmentId, snapshotVersion, expectedHash]
-
-    TopicRuntimeRollbackRequest:
-      type: object
-      properties:
-        environmentId:
-          type: integer
-          format: int64
-        snapshotVersion:
+        size:
           type: integer
           format: int32
-        expectedHash:
-          type: string
-        operator:
-          type: string
-      required: [environmentId, snapshotVersion, expectedHash]
-
-    TopicRuntimeDeploymentView:
-      type: object
-      properties:
-        topicId:
-          type: string
-        environmentId:
+        took:
           type: integer
           format: int64
-        snapshotVersion:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RulePreviewItem'
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, nodeId, nodeTotal, fullTotal, delta, page, size, took, items, metadata]
+
+    RuleRuntimeExecuteImpactResponse:
+      type: object
+      description: Statistical analysis mode. No document items are returned.
+      properties:
+        mode:
+          type: string
+          enum: [IMPACT]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        fullTotal:
+          type: integer
+          format: int64
+        conditionCount:
           type: integer
           format: int32
-        status:
-          type: string
-          enum: [UNBOUND, BOUND, ROLLED_BACK]
-        deployedAt:
-          type: string
-          format: date-time
-        deployedBy:
-          type: string
-        bindingHash:
-          type: string
-          description: Use as expectedHash for next deploy/rollback request.
-      required: [topicId, status, bindingHash]
+        analysis:
+          type: array
+          items:
+            $ref: '#/components/schemas/ImpactConditionView'
+        took:
+          type: integer
+          format: int64
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, fullTotal, conditionCount, analysis, took, metadata]
 
-    TopicRuntimeDeploymentApiResponse:
+    RuntimeExecuteMetadata:
       type: object
       properties:
-        success:
-          type: boolean
-        data:
-          $ref: '#/components/schemas/TopicRuntimeDeploymentView'
-        error:
-          $ref: '#/components/schemas/ApiError'
-      required: [success]
+        engineVersion:
+          type: string
+        executionId:
+          type: string
+      required: [engineVersion, executionId]
+
+    PreviewDocumentDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        matchedReasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/MatchedReasonView'
+        highlightFragments:
+          type: array
+          items:
+            type: string
+      required: [id, title, content, matchedReasons, highlightFragments]
+
+    ErrorResponse:
+      type: object
+      properties:
+        errorCode:
+          type: string
+        message:
+          type: string
+      required: [errorCode, message]
+

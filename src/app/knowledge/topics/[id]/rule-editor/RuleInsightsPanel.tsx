@@ -39,10 +39,10 @@ export function RuleInsightsPanel({ root }: { root: UiExpressionNode | null }) {
 }
 
 function countNodes(node: UiExpressionNode): number {
-  if (node.type === "LOGIC" || node.type === "PROXIMITY") {
+  if (node.type === "LOGIC" || node.type === "POSITION_RELATION" || node.type === "PROXIMITY") {
     return 1 + node.children.reduce((sum, child) => sum + countNodes(child), 0);
   }
-  if (node.type === "FIELD" || node.type === "NOT" || node.type === "SCORE") {
+  if (node.type === "FIELD" || node.type === "STRUCTURE" || node.type === "NOT" || node.type === "SCORE") {
     return 1 + (node.child ? countNodes(node.child) : 0);
   }
   return 1;
@@ -65,4 +65,3 @@ function buildSamples(root: UiExpressionNode | null): string[] {
   if (!root) return ["暂无示例"];
   return ["文档 A（关键词匹配较高）", "文档 B（标题命中）", "文档 C（结构关系命中）"];
 }
-

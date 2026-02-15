@@ -4,6 +4,8 @@ import type { UiCapabilityViewModel } from "./types";
 import { CapabilityIndicatorBar } from "./CapabilityIndicatorBar";
 import { useDraggableDialog } from "@/lib/useDraggableDialog";
 
+export type OpenViewOption = "effectValidation" | "gqlPreview" | "diffCompare";
+
 type HeaderBarProps = {
   topicName: string;
   status: string;
@@ -14,9 +16,12 @@ type HeaderBarProps = {
   onBack?: () => void;
   onSave?: () => void;
   onDeleteDraft?: () => void;
-  onPreview?: () => void;
   onSubmit?: () => void;
   onPublish?: () => void;
+  disableSave?: boolean;
+  disableSaveHint?: string;
+  openViews?: Record<OpenViewOption, boolean>;
+  onToggleOpenView?: (option: OpenViewOption, checked: boolean) => void;
 };
 
 export function HeaderBar({
@@ -29,11 +34,15 @@ export function HeaderBar({
   onBack,
   onSave,
   onDeleteDraft,
-  onPreview,
   onSubmit,
   onPublish,
+  disableSave = false,
+  disableSaveHint,
+  openViews,
+  onToggleOpenView,
 }: HeaderBarProps) {
   const [capabilityOpen, setCapabilityOpen] = useState(false);
+  const [openViewMenuOpen, setOpenViewMenuOpen] = useState(false);
   const capabilityDialogDrag = useDraggableDialog(capabilityOpen);
 
   return (
@@ -75,7 +84,8 @@ export function HeaderBar({
               type="button"
               className="rounded border px-3 py-1.5 text-sm"
               onClick={onSave}
-              disabled={busy || !onSave}
+              disabled={busy || !onSave || disableSave}
+              title={disableSave ? disableSaveHint : undefined}
             >
               {t("ruleEditor.header.saveDraft")}
             </button>
@@ -86,14 +96,6 @@ export function HeaderBar({
               disabled={busy || !onDeleteDraft}
             >
               {t("topicActions.deleteDraft")}
-            </button>
-            <button
-              type="button"
-              className="rounded border px-3 py-1.5 text-sm"
-              onClick={onPreview}
-              disabled={busy || !onPreview}
-            >
-              {t("ruleEditor.header.preview")}
             </button>
             <button
               type="button"
@@ -111,6 +113,43 @@ export function HeaderBar({
             >
               {t("ruleEditor.header.publish")}
             </button>
+            <div className="relative">
+              <button
+                type="button"
+                className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
+                onClick={() => setOpenViewMenuOpen((prev) => !prev)}
+              >
+                {t("ruleEditor.header.openView")} {"\u25BE"}
+              </button>
+              {openViewMenuOpen ? (
+                <div className="absolute right-0 z-20 mt-2 min-w-[180px] rounded-lg border bg-white p-2 shadow-lg">
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(openViews?.effectValidation)}
+                      onChange={(event) => onToggleOpenView?.("effectValidation", event.target.checked)}
+                    />
+                    <span>{t("ruleEditor.header.openView.effectValidation")}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(openViews?.gqlPreview)}
+                      onChange={(event) => onToggleOpenView?.("gqlPreview", event.target.checked)}
+                    />
+                    <span>{t("ruleEditor.header.openView.gqlPreview")}</span>
+                  </label>
+                  <label className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-slate-50">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(openViews?.diffCompare)}
+                      onChange={(event) => onToggleOpenView?.("diffCompare", event.target.checked)}
+                    />
+                    <span>{t("ruleEditor.header.openView.diffCompare")}</span>
+                  </label>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>

@@ -17,34 +17,45 @@ export function buildRootFromBlocks(
   structure: BuilderStructure,
   blocks: ConditionBlock[]
 ): UiExpressionNode {
-  const logic: UiLogicNode = {
+  let logic: UiLogicNode = {
     id: createId(),
     type: "LOGIC",
     operator: mode === "ALL" ? "ALL" : mode === "ACCRUE" ? "ACCRUE" : "ANY",
     children: blocks.map((block) => buildBlockNode(block)),
   };
 
-  let root: UiExpressionNode = logic;
-
-  if (structure.relation !== "NONE") {
-    root = {
-      id: createId(),
-      type: "PROXIMITY",
-      relation: structure.relation,
-      ordered: structure.ordered,
-      distance: structure.distance,
-      children: [root],
+  if (structure.relation === "NEAR" || structure.relation === "ORDER") {
+    const termChildren = logic.children.filter(
+      (child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET"
+    );
+    logic = {
+      ...logic,
+      children: [
+        {
+          id: createId(),
+          type: "POSITION_RELATION",
+          mode: "PROXIMITY",
+          relation: "NEAR",
+          ordered: structure.relation === "ORDER" ? true : structure.ordered,
+          strict: undefined,
+          distance: structure.relation === "NEAR" ? structure.distance : undefined,
+          children: termChildren,
+        },
+      ],
     };
   }
 
-  if (structure.field !== "CONTENT") {
-    root = {
+  const root: UiExpressionNode = {
+    id: createId(),
+    type: "FIELD",
+    field: structure.field,
+    child: {
       id: createId(),
-      type: "FIELD",
-      field: structure.field,
-      child: root,
-    };
-  }
+      type: "STRUCTURE",
+      scope: structure.relation === "SENTENCE" ? "SENTENCE" : "PARAGRAPH",
+      child: logic,
+    },
+  };
 
   return root;
 }

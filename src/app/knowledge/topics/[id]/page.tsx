@@ -7,21 +7,34 @@ import {
   fetchTopicById,
   fetchTopicDraft,
   publishTopic,
-  previewTopicRule,
   saveTopicDraft,
   deleteTopicDraft,
   submitTopicReview,
   fetchTopicReviews,
   type ExplainPreviewViewModel,
 } from "@/lib/topic-api";
+import {
+  fetchPreviewDocumentDetail,
+  type PreviewDocumentDetailResponse,
+  type RulePreviewResponse,
+} from "@/lib/rule-preview-api";
+import { fetchActiveRuntimes, type RuntimeActiveItem } from "@/lib/api/runtime";
+import type { RuntimeExecuteOptions, RuntimeExecuteResponse } from "@/lib/api/ruleRuntime";
+import { useRuntimeStore } from "@/store/runtimeStore";
+import { useRuleExecutionStore } from "@/store/ruleExecutionStore";
+import { useRuntimeExecution } from "@/hooks/useRuntimeExecution";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import FromReviewBanner from "@/components/review/FromReviewBanner";
 import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
 import { RuleEditor } from "./rule-editor";
-import type { UiRuleViewModel, UiCapabilityViewModel } from "./rule-editor/types";
+import type {
+  UiRuleViewModel,
+  UiCapabilityViewModel,
+} from "./rule-editor/types";
 import { t } from "@/i18n";
-import { normalizeRootForSave } from "./rule-editor/save-normalize";
-import { useDraggableDialog } from "@/lib/useDraggableDialog";
+import { hydrateRootForEditor, normalizeRootForSave } from "./rule-editor/save-normalize";
+import { validateTree } from "./rule-editor/validation";
+import { readDefaultRuntimeSceneSelection } from "@/lib/runtime-default-scene";
 
 function hasDraftPayload(
   payload: unknown
@@ -36,6 +49,65 @@ function hasDraftPayload(
   const rule = item.rule as Record<string, unknown> | null;
   const capability = item.capability as Record<string, unknown> | null;
   return Boolean(rule && typeof rule === "object" && "root" in rule && capability && typeof capability === "object");
+}
+
+function mapExecutionResultToPreview(result: RuntimeExecuteResponse): RulePreviewResponse {
+  if (result.mode === "FULL") {
+    return {
+      mode: "FULL_RULE",
+      total: result.total,
+      nodeTotal: result.total,
+      fullRuleTotal: result.total,
+      delta: 0,
+      items: result.items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        matchedReasons: item.matchedReasons.map((reason) => ({
+          field: reason.field,
+          label: reason.label,
+          keyword: reason.matchedTerms?.[0] ?? reason.displayText ?? "",
+        })),
+        highlightFragments: item.highlightFragments,
+      })),
+    };
+  }
+
+  if (result.mode === "NODE") {
+    return {
+      mode: "NODE",
+      nodeId: result.nodeId,
+      total: result.nodeTotal,
+      nodeTotal: result.nodeTotal,
+      fullRuleTotal: result.fullTotal,
+      delta: result.delta,
+      items: result.items.map((item) => ({
+        id: item.id,
+        title: item.title,
+        matchedReasons: item.matchedReasons.map((reason) => ({
+          field: reason.field,
+          label: reason.label,
+          keyword: reason.matchedTerms?.[0] ?? reason.displayText ?? "",
+        })),
+        highlightFragments: item.highlightFragments,
+      })),
+    };
+  }
+
+  return {
+    mode: "FULL_RULE",
+    total: result.fullTotal,
+    nodeTotal: result.fullTotal,
+    fullRuleTotal: result.fullTotal,
+    delta: 0,
+    impactRanking: result.analysis.map((item) => ({
+      nodeId: item.nodeId,
+      label: item.label,
+      totalWithoutNode: item.removedTotal,
+      contribution: item.contribution,
+      contributionRate: result.fullTotal > 0 ? item.contribution / result.fullTotal : 0,
+    })),
+    items: [],
+  };
 }
 
 export default function TopicDetailPage() {
@@ -56,11 +128,21 @@ export default function TopicDetailPage() {
   const [topicStatus, setTopicStatus] = useState("DRAFT");
   const [templateLabel, setTemplateLabel] = useState<string | undefined>(undefined);
   const [reviewReason, setReviewReason] = useState<string | null>(null);
-  const [previewBusy, setPreviewBusy] = useState(false);
-  const [previewDialogOpen, setPreviewDialogOpen] = useState(false);
-  const [previewGql, setPreviewGql] = useState<string>("");
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const previewDialogDrag = useDraggableDialog(previewDialogOpen);
+  const executionLoading = useRuleExecutionStore((s) => s.loading);
+  const executionError = useRuleExecutionStore((s) => s.error);
+  const setExecutionError = useRuleExecutionStore((s) => s.setError);
+  const activeRuntimeId = useRuntimeStore((s) => s.activeRuntimeId);
+  const setActiveRuntime = useRuntimeStore((s) => s.setActiveRuntime);
+  const { execute, executeNode } = useRuntimeExecution();
+  const [previewResult, setPreviewResult] = useState<RulePreviewResponse | null>(null);
+  const [fullRuntimeResult, setFullRuntimeResult] = useState<Extract<RuntimeExecuteResponse, { mode: "FULL" }> | null>(null);
+  const [impactRuntimeResult, setImpactRuntimeResult] = useState<Extract<RuntimeExecuteResponse, { mode: "IMPACT" }> | null>(null);
+  const [nodeRuntimeResults, setNodeRuntimeResults] = useState<
+    Record<string, Extract<RuntimeExecuteResponse, { mode: "NODE" }>>
+  >({});
+  const [previewDocumentBusy, setPreviewDocumentBusy] = useState(false);
+  const [previewDocument, setPreviewDocument] = useState<PreviewDocumentDetailResponse | null>(null);
+  const [runtimeOptions, setRuntimeOptions] = useState<RuntimeActiveItem[]>([]);
   const [editorState, setEditorState] = useState<{
     rule: UiRuleViewModel;
     capability: UiCapabilityViewModel;
@@ -70,6 +152,17 @@ export default function TopicDetailPage() {
 
   async function handleSaveDraft() {
     if (!topicId || topicStatus === "IN_REVIEW" || !editorState) return;
+    const issues = validateTree(editorState.rule.root, editorState.capability).filter(
+      (item) => item.severity === "error"
+    );
+    if (issues.length > 0) {
+      setActionFeedback({
+        type: "error",
+        title: t("topicDetail.draft.saveFailed"),
+        message: issues[0].message,
+      });
+      return;
+    }
     setActionBusy(true);
     setActionFeedback(null);
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
@@ -88,8 +181,9 @@ export default function TopicDetailPage() {
             message: "ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â¨Ãƒâ€šÃ‚Â¿ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚Â¿ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¥ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒâ€¦Ã‚Â¾ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â»ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¾ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚Â¼ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¼Ãƒâ€¦Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚Â¯Ãƒâ€šÃ‚Â·ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â³Ãƒâ€šÃ‚Â»ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚ÂÃƒâ€¦Ã‚Â½ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â«Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã‚Â¦Ãƒâ€šÃ‚Â£ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¥ draft API ÃƒÆ’Ã‚Â¥ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚ÂºÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â»ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¾ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ÃƒÆ’Ã‚Â£ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡",
           });
         } else {
+          const hydratedRoot = hydrateRootForEditor(result.data.rule.root);
           setEditorState({
-            rule: result.data.rule,
+            rule: { ...result.data.rule, root: hydratedRoot },
             capability: result.data.capability,
             explain: result.data.explain ?? null,
             dirty: false,
@@ -138,6 +232,19 @@ export default function TopicDetailPage() {
 
   async function handleSubmitReview() {
     if (!topicId || topicStatus === "IN_REVIEW") return;
+    if (editorState) {
+      const issues = validateTree(editorState.rule.root, editorState.capability).filter(
+        (item) => item.severity === "error"
+      );
+      if (issues.length > 0) {
+        setActionFeedback({
+          type: "error",
+          title: t("topicDetail.review.submitFailed"),
+          message: issues[0].message,
+        });
+        return;
+      }
+    }
     setActionBusy(true);
     setActionFeedback(null);
 
@@ -159,59 +266,125 @@ export default function TopicDetailPage() {
     setActionBusy(false);
   }
 
-  async function handlePreviewGql() {
-    if (!topicId || !editorState) return;
-    setPreviewBusy(true);
-    setPreviewDialogOpen(true);
-    setPreviewGql("");
-    setPreviewError(null);
+  async function handleRunWorkspace(options?: { page?: number; size?: number }) {
+    if (!editorState) return;
+    setExecutionError(null);
+    setPreviewDocument(null);
+    const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
+    if (!resolvedRuntimeId) {
+      setExecutionError("No runtime selected");
+      return;
+    }
+    if (!activeRuntimeId) {
+      setActiveRuntime(resolvedRuntimeId);
+    }
 
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
-    const result = await previewTopicRule(topicId, {
-      rule: { root: normalizedRoot },
-    });
-
-    if (!result.data) {
-      setPreviewError(result.error ?? t("topicDetail.preview.failed"));
-      setPreviewBusy(false);
+    if (!normalizedRoot) {
+      setPreviewResult({
+        mode: "FULL_RULE",
+        nodeId: null,
+        total: 0,
+        previousTotal: null,
+        nodeTotal: 0,
+        fullRuleTotal: 0,
+        delta: 0,
+        impactRanking: [],
+        items: [],
+      });
       return;
     }
 
-    const gql =
-      result.data &&
-      typeof result.data === "object" &&
-      "gql" in (result.data as Record<string, unknown>)
-        ? (result.data as { gql?: unknown }).gql
-        : null;
+    try {
+      const fullRes = await execute({
+        mode: "FULL",
+        rule: { root: normalizedRoot, references: [] },
+        runtimeEnvironmentId: resolvedRuntimeId,
+        options: { page: options?.page, size: options?.size, withHighlight: true, withItems: true },
+      });
+      if (fullRes.mode === "FULL") {
+        setFullRuntimeResult(fullRes);
+        setPreviewResult(mapExecutionResultToPreview(fullRes));
+      }
 
-    if (typeof gql === "string" && gql.trim()) {
-      setPreviewGql(gql);
-    } else {
-      setPreviewError(t("topicDetail.preview.empty"));
+      const impactRes = await execute({
+        mode: "IMPACT",
+        rule: { root: normalizedRoot, references: [] },
+        runtimeEnvironmentId: resolvedRuntimeId,
+        options: { withHighlight: false, withItems: false },
+      });
+      if (impactRes.mode === "IMPACT") {
+        setImpactRuntimeResult(impactRes);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
+      setExecutionError(message);
     }
-
-    setPreviewBusy(false);
   }
 
-  async function handleCopyPreviewGql() {
-    if (!previewGql.trim()) return;
-    try {
-      await navigator.clipboard.writeText(previewGql);
-      setPreviewDialogOpen(false);
-      setActionFeedback({
-        type: "success",
-        title: t("ruleEditor.previewGql.copySuccess"),
-      });
-    } catch {
-      setActionFeedback({
-        type: "error",
-        title: t("ruleEditor.previewGql.copyFailed"),
-      });
+  async function handleRunNode(nodeId: string, options?: RuntimeExecuteOptions) {
+    if (!editorState || !nodeId) return;
+    setExecutionError(null);
+    const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
+    if (!resolvedRuntimeId) {
+      setExecutionError("No runtime selected");
+      return;
     }
+    if (!activeRuntimeId) {
+      setActiveRuntime(resolvedRuntimeId);
+    }
+    const normalizedRoot = normalizeRootForSave(editorState.rule.root);
+    if (!normalizedRoot) return;
+    try {
+      const nodeRes = await executeNode({
+        rule: { root: normalizedRoot, references: [] },
+        nodeId: nodeId,
+        runtimeEnvironmentId: resolvedRuntimeId,
+        options: {
+          page: options?.page,
+          size: options?.size,
+          withHighlight: options?.withHighlight ?? true,
+          withItems: options?.withItems ?? true,
+        },
+      });
+      if (nodeRes.mode === "NODE") {
+        setNodeRuntimeResults((prev) => ({ ...prev, [nodeId]: nodeRes }));
+        setPreviewResult(mapExecutionResultToPreview(nodeRes));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
+      setExecutionError(message);
+    }
+  }
+
+  async function handleSelectPreviewDocument(docId: string) {
+    if (!docId) return;
+    setPreviewDocumentBusy(true);
+    const result = await fetchPreviewDocumentDetail(docId);
+    if (!result.data) {
+      setExecutionError(result.error ?? "无法加载文档详情。");
+      setPreviewDocumentBusy(false);
+      return;
+    }
+    setPreviewDocument(result.data);
+    setPreviewDocumentBusy(false);
   }
 
   async function handlePublish() {
     if (!topicId || topicStatus === "IN_REVIEW") return;
+    if (editorState) {
+      const issues = validateTree(editorState.rule.root, editorState.capability).filter(
+        (item) => item.severity === "error"
+      );
+      if (issues.length > 0) {
+        setActionFeedback({
+          type: "error",
+          title: t("topicDetail.publish.failed"),
+          message: issues[0].message,
+        });
+        return;
+      }
+    }
     setActionBusy(true);
     setActionFeedback(null);
 
@@ -263,6 +436,27 @@ export default function TopicDetailPage() {
 
     setActionBusy(false);
   }
+
+  useEffect(() => {
+    const syncDefaultScene = async () => {
+      const selected = readDefaultRuntimeSceneSelection();
+      const activeItems = await fetchActiveRuntimes().catch(() => []);
+      setRuntimeOptions(activeItems);
+      if (selected?.id && activeItems.some((item) => item.id === selected.id)) {
+        setActiveRuntime(selected.id);
+        return;
+      }
+      if (activeItems[0]?.id) {
+        setActiveRuntime(activeItems[0].id);
+      }
+    };
+    syncDefaultScene();
+    const onStorage = () => {
+      syncDefaultScene();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [setActiveRuntime]);
 
   useEffect(() => {
     const fromReview = searchParams.get("fromReview");
@@ -326,8 +520,9 @@ export default function TopicDetailPage() {
             });
             setEditorState(null);
           } else {
+            const hydratedRoot = hydrateRootForEditor(draftResult.data.rule.root);
             setEditorState({
-              rule: draftResult.data.rule,
+              rule: { ...draftResult.data.rule, root: hydratedRoot },
               capability: draftResult.data.capability,
               explain: draftResult.data.explain ?? null,
               dirty: false,
@@ -393,13 +588,26 @@ export default function TopicDetailPage() {
                 capabilityLabel={editorState.capability.semantic.allowModes.join(" / ")}
                 dirty={editorState.dirty}
                 explain={editorState.explain}
-                actionBusy={actionBusy || previewBusy}
+                actionBusy={actionBusy || executionLoading}
                 onBack={() => router.push("/knowledge/topics")}
                 onSave={topicStatus === "IN_REVIEW" ? undefined : handleSaveDraft}
                 onDeleteDraft={topicStatus === "IN_REVIEW" ? undefined : handleDeleteDraft}
-                onPreview={handlePreviewGql}
+                onRunWorkspace={handleRunWorkspace}
+                onRunNode={handleRunNode}
+                onSelectPreviewDocument={handleSelectPreviewDocument}
                 onSubmit={topicStatus === "IN_REVIEW" ? undefined : handleSubmitReview}
                 onPublish={topicStatus === "IN_REVIEW" ? undefined : handlePublish}
+                previewResult={previewResult}
+                previewDocument={previewDocument}
+                previewDocumentBusy={previewDocumentBusy}
+                previewError={executionError}
+                previewBusy={executionLoading}
+                fullRuntimeResult={fullRuntimeResult}
+                impactRuntimeResult={impactRuntimeResult}
+                nodeRuntimeResults={nodeRuntimeResults}
+                runtimeOptions={runtimeOptions}
+                activeRuntimeId={activeRuntimeId}
+                onChangeRuntime={setActiveRuntime}
                 onChange={(next) =>
                   setEditorState((prev) =>
                     prev
@@ -420,60 +628,6 @@ export default function TopicDetailPage() {
               </div>
             )}
           </div>
-          {previewDialogOpen ? (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-              onClick={() => setPreviewDialogOpen(false)}
-            >
-              <div
-                className="max-h-[80vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white p-4 shadow-xl"
-                onClick={(event) => event.stopPropagation()}
-                style={previewDialogDrag.style}
-              >
-                <div
-                  className={`mb-3 flex items-start justify-between gap-4 select-none ${
-                    previewDialogDrag.dragging ? "cursor-grabbing" : "cursor-grab"
-                  }`}
-                  {...previewDialogDrag.handleProps}
-                >
-                  <div>
-                    <div className="text-base font-semibold">
-                      {t("ruleEditor.previewGql.title")}
-                    </div>
-                    <div className="mt-1 text-sm text-slate-500">
-                      {t("ruleEditor.previewGql.hint")}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
-                    onClick={handleCopyPreviewGql}
-                    disabled={previewBusy || Boolean(previewError) || !previewGql.trim()}
-                  >
-                    {t("ruleEditor.previewGql.copy")}
-                  </button>
-                  <button
-                    type="button"
-                    className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
-                    onClick={() => setPreviewDialogOpen(false)}
-                  >
-                    {t("common.close")}
-                  </button>
-                </div>
-                {previewBusy ? (
-                  <div className="text-sm text-slate-500">
-                    {t("common.loading")}
-                  </div>
-                ) : previewError ? (
-                  <div className="text-sm text-red-600">{previewError}</div>
-                ) : (
-                  <pre className="overflow-x-auto rounded-md border bg-slate-50 p-3 text-xs text-slate-800">
-                    <code>{previewGql}</code>
-                  </pre>
-                )}
-              </div>
-            </div>
-          ) : null}
         </div>
       )}
     </div>

@@ -1,5 +1,16 @@
-﻿export type LogicOperator = "AND" | "OR" | "ACCRUE" | "ALL" | "ANY";
-export type ProximityRelation = "NEAR" | "SENTENCE" | "PARAGRAPH";
+export type LogicOperator =
+  | "AND"
+  | "OR"
+  | "ACCRUE"
+  | "ALL"
+  | "ANY"
+  | "AT_LEAST"
+  | "LOGSUM"
+  | "WEIGHTED";
+export type ImportanceLevel = "HIGH" | "NORMAL" | "LOW";
+export type StructureScope = "SENTENCE" | "PARAGRAPH" | "DOCUMENT";
+export type PositionRelationMode = "PROXIMITY" | "ORDER";
+export type PositionRelationScope = "NEAR" | "SENTENCE" | "PARAGRAPH";
 export type RuleField = "CONTENT" | "TITLE" | "COLUMN";
 
 export interface UiRuleViewModel {
@@ -8,7 +19,9 @@ export interface UiRuleViewModel {
 
 export type UiExpressionNode =
   | UiLogicNode
-  | UiProximityNode
+  | UiStructureNode
+  | UiPositionRelationNode
+  | UiLegacyProximityNode
   | UiFieldNode
   | UiTermSetNode
   | UiNotNode
@@ -19,13 +32,36 @@ export interface UiLogicNode {
   id: string;
   type: "LOGIC";
   operator: LogicOperator;
+  threshold?: number;
+  importance?: ImportanceLevel;
+  importanceWeight?: number;
+  weight?: number;
   children: UiExpressionNode[];
 }
 
-export interface UiProximityNode {
+export interface UiStructureNode {
+  id: string;
+  type: "STRUCTURE";
+  scope: StructureScope;
+  child: UiExpressionNode | null;
+}
+
+export interface UiPositionRelationNode {
+  id: string;
+  type: "POSITION_RELATION";
+  mode: PositionRelationMode;
+  relation?: PositionRelationScope;
+  distance?: number;
+  ordered?: boolean;
+  strict?: boolean;
+  children: UiTermSetNode[];
+}
+
+// Backward-compatibility for legacy persisted trees.
+export interface UiLegacyProximityNode {
   id: string;
   type: "PROXIMITY";
-  relation: ProximityRelation;
+  relation: "NEAR" | "SENTENCE" | "PARAGRAPH" | "ORDER";
   ordered: boolean;
   distance?: number;
   children: UiExpressionNode[];
@@ -50,6 +86,9 @@ export interface UiTermSetNode {
   type: "TERM_SET";
   terms: UiTermExpression[];
   matchMode: "ANY" | "ALL";
+  importance?: ImportanceLevel;
+  importanceWeight?: number;
+  weight?: number;
 }
 
 export interface UiNotNode {
@@ -71,7 +110,15 @@ export interface UiTopicRefNode {
   topicId: string;
 }
 
-export type UiNodeType = UiExpressionNode["type"];
+export type UiNodeType =
+  | "LOGIC"
+  | "STRUCTURE"
+  | "POSITION_RELATION"
+  | "FIELD"
+  | "TERM_SET"
+  | "NOT"
+  | "SCORE"
+  | "TOPIC_REF";
 
 export interface UiSemanticCapability {
   allowModes: LogicOperator[];
@@ -81,7 +128,7 @@ export interface UiSemanticCapability {
 }
 
 export interface UiStructureCapability {
-  allowRelation: Array<"NONE" | ProximityRelation>;
+  allowRelation: Array<"NONE" | "NEAR" | "SENTENCE" | "PARAGRAPH" | "ORDER">;
   allowOrder: boolean;
   allowDistance: boolean;
 }
@@ -105,4 +152,3 @@ export interface UiCapabilityViewModel {
   where: UiWhereCapability;
   advanced: UiAdvancedCapability;
 }
-

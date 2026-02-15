@@ -3,7 +3,7 @@ import { buildRootFromBlocks } from "./UiRuleNormalizer";
 import { createId } from "./utils";
 
 export type BuilderMode = "ANY" | "ALL" | "ACCRUE";
-export type BlockRelation = "NONE" | "NEAR" | "SENTENCE" | "PARAGRAPH";
+export type BlockRelation = "NONE" | "NEAR" | "SENTENCE" | "PARAGRAPH" | "ORDER";
 
 export interface BuilderStructure {
   field: RuleField;
@@ -101,10 +101,29 @@ function unwrapGlobalStructure(node: UiExpressionNode, structure: BuilderStructu
 
   if (!current) return null;
 
+  if (current.type === "STRUCTURE") {
+    structure.relation = current.scope === "SENTENCE" ? "SENTENCE" : "PARAGRAPH";
+    current = current.child;
+  }
+
+  if (!current) return null;
+
+  if (current.type === "POSITION_RELATION") {
+    structure.relation = current.mode === "ORDER" ? "ORDER" : "NEAR";
+    structure.ordered = current.mode === "PROXIMITY" ? Boolean(current.ordered) : true;
+    structure.distance = current.mode === "PROXIMITY" ? current.distance ?? structure.distance : structure.distance;
+    current = {
+      id: current.id,
+      type: "LOGIC",
+      operator: "ANY",
+      children: current.children,
+    };
+  }
+
   if (current.type === "PROXIMITY") {
-    structure.relation = current.relation;
-    structure.ordered = current.ordered;
-    structure.distance = current.distance ?? structure.distance;
+    structure.relation = current.relation === "ORDER" ? "ORDER" : current.relation;
+    structure.ordered = current.relation === "ORDER" ? true : current.ordered;
+    structure.distance = current.relation === "NEAR" ? current.distance ?? structure.distance : structure.distance;
 
     if (current.children.length === 1) {
       current = current.children[0] ?? null;
@@ -130,10 +149,21 @@ function extractLegacyBlock(node: UiExpressionNode): { block: ConditionBlock; st
     current = current.child;
   }
 
+  if (current.type === "STRUCTURE" && current.child) {
+    structure.relation = current.scope === "SENTENCE" ? "SENTENCE" : "PARAGRAPH";
+    current = current.child;
+  }
+
+  if (current.type === "POSITION_RELATION") {
+    structure.relation = current.mode === "ORDER" ? "ORDER" : "NEAR";
+    structure.ordered = current.mode === "PROXIMITY" ? Boolean(current.ordered) : true;
+    structure.distance = current.mode === "PROXIMITY" ? current.distance ?? structure.distance : structure.distance;
+  }
+
   if (current.type === "PROXIMITY") {
-    structure.relation = current.relation;
-    structure.ordered = current.ordered;
-    structure.distance = current.distance ?? structure.distance;
+    structure.relation = current.relation === "ORDER" ? "ORDER" : current.relation;
+    structure.ordered = current.relation === "ORDER" ? true : current.ordered;
+    structure.distance = current.relation === "NEAR" ? current.distance ?? structure.distance : structure.distance;
   }
 
   return {
@@ -181,14 +211,20 @@ function parseBlock(node: UiExpressionNode): ConditionBlock {
 
 function gatherTerms(node: UiExpressionNode): UiTermExpression[] {
   if (node.type === "TERM_SET") return node.terms;
-  if (node.type === "LOGIC" || node.type === "PROXIMITY") return node.children.flatMap((child) => gatherTerms(child));
-  if (node.type === "FIELD" || node.type === "NOT" || node.type === "SCORE") return node.child ? gatherTerms(node.child) : [];
+  if (node.type === "LOGIC" || node.type === "POSITION_RELATION" || node.type === "PROXIMITY") {
+    return node.children.flatMap((child) => gatherTerms(child));
+  }
+  if (node.type === "FIELD" || node.type === "STRUCTURE" || node.type === "NOT" || node.type === "SCORE") {
+    return node.child ? gatherTerms(node.child) : [];
+  }
   return [];
 }
 
-function toMode(operator: "AND" | "OR" | "ACCRUE" | "ALL" | "ANY"): BuilderMode {
+function toMode(operator: "AND" | "OR" | "ACCRUE" | "ALL" | "ANY" | "AT_LEAST" | "LOGSUM" | "WEIGHTED"): BuilderMode {
   if (operator === "AND" || operator === "ALL") return "ALL";
-  if (operator === "ACCRUE") return "ACCRUE";
+  if (operator === "ACCRUE" || operator === "AT_LEAST" || operator === "LOGSUM" || operator === "WEIGHTED") {
+    return "ACCRUE";
+  }
   return "ANY";
 }
 
