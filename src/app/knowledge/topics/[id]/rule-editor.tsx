@@ -42,6 +42,7 @@ import {
 } from "./rule-editor/tree-utils";
 import { structureScopeOptionsForField } from "./rule-editor/capability-policy";
 import type { SelectedTerm } from "./rule-editor/term-selector-types";
+import { buildExplainViewModel } from "./rule-editor/explain/explain-builder";
 import type {
   ConditionImpactItem,
   PreviewDocumentDetailResponse,
@@ -182,6 +183,10 @@ export function RuleEditor({
     return undefined;
   }, [hasEmptyConditionGroup, hasInvalidSemanticModeState]);
   const diff = useMemo(() => buildNodeDiffDetail(baselineRootRef.current, rule.root), [rule.root]);
+  const explainViewModel = useMemo(
+    () => buildExplainViewModel(rule.root, topicName, explain),
+    [rule.root, explain, topicName]
+  );
   const selectedNode = useMemo(
     () => (rule.root && selectedNodeId ? findNode(rule.root, selectedNodeId) : null),
     [rule.root, selectedNodeId]
@@ -772,7 +777,7 @@ export function RuleEditor({
                   onEditTermSet={handleEditTermSet}
                 />
               }
-              explainPanel={<ExplainPanel explain={explain} />}
+              explainPanel={<ExplainPanel explain={explainViewModel} />}
               validationPanel={<ValidationPanel issues={validationIssues} />}
               diffPreviewPanel={openViews.diffCompare ? <DiffPreviewPanel diff={diff} /> : null}
               statusSummary={
