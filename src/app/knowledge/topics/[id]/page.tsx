@@ -168,6 +168,18 @@ export default function TopicDetailPage() {
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
     const normalizedOnSave =
       JSON.stringify(editorState.rule.root) !== JSON.stringify(normalizedRoot);
+    const normalizedIssues = validateTree(normalizedRoot, editorState.capability).filter(
+      (item) => item.severity === "error"
+    );
+    if (normalizedIssues.length > 0) {
+      setActionFeedback({
+        type: "error",
+        title: t("topicDetail.draft.saveFailed"),
+        message: normalizedIssues[0].message,
+      });
+      setActionBusy(false);
+      return;
+    }
 
     const result = await saveTopicDraft(topicId, {
       rule: { root: normalizedRoot },
@@ -294,6 +306,13 @@ export default function TopicDetailPage() {
       });
       return;
     }
+    const normalizedIssues = validateTree(normalizedRoot, editorState.capability).filter(
+      (item) => item.severity === "error"
+    );
+    if (normalizedIssues.length > 0) {
+      setExecutionError(normalizedIssues[0].message);
+      return;
+    }
 
     try {
       const fullRes = await execute({
@@ -335,6 +354,13 @@ export default function TopicDetailPage() {
     }
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
     if (!normalizedRoot) return;
+    const normalizedIssues = validateTree(normalizedRoot, editorState.capability).filter(
+      (item) => item.severity === "error"
+    );
+    if (normalizedIssues.length > 0) {
+      setExecutionError(normalizedIssues[0].message);
+      return;
+    }
     try {
       const nodeRes = await executeNode({
         rule: { root: normalizedRoot, references: [] },

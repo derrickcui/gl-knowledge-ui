@@ -5,8 +5,7 @@ export function normalizeRootForSave(root: UiExpressionNode | null): UiExpressio
   if (!root) return null;
   const hydrated = hydrateRootForEditor(root);
   if (!hydrated) return null;
-  const normalized = normalizeNode(hydrated);
-  return downgradeNodeForSave(normalized);
+  return normalizeNode(hydrated);
 }
 
 export function hydrateRootForEditor(root: UiExpressionNode | null): UiExpressionNode | null {
@@ -26,9 +25,6 @@ function normalizeNode(node: UiExpressionNode): UiExpressionNode {
         node.operator === "AT_LEAST" || node.operator === "LOGSUM" || node.operator === "WEIGHTED"
           ? node.threshold
           : undefined;
-      if (normalizedChildren.length === 1) {
-        return normalizedChildren[0];
-      }
       return { ...node, threshold: normalizedThreshold, children: normalizedChildren };
     }
     case "POSITION_RELATION":
@@ -165,45 +161,6 @@ function upgradeLegacyNode(
     case "NOT":
     case "SCORE":
       return { ...node, child: node.child ? upgradeLegacyNode(node.child, node.type) : null };
-    case "TERM_SET":
-    case "TOPIC_REF":
-      return node;
-  }
-}
-
-function downgradeNodeForSave(node: UiExpressionNode): UiExpressionNode {
-  switch (node.type) {
-    case "STRUCTURE":
-      if (node.scope === "DOCUMENT") {
-        return node.child ? downgradeNodeForSave(node.child) : node;
-      }
-      return {
-        id: node.id,
-        type: "PROXIMITY",
-        relation: node.scope === "SENTENCE" ? "SENTENCE" : "PARAGRAPH",
-        ordered: false,
-        distance: undefined,
-        children: node.child ? [downgradeNodeForSave(node.child)] : [],
-      };
-    case "POSITION_RELATION":
-      return {
-        id: node.id,
-        type: "PROXIMITY",
-        relation: node.relation ?? "NEAR",
-        ordered: Boolean(node.ordered),
-        distance: (node.relation ?? "NEAR") === "NEAR" ? node.distance : undefined,
-        children: node.children.map((child) => downgradeNodeForSave(child)),
-      };
-    case "LOGIC":
-      return { ...node, children: node.children.map((child) => downgradeNodeForSave(child)) };
-    case "PROXIMITY":
-      return { ...node, children: node.children.map((child) => downgradeNodeForSave(child)) };
-    case "FIELD":
-      return { ...node, child: node.child ? downgradeNodeForSave(node.child) : null };
-    case "NOT":
-      return { ...node, child: node.child ? downgradeNodeForSave(node.child) : null };
-    case "SCORE":
-      return { ...node, child: node.child ? downgradeNodeForSave(node.child) : null };
     case "TERM_SET":
     case "TOPIC_REF":
       return node;
