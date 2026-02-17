@@ -166,11 +166,11 @@ function visit(
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.modeNeedTwoChildren"), severity: "error" });
     }
 
-    if (node.threshold != null && node.operator !== "AT_LEAST") {
+    if (node.threshold != null && node.operator !== "AT_LEAST" && node.operator !== "LOGSUM") {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.thresholdNotSupported"), severity: "error" });
     }
 
-    if (node.operator === "AT_LEAST") {
+    if (node.operator === "AT_LEAST" || node.operator === "LOGSUM") {
       const max = Math.max(1, node.children.length);
       const threshold = Math.round(Number(node.threshold ?? (node.children.length >= 2 ? 2 : 1)));
       if (!Number.isFinite(threshold) || threshold < 1) {

@@ -71,37 +71,87 @@ function stripTermImportance(node: UiExpressionNode): UiExpressionNode {
 }
 
 function hydrateNode(node: UiExpressionNode): UiExpressionNode {
-  const id = normalizeNodeId((node as { id?: unknown }).id);
+  const legacyNode = node as { id?: unknown; nodeId?: unknown };
+  const id = normalizeNodeId(legacyNode.id, legacyNode.nodeId);
   switch (node.type) {
-    case "LOGIC":
+    case "LOGIC": {
+      // Persisted/runtime LOGSUM+threshold is the UI AT_LEAST semantic mode.
+      const uiOperator = node.operator === "LOGSUM" && node.threshold != null ? "AT_LEAST" : node.operator;
+      return {
+        id,
+        type: "LOGIC",
+        operator: uiOperator,
+        threshold: node.threshold,
+        importance: node.importance,
+        importanceWeight: node.importanceWeight,
+        weight: node.weight,
+        children: node.children.map((child) => hydrateNode(child)),
+      };
+    }
     case "PROXIMITY":
       return {
-        ...node,
         id,
+        type: "PROXIMITY",
+        relation: node.relation,
+        ordered: node.ordered,
+        distance: node.distance,
         children: node.children.map((child) => hydrateNode(child)),
       };
     case "POSITION_RELATION":
       return {
-        ...node,
         id,
+        type: "POSITION_RELATION",
+        mode: node.mode,
+        relation: node.relation,
+        distance: node.distance,
+        ordered: node.ordered,
+        strict: node.strict,
         children: node.children
           .map((child) => hydrateNode(child))
           .filter((child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET"),
       };
     case "FIELD":
+      return {
+        id,
+        type: "FIELD",
+        field: node.field,
+        child: node.child ? hydrateNode(node.child) : null,
+      };
     case "STRUCTURE":
+      return {
+        id,
+        type: "STRUCTURE",
+        scope: node.scope,
+        child: node.child ? hydrateNode(node.child) : null,
+      };
     case "NOT":
+      return {
+        id,
+        type: "NOT",
+        child: node.child ? hydrateNode(node.child) : null,
+      };
     case "SCORE":
       return {
-        ...node,
         id,
+        type: "SCORE",
+        weight: node.weight,
         child: node.child ? hydrateNode(node.child) : null,
       };
     case "TERM_SET":
+      return {
+        id,
+        type: "TERM_SET",
+        terms: node.terms,
+        matchMode: node.matchMode,
+        importance: node.importance,
+        importanceWeight: node.importanceWeight,
+        weight: node.weight,
+      };
     case "TOPIC_REF":
       return {
-        ...node,
         id,
+        type: "TOPIC_REF",
+        topicId: node.topicId,
       };
   }
 }
@@ -167,7 +217,8 @@ function upgradeLegacyNode(
   }
 }
 
-function normalizeNodeId(id: unknown): string {
+function normalizeNodeId(id: unknown, legacyNodeId?: unknown): string {
   if (typeof id === "string" && id.trim()) return id;
+  if (typeof legacyNodeId === "string" && legacyNodeId.trim()) return legacyNodeId;
   return createId();
 }

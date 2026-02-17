@@ -30,6 +30,7 @@ import { RuleEditor } from "./rule-editor";
 import type {
   UiRuleViewModel,
   UiCapabilityViewModel,
+  UiExpressionNode,
 } from "./rule-editor/types";
 import { t } from "@/i18n";
 import { hydrateRootForEditor, normalizeRootForSave } from "./rule-editor/save-normalize";
@@ -110,6 +111,90 @@ function mapExecutionResultToPreview(result: RuntimeExecuteResponse): RulePrevie
   };
 }
 
+function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
+  switch (node.type) {
+    case "LOGIC":
+      return {
+        type: "LOGIC",
+        nodeId: node.id,
+        // UI semantic mode AT_LEAST compiles to runtime LOGSUM with threshold.
+        operator: node.operator === "AT_LEAST" ? "LOGSUM" : node.operator,
+        threshold: node.threshold,
+        importance: node.importance,
+        importanceWeight: node.importanceWeight,
+        weight: node.weight,
+        children: node.children.map((child) => toRuntimeNode(child)),
+      };
+    case "PROXIMITY":
+      return {
+        type: "PROXIMITY",
+        nodeId: node.id,
+        relation: node.relation,
+        ordered: node.ordered,
+        distance: node.distance,
+        children: node.children.map((child) => toRuntimeNode(child)),
+      };
+    case "POSITION_RELATION":
+      return {
+        type: "POSITION_RELATION",
+        nodeId: node.id,
+        mode: node.mode,
+        relation: node.relation,
+        distance: node.distance,
+        ordered: node.ordered,
+        strict: node.strict,
+        children: node.children.map((child) => toRuntimeNode(child)),
+      };
+    case "FIELD":
+      return {
+        type: "FIELD",
+        nodeId: node.id,
+        field: node.field,
+        child: node.child ? toRuntimeNode(node.child) : null,
+      };
+    case "STRUCTURE":
+      return {
+        type: "STRUCTURE",
+        nodeId: node.id,
+        scope: node.scope,
+        child: node.child ? toRuntimeNode(node.child) : null,
+      };
+    case "TERM_SET":
+      return {
+        type: "TERM_SET",
+        nodeId: node.id,
+        terms: node.terms,
+        matchMode: node.matchMode,
+        importance: node.importance,
+        importanceWeight: node.importanceWeight,
+        weight: node.weight,
+      };
+    case "NOT":
+      return {
+        type: "NOT",
+        nodeId: node.id,
+        child: node.child ? toRuntimeNode(node.child) : null,
+      };
+    case "SCORE":
+      return {
+        type: "SCORE",
+        nodeId: node.id,
+        weight: node.weight,
+        child: node.child ? toRuntimeNode(node.child) : null,
+      };
+    case "TOPIC_REF":
+      return {
+        type: "TOPIC_REF",
+        nodeId: node.id,
+        topicId: node.topicId,
+      };
+    default: {
+      const _never: never = node;
+      return _never;
+    }
+  }
+}
+
 export default function TopicDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -182,7 +267,7 @@ export default function TopicDetailPage() {
     }
 
     const result = await saveTopicDraft(topicId, {
-      rule: { root: normalizedRoot },
+      rule: { root: toRuntimeNode(normalizedRoot) },
     });
 
       if (result.data) {
@@ -317,7 +402,7 @@ export default function TopicDetailPage() {
     try {
       const fullRes = await execute({
         mode: "FULL",
-        rule: { root: normalizedRoot, references: [] },
+        rule: { root: toRuntimeNode(normalizedRoot), references: [] },
         runtimeEnvironmentId: resolvedRuntimeId,
         options: { page: options?.page, size: options?.size, withHighlight: true, withItems: true },
       });
@@ -328,7 +413,7 @@ export default function TopicDetailPage() {
 
       const impactRes = await execute({
         mode: "IMPACT",
-        rule: { root: normalizedRoot, references: [] },
+        rule: { root: toRuntimeNode(normalizedRoot), references: [] },
         runtimeEnvironmentId: resolvedRuntimeId,
         options: { withHighlight: false, withItems: false },
       });
@@ -363,7 +448,7 @@ export default function TopicDetailPage() {
     }
     try {
       const nodeRes = await executeNode({
-        rule: { root: normalizedRoot, references: [] },
+        rule: { root: toRuntimeNode(normalizedRoot), references: [] },
         nodeId: nodeId,
         runtimeEnvironmentId: resolvedRuntimeId,
         options: {
