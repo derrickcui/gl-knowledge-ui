@@ -10,7 +10,7 @@ export function normalizeRootForSave(root: UiExpressionNode | null): UiExpressio
 
 export function hydrateRootForEditor(root: UiExpressionNode | null): UiExpressionNode | null {
   if (!root) return null;
-  return upgradeLegacyNode(hydrateNode(root), undefined);
+  return ensureRootExpressionGroup(upgradeLegacyNode(hydrateNode(root), undefined));
 }
 
 function normalizeNode(node: UiExpressionNode): UiExpressionNode {
@@ -221,4 +221,14 @@ function normalizeNodeId(id: unknown, legacyNodeId?: unknown): string {
   if (typeof id === "string" && id.trim()) return id;
   if (typeof legacyNodeId === "string" && legacyNodeId.trim()) return legacyNodeId;
   return createId();
+}
+
+function ensureRootExpressionGroup(root: UiExpressionNode): UiExpressionNode {
+  if (root.type === "LOGIC") return root;
+  return {
+    id: createId(),
+    type: "LOGIC",
+    operator: "AND",
+    children: [root],
+  };
 }

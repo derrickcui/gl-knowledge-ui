@@ -596,6 +596,9 @@ components:
         threshold:
           type: integer
           nullable: true
+        minMatch:
+          type: integer
+          nullable: true
         children:
           type: array
           items:
@@ -664,6 +667,9 @@ components:
         threshold:
           type: integer
           nullable: true
+        minMatch:
+          type: integer
+          nullable: true
         children:
           type: array
           items:
@@ -708,7 +714,7 @@ components:
       enum: [AND, OR]
     UiLogicOperator:
       type: string
-      enum: [AND, OR, ANY, ALL, ACCRUE, LOGSUM]
+      enum: [AND, OR, ACCRUE, LOGSUM, WEIGHTED]
     UiProximityRelation:
       type: string
       enum: [NEAR, SENTENCE, PARAGRAPH, PHRASE]

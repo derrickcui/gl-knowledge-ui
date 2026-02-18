@@ -94,6 +94,10 @@ export function reorderBlocks(blocks: ConditionBlock[], sourceId: string, target
 function unwrapGlobalStructure(node: UiExpressionNode, structure: BuilderStructure): UiExpressionNode | null {
   let current: UiExpressionNode | null = node;
 
+  if (current.type === "LOGIC" && current.operator === "AND" && current.children.length === 1) {
+    current = current.children[0] ?? null;
+  }
+
   if (current.type === "FIELD") {
     structure.field = current.field;
     current = current.child;

@@ -4,12 +4,16 @@ export function RightSidebar({
   propertyPanel,
   explainPanel,
   validationPanel,
+  intelligencePanel,
+  versionTimelinePanel,
   diffPreviewPanel,
   statusSummary,
 }: {
   propertyPanel: ReactNode;
   explainPanel: ReactNode;
   validationPanel: ReactNode;
+  intelligencePanel?: ReactNode;
+  versionTimelinePanel?: ReactNode;
   diffPreviewPanel: ReactNode;
   statusSummary?: ReactNode;
 }) {
@@ -18,6 +22,8 @@ export function RightSidebar({
       {propertyPanel}
       {explainPanel}
       {validationPanel}
+      {intelligencePanel}
+      {versionTimelinePanel}
       {diffPreviewPanel}
       {statusSummary}
     </div>

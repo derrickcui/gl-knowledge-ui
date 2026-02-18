@@ -28,9 +28,14 @@ const capability: UiCapabilityViewModel = {
 };
 
 describe("getAllowedChildTypes", () => {
-  it("allows only LOGIC node under FIELD", () => {
+  it("allows expression nodes under FIELD", () => {
     const field: UiExpressionNode = { id: "field", type: "FIELD", field: "CONTENT", child: null };
-    expect(getAllowedChildTypes(field, capability)).toEqual(["LOGIC"]);
+    expect(getAllowedChildTypes(field, capability)).toEqual([
+      "LOGIC",
+      "POSITION_RELATION",
+      "TERM_SET",
+      "STRUCTURE",
+    ]);
   });
 
   it("allows only LOGIC under STRUCTURE", () => {
@@ -48,5 +53,54 @@ describe("getAllowedChildTypes", () => {
       children: [],
     };
     expect(getAllowedChildTypes(relation, capability)).toEqual(["TERM_SET"]);
+  });
+
+  it("allows advanced children in LOGIC when capability enables them", () => {
+    const advanced = {
+      ...capability,
+      where: { ...capability.where, allowWhen: true },
+      advanced: {
+        ...capability.advanced,
+        allowNot: true,
+        allowScore: true,
+        allowTopicRef: true,
+      },
+    };
+    const logic: UiExpressionNode = { id: "l", type: "LOGIC", operator: "ANY", children: [] };
+    expect(getAllowedChildTypes(logic, advanced)).toEqual([
+      "LOGIC",
+      "FIELD",
+      "POSITION_RELATION",
+      "TERM_SET",
+      "NOT",
+      "SCORE",
+      "TOPIC_REF",
+    ]);
+  });
+
+  it("allows one child under NOT/SCORE wrappers", () => {
+    const advanced = {
+      ...capability,
+      where: { ...capability.where, allowWhen: true },
+      advanced: {
+        ...capability.advanced,
+        allowNot: true,
+        allowScore: true,
+        allowTopicRef: true,
+      },
+    };
+    const notNode: UiExpressionNode = { id: "n", type: "NOT", child: null };
+    const scoreNode: UiExpressionNode = { id: "s", type: "SCORE", weight: 1, child: null };
+
+    expect(getAllowedChildTypes(notNode, advanced)).toEqual([
+      "LOGIC",
+      "FIELD",
+      "POSITION_RELATION",
+      "TERM_SET",
+    ]);
+    expect(getAllowedChildTypes(scoreNode, advanced)).toEqual([
+      "FIELD",
+      "TERM_SET",
+    ]);
   });
 });

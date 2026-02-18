@@ -126,9 +126,9 @@ export function TemplateCapabilityEditor({
           />
           <Checkbox
             label={t("ruleEditor.capability.mode.atLeast")}
-            checked={value.semantic.allowModes.includes("AT_LEAST")}
+            checked={value.semantic.allowModes.includes("LOGSUM")}
             disabled={disabled}
-            onChange={(checked) => setSemanticMode("AT_LEAST", checked)}
+            onChange={(checked) => setSemanticMode("LOGSUM", checked)}
           />
           <Checkbox
             label={t("ruleEditor.capability.mode.accrue")}

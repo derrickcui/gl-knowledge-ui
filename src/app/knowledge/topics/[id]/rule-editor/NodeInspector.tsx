@@ -7,26 +7,20 @@ import type {
   UiTermSetNode,
 } from "./types";
 import { t } from "@/i18n";
-import { canUseLogicOperator, structureScopeOptionsForField } from "./capability-policy";
+import { canUseLogicOperator } from "./capability-policy";
 import { useCapability } from "./CapabilityContext";
 
 export function NodeInspector({
   node,
-  rootField,
-  rootStructureScope,
   readOnly,
   onPatchNode,
   onChangeField,
-  onChangeStructureScope,
   onEditTermSet,
 }: {
   node: UiExpressionNode | null;
-  rootField: RuleField | null;
-  rootStructureScope: StructureScope;
   readOnly: boolean;
   onPatchNode: (nodeId: string, updater: (node: UiExpressionNode) => UiExpressionNode) => void;
   onChangeField: (nodeId: string, field: RuleField) => void;
-  onChangeStructureScope: (scope: StructureScope) => void;
   onEditTermSet: (node: UiTermSetNode) => void;
 }) {
   const capability = useCapability();
@@ -142,46 +136,26 @@ export function NodeInspector({
               </option>
             ))}
           </select>
-          {(() => {
-            const options = structureScopeOptionsForField(capability, node.field);
-            const selected = options.includes(rootStructureScope) ? rootStructureScope : options[0] ?? "DOCUMENT";
-            return (
-              <>
-                <div className="pt-2 text-xs text-slate-500">{t("ruleEditor.nodeInspector.structure.scope")}</div>
-                <select
-                  className="h-9 w-full rounded-md border px-2 text-sm"
-                  value={selected}
-                  onChange={(event) => onChangeStructureScope(event.target.value as StructureScope)}
-                  disabled={readOnly || options.length <= 1}
-                >
-                  {options.map((scope) => (
-                    <option key={scope} value={scope}>
-                      {structureScopeLabel(scope)}
-                    </option>
-                  ))}
-                </select>
-              </>
-            );
-          })()}
         </div>
       )}
 
       {node.type === "STRUCTURE" && (
         <div className="space-y-1">
           {(() => {
-            const options = structureScopeOptionsForField(capability, rootField ?? "CONTENT");
-            const selected = options.includes(node.scope) ? node.scope : options[0] ?? "DOCUMENT";
+            const options = ["DOCUMENT", "SENTENCE", "PARAGRAPH"] as const;
             return (
               <>
                 <div className="text-xs text-slate-500">{t("ruleEditor.nodeInspector.structure.scope")}</div>
                 <select
                   className="h-9 w-full rounded-md border px-2 text-sm"
-                  value={selected}
+                  value={node.scope}
                   onChange={(event) => {
-                    const value = event.target.value as StructureScope;
-                    onChangeStructureScope(value);
+                    const value = event.target.value as "DOCUMENT" | "SENTENCE" | "PARAGRAPH";
+                    onPatchNode(node.id, (next) =>
+                      next.type === "STRUCTURE" ? { ...next, scope: value } : next
+                    );
                   }}
-                  disabled={readOnly || options.length <= 1}
+                  disabled={readOnly}
                 >
                   {options.map((scope) => (
                     <option key={scope} value={scope}>

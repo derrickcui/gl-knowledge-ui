@@ -4,6 +4,8 @@
 
 This document freezes the structure invariants of the rule editor (L1-L5), prevents future regressions, and serves as the v1.0 structural reference set.
 
+Nesting legality and compiler mapping are centralized in `docs/gql-syntax-matrix-v1.md`.
+
 ## Legal / Illegal Examples
 
 | ID | Example | Structure | Result | Violated Layer | Why |
@@ -23,16 +25,18 @@ This document freezes the structure invariants of the rule editor (L1-L5), preve
 | 13 | Double STRUCTURE layer | `FIELD -> STRUCTURE -> STRUCTURE -> LOGIC` | FAIL | L2 | Only one structure layer is allowed. |
 | 14 | STRUCTURE under TITLE | `FIELD(TITLE) -> STRUCTURE(SENTENCE/PARAGRAPH)` | FAIL | L1/L2 | Title scope does not allow structure layer. |
 | 15 | Fully legal complex tree | `FIELD -> STRUCTURE -> LOGIC(AT_LEAST){POSITION(TERM,TERM), TERM, LOGIC(TERM,TERM)}` | PASS | - | Satisfies all layer invariants and semantic constraints. |
+| 16 | Legal nested scope (`<in/field>`) | `FIELD -> LOGIC(FIELD(TITLE)->LOGIC(TERM), TERM)` | PASS | - | Nested scope wrappers are allowed under `LOGIC/NOT/SCORE`. |
 
 ## Structural Constitution (Frozen Rules)
 
-1. There must be exactly one `FIELD`.
-2. `STRUCTURE` can appear at most once and only under `FIELD`.
-3. `LOGIC` is recursive, but each logic group must be non-empty.
-4. `POSITION_RELATION` can only be under `LOGIC`, must have at least 2 children, and all children must be `TERM_SET`.
-5. `TERM_SET` is a pure leaf node: no recursion, no child node, and no empty terms.
-6. Semantic mode must match child count (`AT_LEAST/ACCRUE/LOGSUM/WEIGHTED` require `>= 2` children).
-7. No empty nodes and no implicit structure pollution are allowed.
+1. Root must be `FIELD` (L1 entry is fixed).
+2. Additional `FIELD` nodes are allowed as nested scope wrappers under `LOGIC/NOT/SCORE` for `<in/field>` semantics.
+3. `STRUCTURE` can appear only under `FIELD`, and each `FIELD` can have at most one `STRUCTURE`.
+4. `LOGIC` is recursive, but each logic group must be non-empty.
+5. `POSITION_RELATION` can only be under `LOGIC`, must have at least 2 children, and all children must be `TERM_SET`.
+6. `TERM_SET` is a pure leaf node: no recursion, no child node, and no empty terms.
+7. Semantic mode must match child count (`AT_LEAST/ACCRUE/LOGSUM/WEIGHTED` require `>= 2` children).
+8. No empty nodes and no implicit structure pollution are allowed.
 
 ## Layer Mapping
 
@@ -41,4 +45,3 @@ This document freezes the structure invariants of the rule editor (L1-L5), preve
 - L3: Logic composition (`LOGIC`)
 - L4: Position relation wrapper (`POSITION_RELATION`)
 - L5: Term leaf (`TERM_SET`)
-

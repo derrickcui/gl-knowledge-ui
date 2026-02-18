@@ -530,7 +530,11 @@ components:
           type: string
         operator:
           type: string
+          enum: [AND, OR, ACCRUE, LOGSUM, WEIGHTED]
         threshold:
+          type: integer
+          format: int32
+        minMatch:
           type: integer
           format: int32
         children:
@@ -613,7 +617,11 @@ components:
           type: string
         operator:
           type: string
+          enum: [AND, OR, ACCRUE, LOGSUM, WEIGHTED]
         threshold:
+          type: integer
+          format: int32
+        minMatch:
           type: integer
           format: int32
         children:

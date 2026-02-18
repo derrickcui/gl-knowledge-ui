@@ -35,6 +35,10 @@ import type {
 import { t } from "@/i18n";
 import { hydrateRootForEditor, normalizeRootForSave } from "./rule-editor/save-normalize";
 import { validateTree } from "./rule-editor/validation";
+import { compileToGql } from "./rule-editor/gql-compiler";
+import { normalizeExpressionTree } from "./rule-editor/expression-normalizer";
+import { formatExpressionTree } from "./rule-editor/format-expression-tree";
+import { buildRuleAbTestResult, type RuleAbTestResult } from "./rule-editor/ab-test";
 import { readDefaultRuntimeSceneSelection } from "@/lib/runtime-default-scene";
 
 function hasDraftPayload(
@@ -111,20 +115,39 @@ function mapExecutionResultToPreview(result: RuntimeExecuteResponse): RulePrevie
   };
 }
 
+function toRuntimeLogicPayload(node: Extract<UiExpressionNode, { type: "LOGIC" }>) {
+  if (node.operator === "ALL") {
+    return { operator: "AND" as const, threshold: undefined, minMatch: undefined };
+  }
+  if (node.operator === "ANY") {
+    return { operator: "OR" as const, threshold: undefined, minMatch: undefined };
+  }
+  if (node.operator === "AT_LEAST") {
+    const minMatch = node.threshold;
+    return { operator: "LOGSUM" as const, threshold: minMatch, minMatch };
+  }
+  if (node.operator === "LOGSUM") {
+    return { operator: "LOGSUM" as const, threshold: node.threshold, minMatch: node.threshold };
+  }
+  return { operator: node.operator, threshold: node.threshold, minMatch: undefined };
+}
+
 function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
   switch (node.type) {
-    case "LOGIC":
+    case "LOGIC": {
+      const logic = toRuntimeLogicPayload(node);
       return {
         type: "LOGIC",
         nodeId: node.id,
-        // UI semantic mode AT_LEAST compiles to runtime LOGSUM with threshold.
-        operator: node.operator === "AT_LEAST" ? "LOGSUM" : node.operator,
-        threshold: node.threshold,
+        operator: logic.operator,
+        threshold: logic.threshold,
+        minMatch: logic.minMatch,
         importance: node.importance,
         importanceWeight: node.importanceWeight,
         weight: node.weight,
         children: node.children.map((child) => toRuntimeNode(child)),
       };
+    }
     case "PROXIMITY":
       return {
         type: "PROXIMITY",
@@ -220,6 +243,8 @@ export default function TopicDetailPage() {
   const setActiveRuntime = useRuntimeStore((s) => s.setActiveRuntime);
   const { execute, executeNode } = useRuntimeExecution();
   const [previewResult, setPreviewResult] = useState<RulePreviewResponse | null>(null);
+  const [compiledGql, setCompiledGql] = useState<string | null>(null);
+  const [compiledGqlSource, setCompiledGqlSource] = useState<"local-compiler" | "server" | null>(null);
   const [fullRuntimeResult, setFullRuntimeResult] = useState<Extract<RuntimeExecuteResponse, { mode: "FULL" }> | null>(null);
   const [impactRuntimeResult, setImpactRuntimeResult] = useState<Extract<RuntimeExecuteResponse, { mode: "IMPACT" }> | null>(null);
   const [nodeRuntimeResults, setNodeRuntimeResults] = useState<
@@ -227,6 +252,7 @@ export default function TopicDetailPage() {
   >({});
   const [previewDocumentBusy, setPreviewDocumentBusy] = useState(false);
   const [previewDocument, setPreviewDocument] = useState<PreviewDocumentDetailResponse | null>(null);
+  const [abTestResult, setAbTestResult] = useState<RuleAbTestResult | null>(null);
   const [runtimeOptions, setRuntimeOptions] = useState<RuntimeActiveItem[]>([]);
   const [editorState, setEditorState] = useState<{
     rule: UiRuleViewModel;
@@ -234,6 +260,28 @@ export default function TopicDetailPage() {
     explain: ExplainPreviewViewModel | null;
     dirty: boolean;
   } | null>(null);
+  const localCompilerEnabled =
+    process.env.NEXT_PUBLIC_RULE_LOCAL_GQL_COMPILER !== "0";
+
+  function compileBeforeExecution(root: UiExpressionNode): boolean {
+    if (!localCompilerEnabled) {
+      setCompiledGql(null);
+      setCompiledGqlSource(null);
+      return true;
+    }
+    try {
+      const gql = compileToGql(root);
+      setCompiledGql(gql);
+      setCompiledGqlSource("local-compiler");
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
+      setExecutionError(message);
+      setCompiledGql(null);
+      setCompiledGqlSource(null);
+      return false;
+    }
+  }
 
   async function handleSaveDraft() {
     if (!topicId || topicStatus === "IN_REVIEW" || !editorState) return;
@@ -251,9 +299,19 @@ export default function TopicDetailPage() {
     setActionBusy(true);
     setActionFeedback(null);
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
+    const normalizedExpression = normalizeExpressionTree(normalizedRoot).root;
+    if (!normalizedExpression) {
+      setActionFeedback({
+        type: "error",
+        title: t("topicDetail.draft.saveFailed"),
+        message: t("ruleEditor.validation.needAtLeastOneCondition"),
+      });
+      setActionBusy(false);
+      return;
+    }
     const normalizedOnSave =
       JSON.stringify(editorState.rule.root) !== JSON.stringify(normalizedRoot);
-    const normalizedIssues = validateTree(normalizedRoot, editorState.capability).filter(
+    const normalizedIssues = validateTree(normalizedExpression, editorState.capability).filter(
       (item) => item.severity === "error"
     );
     if (normalizedIssues.length > 0) {
@@ -267,7 +325,7 @@ export default function TopicDetailPage() {
     }
 
     const result = await saveTopicDraft(topicId, {
-      rule: { root: toRuntimeNode(normalizedRoot) },
+      rule: { root: toRuntimeNode(normalizedExpression) },
     });
 
       if (result.data) {
@@ -377,7 +435,8 @@ export default function TopicDetailPage() {
     }
 
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
-    if (!normalizedRoot) {
+    const normalizedExpression = normalizeExpressionTree(normalizedRoot).root;
+    if (!normalizedExpression) {
       setPreviewResult({
         mode: "FULL_RULE",
         nodeId: null,
@@ -391,18 +450,21 @@ export default function TopicDetailPage() {
       });
       return;
     }
-    const normalizedIssues = validateTree(normalizedRoot, editorState.capability).filter(
+    const normalizedIssues = validateTree(normalizedExpression, editorState.capability).filter(
       (item) => item.severity === "error"
     );
     if (normalizedIssues.length > 0) {
       setExecutionError(normalizedIssues[0].message);
       return;
     }
+    if (!compileBeforeExecution(normalizedExpression)) {
+      return;
+    }
 
     try {
       const fullRes = await execute({
         mode: "FULL",
-        rule: { root: toRuntimeNode(normalizedRoot), references: [] },
+        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
         runtimeEnvironmentId: resolvedRuntimeId,
         options: { page: options?.page, size: options?.size, withHighlight: true, withItems: true },
       });
@@ -413,7 +475,7 @@ export default function TopicDetailPage() {
 
       const impactRes = await execute({
         mode: "IMPACT",
-        rule: { root: toRuntimeNode(normalizedRoot), references: [] },
+        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
         runtimeEnvironmentId: resolvedRuntimeId,
         options: { withHighlight: false, withItems: false },
       });
@@ -438,17 +500,21 @@ export default function TopicDetailPage() {
       setActiveRuntime(resolvedRuntimeId);
     }
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
-    if (!normalizedRoot) return;
-    const normalizedIssues = validateTree(normalizedRoot, editorState.capability).filter(
+    const normalizedExpression = normalizeExpressionTree(normalizedRoot).root;
+    if (!normalizedExpression) return;
+    const normalizedIssues = validateTree(normalizedExpression, editorState.capability).filter(
       (item) => item.severity === "error"
     );
     if (normalizedIssues.length > 0) {
       setExecutionError(normalizedIssues[0].message);
       return;
     }
+    if (!compileBeforeExecution(normalizedExpression)) {
+      return;
+    }
     try {
       const nodeRes = await executeNode({
-        rule: { root: toRuntimeNode(normalizedRoot), references: [] },
+        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
         nodeId: nodeId,
         runtimeEnvironmentId: resolvedRuntimeId,
         options: {
@@ -461,6 +527,54 @@ export default function TopicDetailPage() {
       if (nodeRes.mode === "NODE") {
         setNodeRuntimeResults((prev) => ({ ...prev, [nodeId]: nodeRes }));
         setPreviewResult(mapExecutionResultToPreview(nodeRes));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
+      setExecutionError(message);
+    }
+  }
+
+  async function handleRunAbTest() {
+    if (!editorState) return;
+    setExecutionError(null);
+    const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
+    if (!resolvedRuntimeId) {
+      setExecutionError("No runtime selected");
+      return;
+    }
+    if (!activeRuntimeId) {
+      setActiveRuntime(resolvedRuntimeId);
+    }
+
+    const normalizedRoot = normalizeRootForSave(editorState.rule.root);
+    const normalizedExpression = normalizeExpressionTree(normalizedRoot).root;
+    if (!normalizedExpression) return;
+    const normalizedIssues = validateTree(normalizedExpression, editorState.capability).filter(
+      (item) => item.severity === "error"
+    );
+    if (normalizedIssues.length > 0) {
+      setExecutionError(normalizedIssues[0].message);
+      return;
+    }
+
+    const candidateB = formatExpressionTree(normalizedExpression);
+    if (!candidateB) return;
+
+    try {
+      const resA = await execute({
+        mode: "FULL",
+        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
+        runtimeEnvironmentId: resolvedRuntimeId,
+        options: { page: 1, size: 20, withHighlight: false, withItems: true },
+      });
+      const resB = await execute({
+        mode: "FULL",
+        rule: { root: toRuntimeNode(candidateB), references: [] },
+        runtimeEnvironmentId: resolvedRuntimeId,
+        options: { page: 1, size: 20, withHighlight: false, withItems: true },
+      });
+      if (resA.mode === "FULL" && resB.mode === "FULL") {
+        setAbTestResult(buildRuleAbTestResult(resA, resB));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
@@ -705,6 +819,7 @@ export default function TopicDetailPage() {
                 onDeleteDraft={topicStatus === "IN_REVIEW" ? undefined : handleDeleteDraft}
                 onRunWorkspace={handleRunWorkspace}
                 onRunNode={handleRunNode}
+                onRunAbTest={handleRunAbTest}
                 onSelectPreviewDocument={handleSelectPreviewDocument}
                 onSubmit={topicStatus === "IN_REVIEW" ? undefined : handleSubmitReview}
                 onPublish={topicStatus === "IN_REVIEW" ? undefined : handlePublish}
@@ -713,9 +828,12 @@ export default function TopicDetailPage() {
                 previewDocumentBusy={previewDocumentBusy}
                 previewError={executionError}
                 previewBusy={executionLoading}
+                compiledGql={compiledGql}
+                compiledGqlSource={compiledGqlSource}
                 fullRuntimeResult={fullRuntimeResult}
                 impactRuntimeResult={impactRuntimeResult}
                 nodeRuntimeResults={nodeRuntimeResults}
+                abTestResult={abTestResult}
                 runtimeOptions={runtimeOptions}
                 activeRuntimeId={activeRuntimeId}
                 onChangeRuntime={setActiveRuntime}

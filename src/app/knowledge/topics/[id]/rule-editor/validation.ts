@@ -1,6 +1,13 @@
 import { t } from "@/i18n";
 import type { RuleField, UiCapabilityViewModel, UiExpressionNode } from "./types";
-import { canUseLogicOperator } from "./capability-policy";
+import {
+  canUseLogicOperator,
+  canUseNot,
+  canUsePositionMode,
+  canUseTopicRef,
+} from "./capability-policy";
+import { isChildAllowedByMatrix } from "./nesting-matrix";
+import { normalizeExpressionTree } from "./expression-normalizer";
 
 export type ValidationSeverity = "error" | "warning";
 
@@ -8,6 +15,7 @@ export interface ValidationIssue {
   nodeId: string;
   message: string;
   severity: ValidationSeverity;
+  type?: string;
 }
 
 export function validateTree(
@@ -15,10 +23,24 @@ export function validateTree(
   capability: UiCapabilityViewModel
 ): ValidationIssue[] {
   if (!root) {
-    return [{ nodeId: "root", message: t("ruleEditor.validation.needAtLeastOneCondition"), severity: "error" }];
+    return [
+      {
+        nodeId: "root",
+        message: t("ruleEditor.validation.needAtLeastOneCondition"),
+        severity: "error",
+        type: "LOGIC_EMPTY",
+      },
+    ];
   }
   const issues: ValidationIssue[] = enforceLayerInvariant(root);
-  visit(root, capability, issues, undefined);
+  visit(root, capability, issues, undefined, undefined, 0, "pre");
+  const normalized = normalizeExpressionTree(root);
+  normalized.issues.forEach((item) =>
+    issues.push({ nodeId: item.nodeId, message: item.message, severity: "error" })
+  );
+  if (normalized.root) {
+    visit(normalized.root, capability, issues, undefined, undefined, 0, "post");
+  }
   return issues;
 }
 
@@ -27,71 +49,17 @@ export function enforceLayerInvariant(root: UiExpressionNode | null): Validation
     return [{ nodeId: "root", message: t("ruleEditor.validation.rootMustContainField"), severity: "error" }];
   }
   const issues: ValidationIssue[] = [];
-  if (root.type !== "FIELD") {
-    issues.push({ nodeId: root.id, message: t("ruleEditor.validation.rootMustContainField"), severity: "error" });
+  if (root.type !== "LOGIC") {
+    issues.push({
+      nodeId: root.id,
+      message: t("ruleEditor.validation.rootMustContainField"),
+      severity: "error",
+      type: "ROOT_NOT_LOGIC",
+    });
     return issues;
   }
 
-  if (!root.child) {
-    issues.push({
-      nodeId: root.id,
-      message: t("ruleEditor.validation.fieldMustContainLogicOrStructure"),
-      severity: "error",
-    });
-  } else if (root.child.type === "STRUCTURE") {
-    if (!root.child.child || root.child.child.type !== "LOGIC") {
-      issues.push({
-        nodeId: root.child.id,
-        message: t("ruleEditor.validation.structureMustContainLogic"),
-        severity: "error",
-      });
-    }
-  } else if (root.child.type !== "LOGIC") {
-    issues.push({
-      nodeId: root.id,
-      message: t("ruleEditor.validation.fieldMustContainLogicOrStructure"),
-      severity: "error",
-    });
-  }
-
-  const counters = countLayerNodes(root);
-  if (counters.field !== 1) {
-    issues.push({ nodeId: root.id, message: t("ruleEditor.validation.onlyOneFieldAllowed"), severity: "error" });
-  }
-  if (counters.structure > 1) {
-    issues.push({ nodeId: root.id, message: t("ruleEditor.validation.onlyOneStructureLayer"), severity: "error" });
-  }
-
   return issues;
-}
-
-function countLayerNodes(node: UiExpressionNode): { field: number; structure: number } {
-  switch (node.type) {
-    case "FIELD": {
-      const child = node.child ? countLayerNodes(node.child) : { field: 0, structure: 0 };
-      return { field: child.field + 1, structure: child.structure };
-    }
-    case "STRUCTURE": {
-      const child = node.child ? countLayerNodes(node.child) : { field: 0, structure: 0 };
-      return { field: child.field, structure: child.structure + 1 };
-    }
-    case "LOGIC":
-    case "POSITION_RELATION":
-    case "PROXIMITY":
-      return node.children.reduce(
-        (acc, child) => {
-          const count = countLayerNodes(child);
-          return { field: acc.field + count.field, structure: acc.structure + count.structure };
-        },
-        { field: 0, structure: 0 }
-      );
-    case "NOT":
-    case "SCORE":
-      return node.child ? countLayerNodes(node.child) : { field: 0, structure: 0 };
-    case "TERM_SET":
-    case "TOPIC_REF":
-      return { field: 0, structure: 0 };
-  }
 }
 
 function visit(
@@ -100,47 +68,66 @@ function visit(
   issues: ValidationIssue[],
   parentType: UiExpressionNode["type"] | undefined,
   parentField?: RuleField,
-  logicDepth = 0
+  logicDepth = 0,
+  phase: "pre" | "post" = "post"
 ) {
   if (node.type === "FIELD") {
-    if (parentType) {
-      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.fieldNested"), severity: "error" });
+    if (parentType && parentType !== "LOGIC" && parentType !== "NOT" && parentType !== "SCORE") {
+      issues.push({
+        nodeId: node.id,
+        message: t("ruleEditor.validation.fieldNested"),
+        severity: "error",
+        type: "FIELD_NESTED",
+      });
     }
     if (!capability.where.allowFields.includes(node.field)) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedField"), severity: "error" });
     }
     if (!node.child) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.fieldIncomplete"), severity: "error" });
-    } else if (node.child.type === "STRUCTURE" || node.child.type === "LOGIC") {
-      visit(node.child, capability, issues, node.type, node.field, logicDepth);
+    } else if (isChildAllowedByMatrix(node.type, node.child.type, capability)) {
+      if (node.child.type === "FIELD") {
+        issues.push({
+          nodeId: node.child.id,
+          message: t("ruleEditor.validation.fieldNested"),
+          severity: "error",
+          type: "FIELD_NESTED",
+        });
+      }
+      visit(node.child, capability, issues, node.type, node.field, logicDepth, phase);
     } else {
       issues.push({
         nodeId: node.id,
         message: t("ruleEditor.validation.fieldMustContainLogicOrStructure"),
         severity: "error",
+        type: "FIELD_CHILD_INVALID",
       });
     }
     return;
   }
 
   if (node.type === "STRUCTURE") {
-    if (parentType !== "FIELD") {
-      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.structureUnderField"), severity: "error" });
-    }
     if (parentField === "TITLE" || parentField === "COLUMN") {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.titleColumnNoStructure"), severity: "error" });
     }
-    if (!node.child || node.child.type !== "LOGIC") {
+    if (!node.child || !isChildAllowedByMatrix(node.type, node.child.type, capability)) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.structureMustContainLogic"), severity: "error" });
     } else {
-      visit(node.child, capability, issues, node.type, parentField, logicDepth);
+      visit(node.child, capability, issues, node.type, parentField, logicDepth, phase);
     }
     return;
   }
 
   if (node.type === "LOGIC") {
     const nextLogicDepth = logicDepth + 1;
-    if (parentType !== "STRUCTURE" && parentType !== "LOGIC" && parentType !== "FIELD") {
+    if (
+      parentType &&
+      parentType !== "STRUCTURE" &&
+      parentType !== "LOGIC" &&
+      parentType !== "FIELD" &&
+      parentType !== "NOT" &&
+      parentType !== "SCORE"
+    ) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.logicParentInvalid"), severity: "error" });
     }
 
@@ -149,7 +136,12 @@ function visit(
     }
 
     if (node.children.length === 0) {
-      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.needAtLeastOneCondition"), severity: "error" });
+      issues.push({
+        nodeId: node.id,
+        message: t("ruleEditor.validation.needAtLeastOneCondition"),
+        severity: "error",
+        type: "LOGIC_EMPTY",
+      });
     }
 
     if (!canUseLogicOperator(capability, node.operator)) {
@@ -163,7 +155,12 @@ function visit(
         node.operator === "ACCRUE") &&
       node.children.length < 2
     ) {
-      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.modeNeedTwoChildren"), severity: "error" });
+      issues.push({
+        nodeId: node.id,
+        message: t("ruleEditor.validation.modeNeedTwoChildren"),
+        severity: "error",
+        type: "MODE_NEED_TWO_CHILDREN",
+      });
     }
 
     if (node.threshold != null && node.operator !== "AT_LEAST" && node.operator !== "LOGSUM") {
@@ -180,23 +177,15 @@ function visit(
       }
     }
 
-    const hasPositionChild = node.children.some((child) => child.type === "POSITION_RELATION");
-    const hasTermChild = node.children.some((child) => child.type === "TERM_SET");
-    if (hasPositionChild && hasTermChild) {
-      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.positionRelationParallelTermSet"), severity: "error" });
-    }
-
     node.children.forEach((child) => {
-      if (child.type === "FIELD" || child.type === "STRUCTURE") {
-        issues.push({ nodeId: child.id, message: t("ruleEditor.validation.fieldStructureNotAllowedInLogic"), severity: "error" });
+      if (!isChildAllowedByMatrix(node.type, child.type, capability)) {
+        issues.push({
+          nodeId: child.id,
+          message: t("ruleEditor.validation.fieldStructureNotAllowedInLogic"),
+          severity: "error",
+        });
       }
-      if (child.type === "PROXIMITY") {
-        issues.push({ nodeId: child.id, message: t("ruleEditor.validation.legacyProximityDetected"), severity: "error" });
-      }
-      if (child.type === "NOT" || child.type === "SCORE" || child.type === "TOPIC_REF") {
-        issues.push({ nodeId: child.id, message: t("ruleEditor.validation.unsupportedNodeType"), severity: "error" });
-      }
-      visit(child, capability, issues, node.type, parentField, nextLogicDepth);
+      visit(child, capability, issues, node.type, parentField, nextLogicDepth, phase);
     });
     return;
   }
@@ -205,8 +194,14 @@ function visit(
     if (parentType !== "LOGIC") {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.positionRelationUnderLogic"), severity: "error" });
     }
-    if (node.mode !== "PROXIMITY") {
+    if (node.mode !== "PROXIMITY" && node.mode !== "ORDER") {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.positionRelationModeUnsupported"), severity: "error" });
+    }
+    if (node.mode === "PROXIMITY" && !canUsePositionMode(capability, "PROXIMITY")) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedRelation"), severity: "error" });
+    }
+    if (node.mode === "ORDER" && !canUsePositionMode(capability, "ORDER")) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedOrder"), severity: "error" });
     }
     const relation = node.relation ?? "NEAR";
     if (relation !== "NEAR" && relation !== "SENTENCE" && relation !== "PARAGRAPH") {
@@ -214,6 +209,14 @@ function visit(
     }
     if (node.children.length < 2) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.proximityNeedTwoTerms"), severity: "error" });
+    }
+    if (node.children.length > 5) {
+      issues.push({
+        nodeId: node.id,
+        message: t("ruleEditor.validation.proximityMaxTerms", { max: 5 }),
+        severity: "error",
+        type: "PROXIMITY_MAX_TERMS",
+      });
     }
     if (node.children.some((child) => child.type !== "TERM_SET")) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.positionRelationOnlyTermSet"), severity: "error" });
@@ -234,17 +237,84 @@ function visit(
     if (node.ordered && !capability.structure.allowOrder) {
       issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedOrder"), severity: "error" });
     }
-    node.children.forEach((child) => visit(child, capability, issues, node.type, parentField, logicDepth));
+    node.children.forEach((child) => visit(child, capability, issues, node.type, parentField, logicDepth, phase));
     return;
   }
 
   if (node.type === "PROXIMITY") {
-    issues.push({ nodeId: node.id, message: t("ruleEditor.validation.legacyProximityDetected"), severity: "error" });
+    if (parentType !== "LOGIC" && parentType !== "FIELD" && parentType !== "NOT" && parentType !== "SCORE") {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.logicParentInvalid"), severity: "error" });
+    }
+    if (node.children.length < 2) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.proximityNeedTwoTerms"), severity: "error" });
+    }
+    if (node.children.length > 5) {
+      issues.push({
+        nodeId: node.id,
+        message: t("ruleEditor.validation.proximityMaxTerms", { max: 5 }),
+        severity: "error",
+        type: "PROXIMITY_MAX_TERMS",
+      });
+    }
+    if (phase === "post" && node.children.some((child) => child.type !== "TERM_SET")) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.positionRelationOnlyTermSet"), severity: "error" });
+    }
+    if (phase === "pre") {
+      const fields = node.children
+        .filter((child): child is Extract<UiExpressionNode, { type: "FIELD" }> => child.type === "FIELD")
+        .map((child) => child.field);
+      if (fields.length > 0 && new Set(fields).size > 1) {
+        issues.push({
+          nodeId: node.id,
+          message: t("ruleEditor.validation.fieldScopeConflict"),
+          severity: "error",
+          type: "FIELD_CONFLICT",
+        });
+      }
+    }
+    node.children.forEach((child) => visit(child, capability, issues, node.type, parentField, logicDepth, phase));
     return;
   }
 
-  if (node.type === "NOT" || node.type === "SCORE" || node.type === "TOPIC_REF") {
-    issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedNodeType"), severity: "error" });
+  if (node.type === "NOT") {
+    if (!canUseNot(capability)) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedNot"), severity: "error" });
+    }
+    if (!node.child) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.notIncomplete"), severity: "error" });
+      return;
+    }
+    if (!isChildAllowedByMatrix(node.type, node.child.type, capability)) {
+      issues.push({ nodeId: node.child.id, message: t("ruleEditor.validation.unsupportedNodeType"), severity: "error" });
+      return;
+    }
+    visit(node.child, capability, issues, node.type, parentField, logicDepth, phase);
+    return;
+  }
+
+  if (node.type === "SCORE") {
+    if (!capability.advanced.allowScore) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedScore"), severity: "error" });
+    }
+    if (!node.child) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.scoreIncomplete"), severity: "error" });
+      return;
+    }
+    if (!isChildAllowedByMatrix(node.type, node.child.type, capability)) {
+      issues.push({ nodeId: node.child.id, message: t("ruleEditor.validation.unsupportedNodeType"), severity: "error" });
+      return;
+    }
+    visit(node.child, capability, issues, node.type, parentField, logicDepth, phase);
+    return;
+  }
+
+  if (node.type === "TOPIC_REF") {
+    if (!canUseTopicRef(capability)) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.unsupportedTopicRef"), severity: "error" });
+    }
+    if (!node.topicId.trim()) {
+      issues.push({ nodeId: node.id, message: t("ruleEditor.validation.topicRefUnselected"), severity: "error" });
+    }
     return;
   }
 

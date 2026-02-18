@@ -502,7 +502,7 @@ function SemanticSection({
     { value: "AND", label: "必须满足全部条件" },
     { value: "OR", label: "满足任意条件" },
     { value: "ACCRUE", label: "满足越多越容易成立" },
-    { value: "AT_LEAST", label: "至少满足 N 个" },
+    { value: "LOGSUM", label: "至少满足 N 个" },
     { value: "WEIGHTED", label: "综合权重判断" },
   ];
   return (

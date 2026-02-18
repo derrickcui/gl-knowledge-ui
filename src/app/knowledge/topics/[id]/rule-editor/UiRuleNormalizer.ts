@@ -45,19 +45,36 @@ export function buildRootFromBlocks(
     };
   }
 
-  const root: UiExpressionNode = {
-    id: createId(),
-    type: "FIELD",
-    field: structure.field,
-    child: {
+  let expression: UiExpressionNode = logic;
+
+  if (structure.relation === "SENTENCE" || structure.relation === "PARAGRAPH") {
+    expression = {
       id: createId(),
       type: "STRUCTURE",
-      scope: structure.relation === "SENTENCE" ? "SENTENCE" : "PARAGRAPH",
-      child: logic,
-    },
-  };
+      scope: structure.relation,
+      child: expression,
+    };
+  }
 
-  return root;
+  if (structure.field !== "CONTENT") {
+    expression = {
+      id: createId(),
+      type: "FIELD",
+      field: structure.field,
+      child: expression,
+    };
+  }
+
+  // Root is always an expression group in the new model.
+  if (expression.type === "LOGIC") {
+    return expression;
+  }
+  return {
+    id: createId(),
+    type: "LOGIC",
+    operator: "AND",
+    children: [expression],
+  };
 }
 
 function buildBlockNode(block: ConditionBlock): UiExpressionNode {

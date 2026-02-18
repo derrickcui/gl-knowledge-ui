@@ -2,7 +2,7 @@ export type GroupOperator =
   | "AND"
   | "OR"
   | "ACCRUE"
-  | "AT_LEAST"
+  | "LOGSUM"
   | "WEIGHTED";
 
 export type StructureRelation =
@@ -48,14 +48,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function isGroupOperator(value: unknown): value is GroupOperator {
-  return (
-    value === "AND" ||
-    value === "OR" ||
-    value === "ACCRUE" ||
-    value === "AT_LEAST" ||
-    value === "WEIGHTED"
-  );
+function normalizeGroupOperator(value: unknown): GroupOperator | null {
+  if (value === "AND") return "AND";
+  if (value === "OR") return "OR";
+  if (value === "ACCRUE") return "ACCRUE";
+  if (value === "LOGSUM") return "LOGSUM";
+  if (value === "WEIGHTED") return "WEIGHTED";
+  // Backward compatibility for persisted legacy template capability.
+  if (value === "AT_LEAST") return "LOGSUM";
+  return null;
 }
 
 function isStructureRelation(value: unknown): value is StructureRelation {
@@ -84,7 +85,13 @@ export function parseTemplateCapabilityState(
   }
 
   const allowModes = Array.isArray(semantic.allowModes)
-    ? semantic.allowModes.filter(isGroupOperator)
+    ? Array.from(
+        new Set(
+          semantic.allowModes
+            .map((mode) => normalizeGroupOperator(mode))
+            .filter((mode): mode is GroupOperator => Boolean(mode))
+        )
+      )
     : null;
   const allowRelation = Array.isArray(structure.allowRelation)
     ? structure.allowRelation.filter(isStructureRelation)

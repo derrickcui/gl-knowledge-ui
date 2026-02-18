@@ -114,6 +114,7 @@ export type UiNodeType =
   | "LOGIC"
   | "STRUCTURE"
   | "POSITION_RELATION"
+  | "PROXIMITY"
   | "FIELD"
   | "TERM_SET"
   | "NOT"

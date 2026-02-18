@@ -3,7 +3,6 @@ import { RuleEditorLayout } from "./rule-editor/RuleEditorLayout";
 import type {
   PositionRelationScope,
   RuleField,
-  StructureScope,
   UiCapabilityViewModel,
   UiExpressionNode,
   UiNodeType,
@@ -14,6 +13,7 @@ import type {
 import { ExplainPanel, type ExplainViewModel } from "./rule-editor/ExplainPanel";
 import { buildNodeDiffDetail } from "./rule-editor/diff";
 import { validateTree } from "./rule-editor/validation";
+import { normalizeExpressionTree } from "./rule-editor/expression-normalizer";
 import { HeaderBar, type OpenViewOption } from "./rule-editor/HeaderBar";
 import { MainWorkspace } from "./rule-editor/MainWorkspace";
 import { RightSidebar } from "./rule-editor/RightSidebar";
@@ -28,6 +28,8 @@ import { ExpressionTreePanel } from "./rule-editor/ExpressionTreePanel";
 import { nodeLabel } from "./rule-editor/ExpressionNodeRenderer";
 import { NodeInspector } from "./rule-editor/NodeInspector";
 import { CapabilityProvider } from "./rule-editor/CapabilityContext";
+import { RuleIntelligencePanel } from "./rule-editor/RuleIntelligencePanel";
+import { RuleVersionTimelinePanel, type RuleVersionEntry } from "./rule-editor/RuleVersionTimelinePanel";
 import { t } from "@/i18n";
 import {
   canCreatePositionMode,
@@ -40,9 +42,26 @@ import {
   removeNode,
   updateNode,
 } from "./rule-editor/tree-utils";
-import { structureScopeOptionsForField } from "./rule-editor/capability-policy";
 import type { SelectedTerm } from "./rule-editor/term-selector-types";
 import { buildExplainViewModel } from "./rule-editor/explain/explain-builder";
+import { wrapNodesInField } from "./rule-editor/operations/wrapNodes";
+import { moveNode } from "./rule-editor/operations/moveNode";
+import { validateParentChild } from "./rule-editor/validator/validateParentChild";
+import { formatExpressionTree } from "./rule-editor/format-expression-tree";
+import { detectProximitySuggestion, type ProximitySuggestion } from "./rule-editor/suggestion-engine";
+import { applyAutoFix } from "./rule-editor/auto-fix";
+import type { GeneratedRuleCandidate } from "./rule-editor/rule-auto-generate";
+import { generateRuleCandidatesFromRuntime } from "./rule-editor/rule-auto-generate";
+import {
+  assessRuleRisk,
+  buildHeatLevelByNodeId,
+  buildOptimizationSuggestions,
+  computeComplexityMetrics,
+  computeHitDistribution,
+  computePerformanceMetrics,
+  recommendTemplates,
+  type OptimizationSuggestion,
+} from "./rule-editor/rule-intelligence";
 import type {
   ConditionImpactItem,
   PreviewDocumentDetailResponse,
@@ -51,6 +70,7 @@ import type {
 import type { RuntimeActiveItem } from "@/lib/api/runtime";
 import type { RuntimeExecuteResponse } from "@/lib/api/ruleRuntime";
 import type { RuntimeExecuteOptions } from "@/lib/api/ruleRuntime";
+import type { RuleAbTestResult } from "./rule-editor/ab-test";
 
 export type RuleEditorProps = {
   rule: UiRuleViewModel;
@@ -67,6 +87,7 @@ export type RuleEditorProps = {
   onDeleteDraft?: () => void;
   onRunWorkspace?: (options?: { page?: number; size?: number }) => void;
   onRunNode?: (nodeId: string, options?: RuntimeExecuteOptions) => void;
+  onRunAbTest?: () => void;
   onSelectPreviewDocument?: (docId: string) => void;
   onSubmit?: () => void;
   onPublish?: () => void;
@@ -77,12 +98,15 @@ export type RuleEditorProps = {
   previewDocumentBusy?: boolean;
   previewError?: string | null;
   previewBusy?: boolean;
+  compiledGql?: string | null;
+  compiledGqlSource?: "local-compiler" | "server" | null;
   fullRuntimeResult?: Extract<RuntimeExecuteResponse, { mode: "FULL" }> | null;
   impactRuntimeResult?: Extract<RuntimeExecuteResponse, { mode: "IMPACT" }> | null;
   nodeRuntimeResults?: Record<string, Extract<RuntimeExecuteResponse, { mode: "NODE" }>>;
   runtimeOptions?: RuntimeActiveItem[];
   activeRuntimeId?: number | null;
   onChangeRuntime?: (id: number) => void;
+  abTestResult?: RuleAbTestResult | null;
 };
 
 type PreviewState = {
@@ -119,6 +143,7 @@ export function RuleEditor({
   onDeleteDraft,
   onRunWorkspace,
   onRunNode,
+  onRunAbTest,
   onSelectPreviewDocument,
   onSubmit,
   onPublish,
@@ -129,15 +154,18 @@ export function RuleEditor({
   previewDocumentBusy = false,
   previewError = null,
   previewBusy = false,
+  compiledGql = null,
+  compiledGqlSource = null,
   fullRuntimeResult = null,
   impactRuntimeResult = null,
   nodeRuntimeResults = {},
   runtimeOptions = [],
   activeRuntimeId = null,
   onChangeRuntime,
+  abTestResult = null,
 }: RuleEditorProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(rule.root?.id ?? null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [collapsedByUser, setCollapsedByUser] = useState<Record<string, boolean>>({});
   const [diffMode, setDiffMode] = useState(false);
   const [openViews, setOpenViews] = useState<Record<OpenViewOption, boolean>>({
     effectValidation: false,
@@ -172,11 +200,60 @@ export function RuleEditor({
     editingNodeId: null,
     draft: { relation: "NEAR", distance: 5, ordered: false },
   });
+  const [visibleStructureHints, setVisibleStructureHints] = useState<string[]>([]);
+  const [draftBPreview, setDraftBPreview] = useState<{
+    candidateId: string;
+    root: UiExpressionNode;
+    added: number;
+    removed: number;
+    changed: number;
+  } | null>(null);
+  const [versionHistory, setVersionHistory] = useState<RuleVersionEntry[]>([]);
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
+  const [draggingNodeType, setDraggingNodeType] = useState<UiExpressionNode["type"] | null>(null);
+  const lastHintKeyRef = useRef<string>("");
 
   const baselineRootRef = useRef<UiExpressionNode | null>(rule.root);
+  const prevDirtyRef = useRef<boolean>(dirty);
+  const prevStatusRef = useRef<string>(status);
+  const prevAbTestRef = useRef<string | null>(abTestResult?.generatedAt ?? null);
+  const versionSeqRef = useRef<number>(0);
   const validationIssues = useMemo(() => validateTree(rule.root, capability), [rule.root, capability]);
   const hasEmptyConditionGroup = useMemo(() => hasEmptyLogicGroup(rule.root), [rule.root]);
   const hasInvalidSemanticModeState = useMemo(() => hasInvalidSemanticMode(rule.root), [rule.root]);
+  const structureHints = useMemo(() => collectStructureHints(rule.root), [rule.root]);
+  const proximitySuggestion = useMemo(() => detectProximitySuggestion(rule.root), [rule.root]);
+  const fieldConflictNodeIds = useMemo(() => collectFieldConflictNodeIds(rule.root), [rule.root]);
+  const impactRanking: ConditionImpactItem[] = previewResult?.impactRanking ?? [];
+  const intelligenceFullTotal = fullRuntimeResult?.total ?? impactRuntimeResult?.fullTotal ?? previewResult?.total ?? 0;
+  const heatLevelByNodeId = useMemo(
+    () => buildHeatLevelByNodeId(impactRuntimeResult, impactRanking, intelligenceFullTotal),
+    [impactRuntimeResult, impactRanking, intelligenceFullTotal]
+  );
+  const complexityMetrics = useMemo(() => computeComplexityMetrics(rule.root), [rule.root]);
+  const hitDistribution = useMemo(() => computeHitDistribution(fullRuntimeResult), [fullRuntimeResult]);
+  const performanceMetrics = useMemo(
+    () => computePerformanceMetrics(rule.root, fullRuntimeResult, impactRuntimeResult),
+    [rule.root, fullRuntimeResult, impactRuntimeResult]
+  );
+  const riskAssessment = useMemo(
+    () => assessRuleRisk(rule.root, intelligenceFullTotal, impactRuntimeResult, impactRanking),
+    [rule.root, intelligenceFullTotal, impactRuntimeResult, impactRanking]
+  );
+  const optimizationSuggestions = useMemo(
+    () => buildOptimizationSuggestions(rule.root, impactRuntimeResult, impactRanking),
+    [rule.root, impactRuntimeResult, impactRanking]
+  );
+  const templateRecommendations = useMemo(() => recommendTemplates(rule.root), [rule.root]);
+  const generatedCandidates = useMemo(
+    () => generateRuleCandidatesFromRuntime(fullRuntimeResult, impactRuntimeResult),
+    [fullRuntimeResult, impactRuntimeResult]
+  );
+  const nodeErrorById = useMemo(() => buildNodeErrorById(validationIssues), [validationIssues]);
+  const debugStateByNodeId = useMemo(
+    () => buildDebugStateByNodeId(activeTabId, previewState.activeNodeId, impactRuntimeResult, impactRanking),
+    [activeTabId, previewState.activeNodeId, impactRuntimeResult, impactRanking]
+  );
   const disableSaveHint = useMemo(() => {
     if (hasEmptyConditionGroup) return t("ruleEditor.header.saveDisabledEmptyGroup");
     if (hasInvalidSemanticModeState) return t("ruleEditor.header.saveDisabledInvalidMode");
@@ -199,7 +276,6 @@ export function RuleEditor({
     [rule.root, previewState]
   );
   const activePreviewNodeLabel = activePreviewNode ? nodeLabel(activePreviewNode) : null;
-  const impactRanking: ConditionImpactItem[] = previewResult?.impactRanking ?? [];
   const workspaceViewMode = openViews.effectValidation ? "split" : "edit";
   const analysisTabs: AnalysisTab[] = useMemo(
     () => [
@@ -209,6 +285,7 @@ export function RuleEditor({
     ],
     [fullTabStale, nodeTabs, impactTabStale]
   );
+  const collapseState = useMemo(() => buildCollapseState(rule.root, collapsedByUser), [rule.root, collapsedByUser]);
 
   useEffect(() => {
     setFullTabStale(true);
@@ -216,43 +293,278 @@ export function RuleEditor({
     setNodeTabs((prev) => prev.map((tab) => ({ ...tab, stale: true })));
   }, [rule.root]);
 
+  useEffect(() => {
+    const firstError = validationIssues.find((item) => item.severity === "error");
+    if (!firstError) return;
+    expandPathToNode(firstError.nodeId);
+  }, [validationIssues]);
+
+  useEffect(() => {
+    if (!rule.root) {
+      setCollapsedByUser({});
+    }
+  }, [rule.root]);
+
+  useEffect(() => {
+    if (!rule.root) return;
+    if (versionHistory.length > 0) return;
+    versionSeqRef.current = 1;
+    setVersionHistory([
+      buildVersionEntry("LOADED", 1, diff.added, diff.removed, diff.changed, riskAssessment.level, complexityMetrics.score),
+    ]);
+  }, [rule.root, versionHistory.length, diff.added, diff.removed, diff.changed, riskAssessment.level, complexityMetrics.score]);
+
+  useEffect(() => {
+    const prevDirty = prevDirtyRef.current;
+    if (prevDirty && !dirty) {
+      versionSeqRef.current += 1;
+      setVersionHistory((prev) => [
+        ...prev,
+        buildVersionEntry(
+          "SAVED",
+          versionSeqRef.current,
+          diff.added,
+          diff.removed,
+          diff.changed,
+          riskAssessment.level,
+          complexityMetrics.score
+        ),
+      ]);
+    }
+    prevDirtyRef.current = dirty;
+  }, [dirty, diff.added, diff.removed, diff.changed, riskAssessment.level, complexityMetrics.score]);
+
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current;
+    if (status !== prevStatus) {
+      if (status === "IN_REVIEW") {
+        versionSeqRef.current += 1;
+        setVersionHistory((prev) => [
+          ...prev,
+          buildVersionEntry(
+            "SUBMITTED",
+            versionSeqRef.current,
+            diff.added,
+            diff.removed,
+            diff.changed,
+            riskAssessment.level,
+            complexityMetrics.score
+          ),
+        ]);
+      } else if (status === "PUBLISHED") {
+        versionSeqRef.current += 1;
+        setVersionHistory((prev) => [
+          ...prev,
+          buildVersionEntry(
+            "PUBLISHED",
+            versionSeqRef.current,
+            diff.added,
+            diff.removed,
+            diff.changed,
+            riskAssessment.level,
+            complexityMetrics.score
+          ),
+        ]);
+      }
+    }
+    prevStatusRef.current = status;
+  }, [status, diff.added, diff.removed, diff.changed, riskAssessment.level, complexityMetrics.score]);
+
+  useEffect(() => {
+    const prev = prevAbTestRef.current;
+    const current = abTestResult?.generatedAt ?? null;
+    if (current && current !== prev && abTestResult) {
+      versionSeqRef.current += 1;
+      setVersionHistory((entries) => [
+        ...entries,
+        buildVersionEntry(
+          "AB_TESTED",
+          versionSeqRef.current,
+          0,
+          0,
+          0,
+          riskAssessment.level,
+          complexityMetrics.score,
+          {
+            winner: abTestResult.winner,
+            deltaHit: abTestResult.deltaHit,
+            deltaHitRate: abTestResult.deltaHitRate,
+          }
+        ),
+      ]);
+    }
+    prevAbTestRef.current = current;
+  }, [abTestResult, riskAssessment.level, complexityMetrics.score]);
+
+  useEffect(() => {
+    if (structureHints.length === 0) return;
+    const key = structureHints.join("|");
+    if (key === lastHintKeyRef.current) return;
+    lastHintKeyRef.current = key;
+    setVisibleStructureHints(structureHints);
+    const timer = window.setTimeout(() => {
+      setVisibleStructureHints([]);
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [structureHints]);
+
   const setRoot = (nextRoot: UiExpressionNode | null) => {
-    onChange({ ...rule, root: nextRoot });
+    onChange({
+      ...rule,
+      root: nextRoot ? ensureExpressionRoot(normalizeLogsumThresholds(nextRoot)) : null,
+    });
   };
 
-  const toLogicNode = (node: UiExpressionNode | null): UiExpressionNode => {
-    if (!node) {
-      return createNode("LOGIC");
-    }
-    if (node.type === "LOGIC") return node;
-    if (node.type === "STRUCTURE") {
-      if (node.child?.type === "LOGIC") return node.child;
-      return createNode("LOGIC");
-    }
-    const logic = createNode("LOGIC");
-    if (logic.type !== "LOGIC") return logic;
-    return { ...logic, children: [node] };
+  const handleAutoFormat = () => {
+    if (!rule.root) return;
+    const formatted = formatExpressionTree(rule.root);
+    setRoot(formatted);
+    setVisibleStructureHints([t("ruleEditor.tree.autoFormatDone")]);
+    window.setTimeout(() => setVisibleStructureHints([]), 1500);
   };
 
-  const buildStructureChild = (scope: StructureScope, existing: UiExpressionNode | null): UiExpressionNode => {
-    const logic = toLogicNode(existing);
-    if (scope === "DOCUMENT") {
-      return logic;
-    }
-    const structure = createNode("STRUCTURE");
-    if (structure.type !== "STRUCTURE") {
-      return logic;
-    }
-    return {
-      ...structure,
-      scope,
-      child: logic,
-    };
+  const handleAutoFix = () => {
+    if (!rule.root) return;
+    const fixed = applyAutoFix(rule.root, validationIssues);
+    if (!fixed.fixed) return;
+    setRoot(fixed.root);
+    setVisibleStructureHints([t("ruleEditor.validation.autoFixDone")]);
+    window.setTimeout(() => setVisibleStructureHints([]), 1500);
   };
 
-  const createDefaultStructureForField = (field: RuleField): UiExpressionNode => {
-    const options = structureScopeOptionsForField(capability, field);
-    return buildStructureChild(options[0] ?? "DOCUMENT", null);
+  const handleApplyProximitySuggestion = (suggestion: ProximitySuggestion) => {
+    if (!rule.root) return;
+    const termIds = suggestion.termNodeIds;
+    setRoot(
+      updateNode(rule.root, suggestion.logicNodeId, (node) => {
+        if (node.type !== "LOGIC") return node;
+        const selectedIndexes = node.children
+          .map((child, index) => (termIds.includes(child.id) ? index : -1))
+          .filter((index) => index >= 0);
+        if (selectedIndexes.length < 2) return node;
+        const selectedTerms = selectedIndexes
+          .map((index) => node.children[index])
+          .filter((child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET");
+        if (selectedTerms.length < 2) return node;
+        const firstIndex = Math.min(...selectedIndexes);
+        const selectedSet = new Set(selectedTerms.map((item) => item.id));
+        const remain = node.children.filter((child) => !selectedSet.has(child.id));
+        const insertAt = Math.min(firstIndex, remain.length);
+        const relationNode = createPositionRelationNode("PROXIMITY");
+        const wrapped: UiExpressionNode = {
+          ...relationNode,
+          mode: "PROXIMITY",
+          relation: "NEAR",
+          ordered: false,
+          distance: 5,
+          children: selectedTerms,
+        };
+        return {
+          ...node,
+          children: [...remain.slice(0, insertAt), wrapped, ...remain.slice(insertAt)],
+        };
+      })
+    );
+    setVisibleStructureHints([t("ruleEditor.tree.suggestion.proximityApplied")]);
+    window.setTimeout(() => setVisibleStructureHints([]), 1500);
+  };
+
+  const handleApplyOptimizationSuggestion = (suggestion: OptimizationSuggestion) => {
+    if (!rule.root) return;
+    if (suggestion.type === "USE_PROXIMITY") {
+      const childIds = (suggestion.payload?.childIds as string[] | undefined) ?? [];
+      if (childIds.length >= 2) {
+        handleWrapChildren(suggestion.nodeId, childIds, "PROXIMITY");
+      }
+      return;
+    }
+    if (suggestion.type === "LOGSUM_TO_AND") {
+      handlePatchNode(suggestion.nodeId, (node) =>
+        node.type === "LOGIC" ? { ...node, operator: "AND", threshold: undefined } : node
+      );
+      return;
+    }
+    if (suggestion.type === "FLATTEN_LOGIC") {
+      handleAutoFormat();
+      return;
+    }
+    if (suggestion.type === "REMOVE_LOW_IMPACT") {
+      handleDeleteNode(suggestion.nodeId);
+    }
+  };
+
+  const handleApplyGeneratedCandidate = (candidate: GeneratedRuleCandidate) => {
+    if (candidate.action.type === "APPLY_PROXIMITY_HINT") {
+      if (proximitySuggestion) {
+        handleApplyProximitySuggestion(proximitySuggestion);
+      }
+      return;
+    }
+    if (candidate.action.type === "REMOVE_LOW_IMPACT") {
+      handleDeleteNode(candidate.action.nodeId);
+    }
+  };
+
+  const handleGenerateDraftB = (candidate: GeneratedRuleCandidate) => {
+    if (!rule.root) return;
+    const draft = buildDraftBFromCandidate(rule.root, candidate);
+    if (!draft) return;
+    const diffPreview = buildNodeDiffDetail(rule.root, draft);
+    setDraftBPreview({
+      candidateId: candidate.id,
+      root: draft,
+      added: diffPreview.added,
+      removed: diffPreview.removed,
+      changed: diffPreview.changed,
+    });
+  };
+
+  const handleApplyDraftB = () => {
+    if (!draftBPreview) return;
+    setRoot(draftBPreview.root);
+    versionSeqRef.current += 1;
+    setVersionHistory((entries) => [
+      ...entries,
+      buildVersionEntry(
+        "DRAFT_B_APPLIED",
+        versionSeqRef.current,
+        draftBPreview.added,
+        draftBPreview.removed,
+        draftBPreview.changed,
+        riskAssessment.level,
+        complexityMetrics.score
+      ),
+    ]);
+    setDraftBPreview(null);
+    setVisibleStructureHints([t("ruleEditor.intel.autogen.draftApplied")]);
+    window.setTimeout(() => setVisibleStructureHints([]), 1500);
+  };
+
+  const expandPathToNode = (nodeId: string) => {
+    if (!rule.root) return;
+    const path = findPathIds(rule.root, nodeId);
+    if (path.length === 0) return;
+    setCollapsedByUser((prev) => {
+      const next = { ...prev };
+      path.forEach((id) => {
+        next[id] = false;
+      });
+      return next;
+    });
+  };
+
+  const handleSelectNode = (nodeId: string) => {
+    setSelectedNodeId(nodeId);
+    expandPathToNode(nodeId);
+  };
+
+  const handleToggleCollapse = (nodeId: string) => {
+    setCollapsedByUser((prev) => {
+      const next = { ...prev };
+      const collapsedNow = collapseState.collapsed.has(nodeId) || collapseState.compact.has(nodeId);
+      next[nodeId] = !collapsedNow;
+      return next;
+    });
   };
 
   const defaultPositionRelationForCapability = (): PositionRelationScope => {
@@ -262,14 +574,8 @@ export function RuleEditor({
   };
 
   const handleCreateRoot = (type: UiNodeType) => {
-    if (type !== "FIELD") return;
+    if (type !== "LOGIC") return;
     const root = createNode(type);
-    if (root.type === "FIELD") {
-      root.field = capability.where.allowFields.includes("CONTENT")
-        ? "CONTENT"
-        : capability.where.allowFields[0] ?? "CONTENT";
-      root.child = createDefaultStructureForField(root.field);
-    }
     setRoot(root);
     setSelectedNodeId(root.id);
   };
@@ -280,6 +586,10 @@ export function RuleEditor({
     if (!parent) return;
     const allowed = getAllowedChildTypes(parent, capability);
     if (!allowed.includes(type)) return;
+    if ((parent.type === "POSITION_RELATION" || parent.type === "PROXIMITY") && type === "TERM_SET") {
+      const count = "children" in parent && Array.isArray(parent.children) ? parent.children.length : 0;
+      if (count >= 5) return;
+    }
     if (type === "TERM_SET") {
       setTermSelector({
         open: true,
@@ -290,26 +600,12 @@ export function RuleEditor({
       return;
     }
     const child = createNode(type);
-    if (child.type === "STRUCTURE" && parent.type === "FIELD") {
-      const options = structureScopeOptionsForField(capability, parent.field);
-      child.scope = options[0] ?? "DOCUMENT";
-    }
     setRoot(insertChild(rule.root, parentId, child));
     setSelectedNodeId(child.id);
   };
 
   const handleDeleteNode = (nodeId: string) => {
     if (!rule.root) return;
-    if (rule.root.id === nodeId && rule.root.type === "FIELD") return;
-    if (
-      rule.root.type === "FIELD" &&
-      ((rule.root.child?.type === "LOGIC" && rule.root.child.id === nodeId) ||
-        (rule.root.child?.type === "STRUCTURE" &&
-          rule.root.child.child?.type === "LOGIC" &&
-          rule.root.child.child.id === nodeId))
-    ) {
-      return;
-    }
     let nextRoot: UiExpressionNode | null = null;
     try {
       nextRoot = removeNode(rule.root, nodeId);
@@ -322,36 +618,24 @@ export function RuleEditor({
     }
   };
 
-  const handleChangeRootField = (nodeId: string, field: RuleField) => {
+  const handleChangeField = (nodeId: string, field: RuleField) => {
     if (!rule.root) return;
     setRoot(
       updateNode(rule.root, nodeId, (node) => {
         if (node.type !== "FIELD") return node;
         if (node.field === field) return node;
+        const nextChild =
+          (field === "TITLE" || field === "COLUMN") && node.child?.type === "STRUCTURE"
+            ? node.child.child
+            : node.child;
         return {
           ...node,
           field,
-          child: createDefaultStructureForField(field),
+          child: nextChild,
         };
       })
     );
     setSelectedNodeId(nodeId);
-  };
-
-  const handleChangeStructureScope = (scope: StructureScope) => {
-    if (!rule.root || rule.root.type !== "FIELD") return;
-    setRoot(
-      updateNode(rule.root, rule.root.id, (node) => {
-        if (node.type !== "FIELD") return node;
-        const options = structureScopeOptionsForField(capability, node.field);
-        const target = options.includes(scope) ? scope : options[0] ?? "DOCUMENT";
-        return {
-          ...node,
-          child: buildStructureChild(target, node.child),
-        };
-      })
-    );
-    setSelectedNodeId(rule.root.id);
   };
 
   const handleMoveChild = (parentId: string, childId: string, direction: "up" | "down") => {
@@ -362,6 +646,144 @@ export function RuleEditor({
   const handlePatchNode = (nodeId: string, updater: (node: UiExpressionNode) => UiExpressionNode) => {
     if (!rule.root) return;
     setRoot(updateNode(rule.root, nodeId, updater));
+  };
+
+  const handleWrapChildren = (
+    parentId: string,
+    childIds: string[],
+    mode: "FIELD" | "STRUCTURE" | "PROXIMITY" | "LOGIC"
+  ) => {
+    if (!rule.root || childIds.length === 0) return;
+    if (mode === "FIELD") {
+      try {
+        setRoot(wrapNodesInField(rule.root, parentId, childIds, capability));
+      } catch {
+        return;
+      }
+      return;
+    }
+
+    if (mode === "PROXIMITY") {
+      const selected = new Set(childIds);
+      setRoot(
+        updateNode(rule.root, parentId, (node) => {
+          if (node.type !== "LOGIC") return node;
+          const selectedIndexes = node.children
+            .map((child, index) => (selected.has(child.id) ? index : -1))
+            .filter((index) => index >= 0);
+          if (selectedIndexes.length < 2) return node;
+          const selectedTerms = selectedIndexes
+            .map((index) => node.children[index])
+            .filter((child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET");
+          if (selectedTerms.length < 2) return node;
+          const firstIndex = Math.min(...selectedIndexes);
+          const selectedSet = new Set(selectedTerms.map((item) => item.id));
+          const remain = node.children.filter((child) => !selectedSet.has(child.id));
+          const insertAt = Math.min(firstIndex, remain.length);
+          const relationNode = createPositionRelationNode("PROXIMITY");
+          return {
+            ...node,
+            children: [
+              ...remain.slice(0, insertAt),
+              {
+                ...relationNode,
+                mode: "PROXIMITY",
+                relation: "NEAR",
+                ordered: false,
+                distance: 5,
+                children: selectedTerms,
+              },
+              ...remain.slice(insertAt),
+            ],
+          };
+        })
+      );
+      return;
+    }
+
+    const selected = new Set(childIds);
+    setRoot(
+      updateNode(rule.root, parentId, (node) => {
+        if (node.type !== "LOGIC") return node;
+        const selectedIndexes = node.children
+          .map((child, index) => (selected.has(child.id) ? index : -1))
+          .filter((index) => index >= 0);
+        if (selectedIndexes.length === 0) return node;
+
+        const firstIndex = Math.min(...selectedIndexes);
+        const selectedChildren = selectedIndexes.map((index) => node.children[index]);
+        const selectedChildSet = new Set(selectedChildren.map((child) => child.id));
+        const logicGroup: UiExpressionNode = {
+          ...(createNode("LOGIC") as Extract<UiExpressionNode, { type: "LOGIC" }>),
+          operator: "AND",
+          children: selectedChildren,
+        };
+        const wrapped: UiExpressionNode =
+          mode === "LOGIC"
+            ? logicGroup
+            : {
+                ...(createNode("STRUCTURE") as Extract<UiExpressionNode, { type: "STRUCTURE" }>),
+                scope: capability.structure.allowRelation.includes("SENTENCE")
+                  ? "SENTENCE"
+                  : capability.structure.allowRelation.includes("PARAGRAPH")
+                  ? "PARAGRAPH"
+                  : "DOCUMENT",
+                child: logicGroup,
+              };
+        const remaining = node.children.filter((child) => !selectedChildSet.has(child.id));
+        const insertAt = Math.min(firstIndex, remaining.length);
+        return {
+          ...node,
+          children: [...remaining.slice(0, insertAt), wrapped, ...remaining.slice(insertAt)],
+        };
+      })
+    );
+  };
+
+  const handleDragStartNode = (nodeId: string) => {
+    if (!rule.root) return;
+    const node = findNode(rule.root, nodeId);
+    if (!node) return;
+    setDraggingNodeId(nodeId);
+    setDraggingNodeType(node.type);
+  };
+
+  const handleDragEndNode = () => {
+    setDraggingNodeId(null);
+    setDraggingNodeType(null);
+  };
+
+  const handleDropOnNode = (targetParentId: string, targetIndex: number) => {
+    if (!rule.root || !draggingNodeId || !draggingNodeType) return;
+    const target = findNode(rule.root, targetParentId);
+    if (!target) return;
+    if (!validateParentChild(target.type, draggingNodeType, capability)) {
+      setVisibleStructureHints([t("ruleEditor.drag.invalidDrop")]);
+      window.setTimeout(() => setVisibleStructureHints([]), 1500);
+      handleDragEndNode();
+      return;
+    }
+    setRoot(moveNode(rule.root, draggingNodeId, targetParentId, targetIndex, capability));
+    handleDragEndNode();
+  };
+
+  const canDropAt = (targetParentId: string, targetIndex: number): boolean => {
+    if (!rule.root || !draggingNodeId || !draggingNodeType) return false;
+    if (draggingNodeId === targetParentId) return false;
+    const target = findNode(rule.root, targetParentId);
+    const dragging = findNode(rule.root, draggingNodeId);
+    if (!target || !dragging) return false;
+    if (containsNode(dragging, targetParentId)) return false;
+    if (!validateParentChild(target.type, draggingNodeType, capability)) return false;
+
+    if ("children" in target && Array.isArray(target.children)) {
+      return targetIndex >= 0 && targetIndex <= target.children.length;
+    }
+    if ("child" in target) {
+      if (target.child) return false;
+      return targetIndex === 0;
+    }
+    return false;
   };
   const handleEditTermSet = (node: UiTermSetNode) => {
     setTermSelector({
@@ -411,6 +833,7 @@ export function RuleEditor({
   };
 
   const handleDebugNode = (nodeId: string) => {
+    expandPathToNode(nodeId);
     const node = rule.root ? findNode(rule.root, nodeId) : null;
     const tabTitle = node ? `NODE-${nodeLabel(node)}` : `NODE-${nodeId}`;
     setNodeTabs((prev) => {
@@ -448,6 +871,7 @@ export function RuleEditor({
   };
 
   const handleRunNodeById = (nodeId: string) => {
+    expandPathToNode(nodeId);
     const node = rule.root ? findNode(rule.root, nodeId) : null;
     const tabTitle = node ? `NODE-${nodeLabel(node)}` : `NODE-${nodeId}`;
     setNodeTabs((prev) => {
@@ -494,6 +918,7 @@ export function RuleEditor({
     }
     if (tabId.startsWith("NODE:")) {
       const nodeId = tabId.replace("NODE:", "");
+      expandPathToNode(nodeId);
       setPreviewState({ activeNodeId: nodeId });
       onRunNode?.(nodeId, { page: 1, size: 20, withHighlight: true, withItems: true });
     }
@@ -705,18 +1130,12 @@ export function RuleEditor({
             <ExpressionTreePanel
               root={rule.root}
               selectedNodeId={selectedNodeId}
-              collapsed={collapsed}
+              collapsed={collapseState.collapsed}
+              compact={collapseState.compact}
               capability={capability}
               readOnly={readOnly}
-              onSelect={setSelectedNodeId}
-              onToggleCollapse={(id) =>
-                setCollapsed((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(id)) next.delete(id);
-                  else next.add(id);
-                  return next;
-                })
-              }
+              onSelect={handleSelectNode}
+              onToggleCollapse={handleToggleCollapse}
               onCreateRoot={handleCreateRoot}
               onAddChild={handleAddChild}
               onSetPositionRelation={handleSetPositionRelation}
@@ -726,17 +1145,34 @@ export function RuleEditor({
               onDelete={handleDeleteNode}
               onMoveChild={handleMoveChild}
               onEditTermSet={handleOpenTermSelectorForNode}
+              onWrapChildren={handleWrapChildren}
+              draggingNodeId={draggingNodeId}
+              draggingNodeType={draggingNodeType}
+              onDragStartNode={handleDragStartNode}
+              onDragEndNode={handleDragEndNode}
+              onDropOnNode={handleDropOnNode}
+              canDropAt={canDropAt}
               activePreviewNodeId={previewState.activeNodeId}
               onDebugNode={handleDebugNode}
               diffMode={diffMode}
               onToggleDiffMode={() => setDiffMode((prev) => !prev)}
+              onAutoFormat={handleAutoFormat}
+              proximitySuggestion={proximitySuggestion}
+              onApplyProximitySuggestion={handleApplyProximitySuggestion}
               diffStatusById={diff.statusById}
+              structureHints={visibleStructureHints}
+              conflictNodeIds={fieldConflictNodeIds}
+              nodeErrorById={nodeErrorById}
+              debugStateByNodeId={debugStateByNodeId}
+              heatLevelByNodeId={heatLevelByNodeId}
             />
           }
           effectValidationPanel={
             <EffectValidationPanel
               busy={previewBusy}
               error={previewError}
+              compiledGql={compiledGql}
+              compiledGqlSource={compiledGqlSource}
               gqlPreviewEnabled={openViews.gqlPreview}
               activeNodeLabel={activePreviewNodeLabel}
               impactRanking={impactRanking}
@@ -757,6 +1193,26 @@ export function RuleEditor({
               onSelectTab={openViews.gqlPreview ? handleSelectTab : undefined}
               onCloseNodeTab={openViews.gqlPreview ? handleCloseNodeTab : undefined}
               onAddNodeTab={openViews.gqlPreview ? handleAddNodeTab : undefined}
+              hitDistribution={hitDistribution}
+              optimizationSuggestions={optimizationSuggestions}
+              templateRecommendations={templateRecommendations}
+              onApplyOptimizationSuggestion={handleApplyOptimizationSuggestion}
+              abTestResult={abTestResult}
+              onRunAbTest={onRunAbTest}
+              generatedCandidates={generatedCandidates}
+              onApplyGeneratedCandidate={handleApplyGeneratedCandidate}
+              draftBPreview={
+                draftBPreview
+                  ? {
+                      candidateId: draftBPreview.candidateId,
+                      added: draftBPreview.added,
+                      removed: draftBPreview.removed,
+                      changed: draftBPreview.changed,
+                    }
+                  : null
+              }
+              onGenerateDraftB={handleGenerateDraftB}
+              onApplyDraftB={handleApplyDraftB}
             />
           }
           rightSidebar={
@@ -764,21 +1220,29 @@ export function RuleEditor({
               propertyPanel={
                 <NodeInspector
                   node={selectedNode}
-                  rootField={rule.root?.type === "FIELD" ? rule.root.field : null}
-                  rootStructureScope={
-                    rule.root?.type === "FIELD" && rule.root.child?.type === "STRUCTURE"
-                      ? rule.root.child.scope
-                      : "DOCUMENT"
-                  }
                   readOnly={readOnly}
                   onPatchNode={handlePatchNode}
-                  onChangeField={handleChangeRootField}
-                  onChangeStructureScope={handleChangeStructureScope}
+                  onChangeField={handleChangeField}
                   onEditTermSet={handleEditTermSet}
                 />
               }
               explainPanel={<ExplainPanel explain={explainViewModel} />}
-              validationPanel={<ValidationPanel issues={validationIssues} />}
+              validationPanel={<ValidationPanel issues={validationIssues} onAutoFix={handleAutoFix} />}
+              intelligencePanel={
+                <RuleIntelligencePanel
+                  topicName={topicName}
+                  complexity={complexityMetrics}
+                  distribution={hitDistribution}
+                  suggestions={optimizationSuggestions}
+                  templates={templateRecommendations}
+                  performance={performanceMetrics}
+                  risk={riskAssessment}
+                  abTestResult={abTestResult}
+                  versionHistory={versionHistory}
+                  onApplySuggestion={handleApplyOptimizationSuggestion}
+                />
+              }
+              versionTimelinePanel={<RuleVersionTimelinePanel entries={versionHistory} />}
               diffPreviewPanel={openViews.diffCompare ? <DiffPreviewPanel diff={diff} /> : null}
               statusSummary={
                 <StatusSummary
@@ -970,5 +1434,316 @@ function hasInvalidSemanticMode(node: UiExpressionNode | null): boolean {
     case "TOPIC_REF":
       return false;
   }
+}
+
+function buildCollapseState(
+  root: UiExpressionNode | null,
+  collapsedByUser: Record<string, boolean>
+): { collapsed: Set<string>; compact: Set<string> } {
+  const collapsed = new Set<string>();
+  const compact = new Set<string>();
+  if (!root) return { collapsed, compact };
+
+  const walk = (node: UiExpressionNode, depth: number) => {
+    const hasChild = hasVisibleChildren(node);
+    if (hasChild) {
+      const override = collapsedByUser[node.id];
+      if (override === true) {
+        collapsed.add(node.id);
+      } else if (override === false) {
+        // force expanded
+      } else if (depth >= 4) {
+        collapsed.add(node.id);
+      } else if (depth === 3) {
+        compact.add(node.id);
+      }
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      node.children.forEach((child) => walk(child, depth + 1));
+    }
+    if ("child" in node && node.child) {
+      walk(node.child, depth + 1);
+    }
+  };
+
+  walk(root, 0);
+  return { collapsed, compact };
+}
+
+function hasVisibleChildren(node: UiExpressionNode): boolean {
+  if ("children" in node && Array.isArray(node.children) && node.children.length > 0) return true;
+  if ("child" in node && Boolean(node.child)) return true;
+  return false;
+}
+
+function findPathIds(root: UiExpressionNode, targetId: string): string[] {
+  const path: string[] = [];
+
+  const dfs = (node: UiExpressionNode): boolean => {
+    path.push(node.id);
+    if (node.id === targetId) return true;
+    if ("children" in node && Array.isArray(node.children)) {
+      for (const child of node.children) {
+        if (dfs(child)) return true;
+      }
+    }
+    if ("child" in node && node.child) {
+      if (dfs(node.child)) return true;
+    }
+    path.pop();
+    return false;
+  };
+
+  return dfs(root) ? path : [];
+}
+
+function collectFieldConflictNodeIds(root: UiExpressionNode | null): Set<string> {
+  const result = new Set<string>();
+  if (!root) return result;
+
+  const walk = (node: UiExpressionNode) => {
+    if (node.type === "LOGIC" || node.type === "PROXIMITY") {
+      const fieldChildren = node.children.filter(
+        (child): child is Extract<UiExpressionNode, { type: "FIELD" }> => child.type === "FIELD"
+      );
+      const fields = Array.from(new Set(fieldChildren.map((item) => item.field)));
+      if (fields.length > 1) {
+        fieldChildren.forEach((child) => result.add(child.id));
+        result.add(node.id);
+      }
+      node.children.forEach((child) => walk(child));
+      return;
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      node.children.forEach((child) => walk(child));
+    }
+    if ("child" in node && node.child) {
+      walk(node.child);
+    }
+  };
+
+  walk(root);
+  return result;
+}
+
+function buildNodeErrorById(issues: Array<{ nodeId: string; message: string; severity: "error" | "warning" }>): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  issues.forEach((issue) => {
+    if (issue.severity !== "error") return;
+    if (!result[issue.nodeId]) {
+      result[issue.nodeId] = [issue.message];
+      return;
+    }
+    if (!result[issue.nodeId].includes(issue.message)) {
+      result[issue.nodeId].push(issue.message);
+    }
+  });
+  return result;
+}
+
+function buildDebugStateByNodeId(
+  activeTabId: string,
+  activeNodeId: string | undefined,
+  impactRuntimeResult: Extract<RuntimeExecuteResponse, { mode: "IMPACT" }> | null,
+  impactRanking: ConditionImpactItem[]
+): Record<string, "NODE_ACTIVE" | "IMPACT_HIGH" | "IMPACT_MEDIUM"> {
+  const map: Record<string, "NODE_ACTIVE" | "IMPACT_HIGH" | "IMPACT_MEDIUM"> = {};
+  if (activeTabId === "FULL") {
+    return map;
+  }
+  if (activeTabId.startsWith("NODE:")) {
+    const nodeId = activeTabId.replace("NODE:", "") || activeNodeId;
+    if (nodeId) {
+      map[nodeId] = "NODE_ACTIVE";
+    }
+    return map;
+  }
+  if (activeTabId !== "IMPACT") {
+    return map;
+  }
+
+  if (impactRuntimeResult) {
+    impactRuntimeResult.analysis.forEach((item) => {
+      if (item.impactLevel === "HIGH") map[item.nodeId] = "IMPACT_HIGH";
+      if (item.impactLevel === "MEDIUM") map[item.nodeId] = "IMPACT_MEDIUM";
+    });
+    return map;
+  }
+
+  impactRanking.forEach((item) => {
+    if (item.contributionRate >= 0.5) map[item.nodeId] = "IMPACT_HIGH";
+    else if (item.contributionRate >= 0.1) map[item.nodeId] = "IMPACT_MEDIUM";
+  });
+  return map;
+}
+
+function collectStructureHints(root: UiExpressionNode | null): string[] {
+  if (!root) return [];
+  const hints: string[] = [];
+  const normalized = normalizeExpressionTree(root);
+  if (normalized.issues.length > 0) return hints;
+
+  const touchedFields = new Set<RuleField>();
+  walkForFieldHoist(root, touchedFields);
+  touchedFields.forEach((field) => {
+    hints.push(t("ruleEditor.structure.hint.unifiedScope", { scope: fieldToScopeLabel(field) }));
+  });
+
+  if (JSON.stringify(root) !== JSON.stringify(normalized.root) && hints.length === 0) {
+    hints.push(t("ruleEditor.structure.hint.reordered"));
+  }
+  return hints.slice(0, 2);
+}
+
+function walkForFieldHoist(node: UiExpressionNode, result: Set<RuleField>) {
+  if (node.type === "LOGIC" || node.type === "PROXIMITY") {
+    const children = node.children;
+    if (children.length >= 2 && children.every((child) => child.type === "FIELD")) {
+      const fields = children.map((child) => (child as Extract<UiExpressionNode, { type: "FIELD" }>).field);
+      const unique = Array.from(new Set(fields));
+      if (unique.length === 1) {
+        result.add(unique[0]);
+      }
+    }
+    children.forEach((child) => walkForFieldHoist(child, result));
+    return;
+  }
+  if (node.type === "FIELD" || node.type === "STRUCTURE" || node.type === "NOT" || node.type === "SCORE") {
+    if (node.child) walkForFieldHoist(node.child, result);
+    return;
+  }
+  if (node.type === "POSITION_RELATION") {
+    node.children.forEach((child) => walkForFieldHoist(child, result));
+  }
+}
+
+function fieldToScopeLabel(field: RuleField): string {
+  if (field === "TITLE") return t("ruleEditor.tree.node.fieldOnly.title");
+  if (field === "COLUMN") return t("ruleEditor.tree.node.fieldOnly.column");
+  return t("ruleEditor.tree.node.fieldOnly.content");
+}
+
+function containsNode(node: UiExpressionNode, targetId: string): boolean {
+  if (node.id === targetId) return true;
+  if ("children" in node && Array.isArray(node.children)) {
+    return node.children.some((child) => containsNode(child, targetId));
+  }
+  if ("child" in node && node.child) {
+    return containsNode(node.child, targetId);
+  }
+  return false;
+}
+
+function normalizeLogsumThresholds(node: UiExpressionNode): UiExpressionNode {
+  if (node.type === "LOGIC") {
+    const nextChildren = node.children.map((child) => normalizeLogsumThresholds(child));
+    if (node.operator === "LOGSUM") {
+      const max = Math.max(1, nextChildren.length);
+      const current = Math.round(Number(node.threshold ?? max));
+      const nextThreshold = !Number.isFinite(current) ? 1 : Math.min(Math.max(current, 1), max);
+      return { ...node, threshold: nextThreshold, children: nextChildren };
+    }
+    return { ...node, children: nextChildren };
+  }
+  if (node.type === "POSITION_RELATION") {
+    return {
+      ...node,
+      children: node.children
+        .map((child) => normalizeLogsumThresholds(child))
+        .filter((child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET"),
+    };
+  }
+  if (node.type === "PROXIMITY") {
+    return { ...node, children: node.children.map((child) => normalizeLogsumThresholds(child)) };
+  }
+  if ("child" in node) {
+    return { ...node, child: node.child ? normalizeLogsumThresholds(node.child) : null };
+  }
+  return node;
+}
+
+function ensureExpressionRoot(node: UiExpressionNode): Extract<UiExpressionNode, { type: "LOGIC" }> {
+  if (node.type === "LOGIC") return node;
+  const root = createNode("LOGIC");
+  if (root.type !== "LOGIC") {
+    throw new Error("Failed to create root LOGIC node.");
+  }
+  return {
+    ...root,
+    operator: "AND",
+    children: [node],
+  };
+}
+
+function buildVersionEntry(
+  action: RuleVersionEntry["action"],
+  seq: number,
+  added: number,
+  removed: number,
+  changed: number,
+  riskLevel: string,
+  complexityScore: number,
+  abSummary?: RuleVersionEntry["abSummary"]
+): RuleVersionEntry {
+  return {
+    id: `v-${Date.now()}-${seq}`,
+    version: `v${seq}.0`,
+    action,
+    at: new Date().toLocaleString(),
+    added,
+    removed,
+    changed,
+    riskLevel,
+    complexityScore,
+    abSummary,
+  };
+}
+
+function buildDraftBFromCandidate(
+  root: UiExpressionNode,
+  candidate: GeneratedRuleCandidate
+): UiExpressionNode | null {
+  if (candidate.action.type === "REMOVE_LOW_IMPACT") {
+    const next = removeNode(root, candidate.action.nodeId);
+    return next ? ensureExpressionRoot(normalizeLogsumThresholds(next)) : null;
+  }
+  if (candidate.action.type === "APPLY_PROXIMITY_HINT") {
+    const suggestion = detectProximitySuggestion(root);
+    if (!suggestion) return null;
+    const next = updateNode(root, suggestion.logicNodeId, (node) => {
+      if (node.type !== "LOGIC") return node;
+      const termIds = suggestion.termNodeIds;
+      const selectedIndexes = node.children
+        .map((child, index) => (termIds.includes(child.id) ? index : -1))
+        .filter((index) => index >= 0);
+      if (selectedIndexes.length < 2) return node;
+      const selectedTerms = selectedIndexes
+        .map((index) => node.children[index])
+        .filter((child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> => child.type === "TERM_SET");
+      if (selectedTerms.length < 2) return node;
+      const firstIndex = Math.min(...selectedIndexes);
+      const selectedSet = new Set(selectedTerms.map((item) => item.id));
+      const remain = node.children.filter((child) => !selectedSet.has(child.id));
+      const insertAt = Math.min(firstIndex, remain.length);
+      const relationNode = createPositionRelationNode("PROXIMITY");
+      return {
+        ...node,
+        children: [
+          ...remain.slice(0, insertAt),
+          {
+            ...relationNode,
+            mode: "PROXIMITY",
+            relation: "NEAR",
+            ordered: false,
+            distance: 5,
+            children: selectedTerms,
+          },
+          ...remain.slice(insertAt),
+        ],
+      };
+    });
+    return ensureExpressionRoot(normalizeLogsumThresholds(next));
+  }
+  return ensureExpressionRoot(normalizeLogsumThresholds(formatExpressionTree(root) ?? root));
 }
 

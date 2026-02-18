@@ -1,14 +1,21 @@
-﻿import { Search } from "lucide-react";
-import type { ImportanceLevel, UiCapabilityViewModel, UiExpressionNode, UiNodeType } from "./types";
+import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
 import type { NodeDiffStatus } from "./diff";
-import { canCreatePositionMode, getAllowedChildTypes } from "./tree-utils";
 import { useCapability } from "./CapabilityContext";
+import { canCreatePositionMode, getAllowedChildTypes } from "./tree-utils";
+import type { ImportanceLevel, RuleField, UiCapabilityViewModel, UiExpressionNode, UiNodeType } from "./types";
 import { t } from "@/i18n";
+import { AddNodeButtons } from "./AddNodeButtons";
+import { validateParentChild } from "./validator/validateParentChild";
+import type { HeatLevel } from "./rule-intelligence";
+
+type DebugState = "NODE_ACTIVE" | "IMPACT_HIGH" | "IMPACT_MEDIUM";
 
 export function ExpressionNodeRenderer({
   node,
   selectedNodeId,
   collapsed,
+  compact,
   depth,
   readOnly,
   capability: capabilityProp,
@@ -22,16 +29,29 @@ export function ExpressionNodeRenderer({
   onDelete,
   onMoveChild,
   onEditTermSet,
+  onWrapChildren,
+  draggingNodeId,
+  draggingNodeType,
+  onDragStartNode,
+  onDragEndNode,
+  onDropOnNode,
+  canDropAt,
   activePreviewNodeId,
   onDebugNode,
   diffMode,
   diffStatusById,
+  conflictNodeIds,
+  nodeErrorById,
+  debugStateByNodeId,
+  heatLevelByNodeId,
   parentWeighted = false,
+  inheritedField,
   moveContext,
 }: {
   node: UiExpressionNode;
   selectedNodeId: string | null;
   collapsed: Set<string>;
+  compact: Set<string>;
   depth: number;
   readOnly: boolean;
   capability: UiCapabilityViewModel;
@@ -45,11 +65,27 @@ export function ExpressionNodeRenderer({
   onDelete: (nodeId: string) => void;
   onMoveChild: (parentId: string, childId: string, direction: "up" | "down") => void;
   onEditTermSet: (nodeId: string) => void;
+  onWrapChildren: (
+    parentId: string,
+    childIds: string[],
+    mode: "FIELD" | "STRUCTURE" | "PROXIMITY" | "LOGIC"
+  ) => void;
+  draggingNodeId: string | null;
+  draggingNodeType: UiExpressionNode["type"] | null;
+  onDragStartNode: (nodeId: string) => void;
+  onDragEndNode: () => void;
+  onDropOnNode: (targetParentId: string, targetIndex: number) => void;
+  canDropAt: (targetParentId: string, targetIndex: number) => boolean;
   activePreviewNodeId: string | undefined;
   onDebugNode: (nodeId: string) => void;
   diffMode: boolean;
   diffStatusById: Record<string, NodeDiffStatus>;
+  conflictNodeIds: Set<string>;
+  nodeErrorById: Record<string, string[]>;
+  debugStateByNodeId: Record<string, DebugState>;
+  heatLevelByNodeId?: Record<string, HeatLevel>;
   parentWeighted?: boolean;
+  inheritedField?: RuleField;
   moveContext?: {
     parentId: string;
     index: number;
@@ -58,44 +94,124 @@ export function ExpressionNodeRenderer({
 }) {
   const capability = useCapability();
   const selected = selectedNodeId === node.id;
+  const isRoot = depth === 0;
   const isPreviewActive = activePreviewNodeId === node.id;
   const isCollapsed = collapsed.has(node.id);
-  const canHaveChildren =
-    node.type === "LOGIC" || node.type === "POSITION_RELATION" || node.type === "PROXIMITY";
-  const canHaveSingleChild =
-    node.type === "FIELD" || node.type === "STRUCTURE" || node.type === "NOT" || node.type === "SCORE";
+  const isCompact = compact.has(node.id);
+  const isFolded = isCollapsed || isCompact;
+  const debugState = debugStateByNodeId[node.id];
+  const heatLevel = heatLevelByNodeId?.[node.id] ?? "NONE";
+  const hasFieldConflict = conflictNodeIds.has(node.id);
+  const nodeErrors = nodeErrorById[node.id] ?? [];
+
+  const canHaveChildren = node.type === "LOGIC" || node.type === "POSITION_RELATION" || node.type === "PROXIMITY";
+  const canHaveSingleChild = node.type === "FIELD" || node.type === "STRUCTURE" || node.type === "NOT" || node.type === "SCORE";
+  const childCount = childNodeCount(node);
   const accent = depthAccent(depth);
+
   const diffStatus = diffStatusById[node.id];
+  const heatBgClass =
+    heatLevel === "HIGH"
+      ? "bg-red-50/70"
+      : heatLevel === "MEDIUM"
+      ? "bg-orange-50/70"
+      : heatLevel === "LOW"
+      ? "bg-yellow-50/70"
+      : "";
   const diffClass =
     diffMode && diffStatus === "added"
       ? "ring-2 ring-emerald-400"
       : diffMode && diffStatus === "changed"
       ? "ring-2 ring-amber-400"
       : "";
+
+  const debugClass =
+    debugState === "NODE_ACTIVE"
+      ? "ring-2 ring-blue-400"
+      : debugState === "IMPACT_HIGH"
+      ? "ring-2 ring-purple-500 shadow-[0_0_0_2px_rgba(168,85,247,0.2)]"
+      : debugState === "IMPACT_MEDIUM"
+      ? "ring-1 ring-purple-300"
+      : "";
+
   const allowedChildren = getAllowedChildTypes(node, capability);
-  const logicTermCount =
-    node.type === "LOGIC" ? node.children.filter((child) => child.type === "TERM_SET").length : 0;
-  const hasPositionChild =
-    node.type === "LOGIC" && node.children.some((child) => child.type === "POSITION_RELATION");
-  const existingPositionChild =
-    node.type === "LOGIC" ? node.children.find((child) => child.type === "POSITION_RELATION") : undefined;
+  const logicTermCount = node.type === "LOGIC" ? node.children.filter((child) => child.type === "TERM_SET").length : 0;
+  const hasPositionChild = node.type === "LOGIC" && node.children.some((child) => child.type === "POSITION_RELATION");
+  const existingPositionChild = node.type === "LOGIC" ? node.children.find((child) => child.type === "POSITION_RELATION") : undefined;
   const canSetPositionRelation =
     node.type === "LOGIC" &&
     allowedChildren.includes("POSITION_RELATION") &&
     logicTermCount >= 2 &&
     !hasPositionChild &&
     canCreatePositionMode(capability, "PROXIMITY");
-  const showImportanceSelector =
-    parentWeighted && node.type === "TERM_SET";
-  const showModeNeedTwoWarning =
-    node.type === "LOGIC" &&
-    node.children.length < 2 &&
-    needsTwoChildren(node.operator);
+
+  const showImportanceSelector = parentWeighted && node.type === "TERM_SET";
+  const showModeNeedTwoWarning = node.type === "LOGIC" && node.children.length < 2 && needsTwoChildren(node.operator);
   const importanceLevel = getImportanceLevel(node);
   const importanceWeight = levelToWeight(importanceLevel);
 
+  const scopeField = node.type === "FIELD" ? node.field : inheritedField;
+  const showScopeBadge = Boolean(scopeField && (node.type === "FIELD" || depth === 0));
+  const relationHeader = relationHeaderText(node);
+  const [showAllChildren, setShowAllChildren] = useState(false);
+  const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
+  const [hoverInsert, setHoverInsert] = useState<"before" | "after" | "inside" | null>(null);
+  const isDragging = Boolean(draggingNodeId);
+  const singleSlotOccupied = canHaveSingleChild && "child" in node && Boolean(node.child);
+  const canDropInside =
+    draggingNodeType != null &&
+    draggingNodeId !== node.id &&
+    validateParentChild(node.type, draggingNodeType, capability) &&
+    !singleSlotOccupied &&
+    canDropAt(
+      node.id,
+      canHaveChildren && "children" in node && Array.isArray(node.children) ? node.children.length : 0
+    );
+  const canDropBefore =
+    Boolean(moveContext) && canDropAt(moveContext!.parentId, moveContext!.index);
+  const canDropAfter =
+    Boolean(moveContext) && canDropAt(moveContext!.parentId, moveContext!.index + 1);
+
+  useEffect(() => {
+    if (node.type !== "LOGIC") {
+      if (selectedChildIds.length > 0) setSelectedChildIds([]);
+      return;
+    }
+    const allowed = new Set(node.children.map((child) => child.id));
+    setSelectedChildIds((prev) => {
+      const next = prev.filter((id) => allowed.has(id));
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+        return prev;
+      }
+      return next;
+    });
+  }, [node, selectedChildIds]);
+
+  const summary = buildNodeSummary(node);
+  const compactText = isCompact ? buildCompactPreview(node) : "";
+
   return (
     <div className="space-y-2">
+      {isDragging && moveContext && (
+        <div
+          className={`ml-2 h-1 rounded ${
+            canDropBefore ? "bg-blue-300" : "bg-red-300"
+          } ${hoverInsert === "before" ? "opacity-100" : "opacity-40"}`}
+          style={{ marginLeft: depth * 12 }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setHoverInsert("before");
+            event.dataTransfer.dropEffect = canDropBefore ? "move" : "none";
+          }}
+          onDragLeave={() => setHoverInsert((prev) => (prev === "before" ? null : prev))}
+          onDrop={(event) => {
+            event.preventDefault();
+            setHoverInsert(null);
+            onDropOnNode(moveContext.parentId, moveContext.index);
+          }}
+        />
+      )}
+
       <div
         className={`group relative rounded-md border border-l-4 p-3 ${
           selected
@@ -103,21 +219,101 @@ export function ExpressionNodeRenderer({
             : isPreviewActive
             ? "border-sky-300 bg-sky-50"
             : "border-slate-200 bg-white"
-        } ${isPreviewActive ? "border-l-sky-500" : accent} ${diffClass}`}
-        style={{ marginLeft: depth * 16 }}
+        } ${isPreviewActive ? "border-l-sky-500" : accent} ${heatBgClass} ${diffClass} ${debugClass} ${
+          hasFieldConflict ? "border-red-300 bg-red-50" : ""
+        } ${isDragging && canDropInside ? "ring-1 ring-blue-300 bg-blue-50/40" : ""} ${
+          isDragging && !canDropInside && draggingNodeId !== node.id ? "ring-1 ring-red-300 bg-red-50/30" : ""
+        }`}
+        style={{ marginLeft: depth * 12 }}
+        title={nodeErrors.length > 0 ? nodeErrors.join("\n") : undefined}
+        draggable={!readOnly && Boolean(moveContext)}
+        onDragStart={(event) => {
+          if (readOnly || !moveContext) return;
+          event.dataTransfer.effectAllowed = "move";
+          onDragStartNode(node.id);
+        }}
+        onDragEnd={() => onDragEndNode()}
+        onDragOver={(event) => {
+          if (!isDragging) return;
+          event.preventDefault();
+          setHoverInsert("inside");
+          event.dataTransfer.dropEffect = canDropInside ? "move" : "none";
+        }}
+        onDragLeave={() => setHoverInsert((prev) => (prev === "inside" ? null : prev))}
+        onDrop={(event) => {
+          if (!isDragging) return;
+          event.preventDefault();
+          setHoverInsert(null);
+          onDropOnNode(node.id, canHaveChildren && "children" in node && Array.isArray(node.children) ? node.children.length : 0);
+        }}
       >
         <div className="flex items-center justify-between gap-2">
-          <button type="button" className="text-left" onClick={() => onSelect(node.id)}>
-            <div className="text-xs text-slate-500">{t("ruleEditor.tree.level", { level: depth + 1 })}</div>
+          <div
+            className="text-left"
+            role="button"
+            tabIndex={0}
+            onClick={() => onSelect(node.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(node.id);
+              }
+            }}
+          >
+            {showScopeBadge && scopeField && (
+              <div className="mt-1 inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[11px] text-sky-700">
+                {t("ruleEditor.structure.scopeBadge", { scope: fieldLabel(scopeField) })}
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm font-semibold">
+              {(canHaveChildren || canHaveSingleChild) && (
+                <button
+                  type="button"
+                  className="rounded px-1 text-xs text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onToggleCollapse(node.id);
+                  }}
+                  aria-label={isFolded ? t("drawer.expand") : t("drawer.collapse")}
+                >
+                  {isFolded ? ">" : "v"}
+                </button>
+              )}
               <span>{nodeLabel(node)}</span>
+              <span
+                className={`inline-block h-2 w-2 rounded-full ${
+                  heatLevel === "HIGH"
+                    ? "bg-red-500"
+                    : heatLevel === "MEDIUM"
+                    ? "bg-orange-500"
+                    : heatLevel === "LOW"
+                    ? "bg-yellow-400"
+                    : "bg-slate-200"
+                }`}
+                title={t("ruleEditor.intel.heat.dot")}
+              />
+              {isRoot && (
+                <span className="rounded border border-slate-300 bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700">
+                  {t("ruleEditor.tree.rootBadge")}
+                </span>
+              )}
+              {isDragging && !canDropInside && draggingNodeId !== node.id && (
+                <span className="text-xs text-red-600">x</span>
+              )}
+              {hasFieldConflict && <span className="text-xs text-red-600">[!]</span>}
               {showModeNeedTwoWarning && (
                 <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-xs font-normal text-amber-700">
                   {t("ruleEditor.logic.modeNeedTwoWarningShort")}
                 </span>
               )}
             </div>
-          </button>
+            {isRoot && (
+              <div className="mt-1 text-[11px] font-normal text-slate-500">
+                {t("ruleEditor.tree.rootHint")}
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2">
             {!readOnly && moveContext && (
               <>
@@ -157,21 +353,26 @@ export function ExpressionNodeRenderer({
                 {diffStatus === "added" ? t("ruleEditor.tree.diff.added") : t("ruleEditor.tree.diff.changed")}
               </span>
             )}
-            {(canHaveChildren || canHaveSingleChild) && (
-              <button
-                type="button"
-                className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                onClick={() => onToggleCollapse(node.id)}
-              >
-                {isCollapsed ? t("drawer.expand") : t("drawer.collapse")}
-              </button>
-            )}
           </div>
         </div>
+
+        {isFolded && (
+          <div className="mt-2 space-y-1 text-xs text-slate-600">
+            <div>{summary}</div>
+            {compactText ? <div className="text-slate-500">{compactText}</div> : null}
+          </div>
+        )}
+
+        {relationHeader && !isCollapsed && (
+          <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700">
+            {relationHeader}
+          </div>
+        )}
+
         {showImportanceSelector && (
           <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
             <div className="flex items-center gap-2">
-              <span>{t("conditionCard.importanceLabel")}（[{importanceWeight}]）</span>
+              <span>{t("conditionCard.importanceLabel")}([{importanceWeight}])</span>
               {readOnly ? (
                 <span>{importanceLabel(importanceLevel)}</span>
               ) : (
@@ -183,9 +384,9 @@ export function ExpressionNodeRenderer({
                     onPatchNode(node.id, (n) => patchImportance(n, level));
                   }}
                 >
-                  <option value="HIGH">{importanceLabel("HIGH")}（[10]）</option>
-                  <option value="NORMAL">{importanceLabel("NORMAL")}（[5]）</option>
-                  <option value="LOW">{importanceLabel("LOW")}（[2]）</option>
+                  <option value="HIGH">{importanceLabel("HIGH")}([10])</option>
+                  <option value="NORMAL">{importanceLabel("NORMAL")}([5])</option>
+                  <option value="LOW">{importanceLabel("LOW")}([2])</option>
                 </select>
               )}
             </div>
@@ -194,18 +395,18 @@ export function ExpressionNodeRenderer({
 
         {!readOnly && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {allowedChildren
-              .filter((type) => type !== "POSITION_RELATION")
-              .map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                  onClick={() => onAddChild(node.id, type)}
-                >
-                  + {addButtonLabel(type)}
-                </button>
-              ))}
+            <AddNodeButtons
+              parentType={node.type}
+              parentId={node.id}
+              allowedChildren={allowedChildren}
+              onAdd={onAddChild}
+              hiddenTypes={["POSITION_RELATION"]}
+              disabledTypes={
+                (node.type === "POSITION_RELATION" || node.type === "PROXIMITY") && childCount >= 5
+                  ? ["TERM_SET"]
+                  : []
+              }
+            />
 
             {canSetPositionRelation && (
               <button
@@ -247,16 +448,62 @@ export function ExpressionNodeRenderer({
             {node.type !== "FIELD" &&
               node.type !== "STRUCTURE" &&
               !(node.type === "LOGIC" && !moveContext) && (
-              <button
-                type="button"
-                className="rounded border px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                onClick={() => onDelete(node.id)}
-              >
-                {t("ruleEditor.condition.remove")}
-              </button>
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                  onClick={() => onDelete(node.id)}
+                >
+                  {t("ruleEditor.condition.remove")}
+                </button>
+              )}
+
+            {node.type === "LOGIC" && selectedChildIds.length >= 1 && (
+              <>
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
+                  onClick={() => onWrapChildren(node.id, selectedChildIds, "LOGIC")}
+                >
+                  {t("ruleEditor.tree.wrap.logic", { count: selectedChildIds.length })}
+                </button>
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
+                  onClick={() => onWrapChildren(node.id, selectedChildIds, "FIELD")}
+                >
+                  {t("ruleEditor.tree.wrap.field", { count: selectedChildIds.length })}
+                </button>
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
+                  onClick={() => onWrapChildren(node.id, selectedChildIds, "STRUCTURE")}
+                >
+                  {t("ruleEditor.tree.wrap.structure", { count: selectedChildIds.length })}
+                </button>
+                {selectedChildIds.length >= 2 &&
+                  selectedChildIds.every((id) =>
+                    node.children.some((child) => child.id === id && child.type === "TERM_SET")
+                  ) && (
+                    <button
+                      type="button"
+                      className="rounded border border-violet-300 bg-violet-50 px-2 py-1 text-xs text-violet-700 hover:bg-violet-100"
+                      onClick={() => onWrapChildren(node.id, selectedChildIds, "PROXIMITY")}
+                    >
+                      {t("ruleEditor.tree.wrap.proximity", { count: selectedChildIds.length })}
+                    </button>
+                  )}
+                <button
+                  type="button"
+                  className="rounded border px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+                  onClick={() => setSelectedChildIds([])}
+                >
+                  {t("ruleEditor.tree.wrap.clearSelection")}
+                </button>
+              </>
             )}
           </div>
         )}
+
         {node.type === "TERM_SET" && (
           <div className="mt-2 rounded border bg-slate-50 p-2 text-xs text-slate-700">
             {node.terms.length === 0 ? (
@@ -276,14 +523,96 @@ export function ExpressionNodeRenderer({
         )}
       </div>
 
-      {!isCollapsed && canHaveChildren && (
-        <div className="space-y-2">
-          {node.children.map((child, index) => (
-            <div key={child.id} className="space-y-1">
+      <div
+        className={`overflow-hidden transition-all duration-200 ${
+          isFolded || !canHaveChildren ? "max-h-0 opacity-0" : "max-h-[2000px] opacity-100"
+        }`}
+      >
+        {canHaveChildren && (
+          <div className="space-y-2">
+            {(shouldClipChildren(node, isFolded, showAllChildren) ? node.children.slice(0, 3) : node.children).map((child, index) => (
+              <div key={child.id} className="space-y-1">
+                {!readOnly && node.type === "LOGIC" && (
+                  <label className="ml-6 flex items-center gap-2 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={selectedChildIds.includes(child.id)}
+                      onChange={(event) => {
+                        const checked = event.target.checked;
+                        setSelectedChildIds((prev) =>
+                          checked ? [...prev, child.id] : prev.filter((id) => id !== child.id)
+                        );
+                      }}
+                    />
+                    {t("ruleEditor.tree.wrap.selectChild")}
+                  </label>
+                )}
+                <ExpressionNodeRenderer
+                  node={child}
+                  selectedNodeId={selectedNodeId}
+                  collapsed={collapsed}
+                  compact={compact}
+                  depth={depth + 1}
+                  readOnly={readOnly}
+                  capability={capabilityProp}
+                  onSelect={onSelect}
+                  onToggleCollapse={onToggleCollapse}
+                  onAddChild={onAddChild}
+                  onSetPositionRelation={onSetPositionRelation}
+                  onEditPositionRelation={onEditPositionRelation}
+                  onCancelPositionRelation={onCancelPositionRelation}
+                  onPatchNode={onPatchNode}
+                  onDelete={onDelete}
+                  onMoveChild={onMoveChild}
+                  onEditTermSet={onEditTermSet}
+                  onWrapChildren={onWrapChildren}
+                  draggingNodeId={draggingNodeId}
+                  draggingNodeType={draggingNodeType}
+                  onDragStartNode={onDragStartNode}
+                  onDragEndNode={onDragEndNode}
+                  onDropOnNode={onDropOnNode}
+                  canDropAt={canDropAt}
+                  activePreviewNodeId={activePreviewNodeId}
+                  onDebugNode={onDebugNode}
+                  diffMode={diffMode}
+                  diffStatusById={diffStatusById}
+                  conflictNodeIds={conflictNodeIds}
+                  nodeErrorById={nodeErrorById}
+                  debugStateByNodeId={debugStateByNodeId}
+                  heatLevelByNodeId={heatLevelByNodeId}
+                  parentWeighted={node.type === "LOGIC" && isWeightedLogic(node.operator)}
+                  inheritedField={scopeField}
+                  moveContext={{ parentId: node.id, index, siblingCount: node.children.length }}
+                />
+              </div>
+            ))}
+            {shouldClipChildren(node, isFolded, showAllChildren) && (
+              <button
+                type="button"
+                className="ml-6 text-xs text-slate-600 underline underline-offset-2 hover:text-slate-900"
+                onClick={() => setShowAllChildren(true)}
+              >
+                {t("ruleEditor.tree.showAllChildren", { count: node.children.length - 3 })}
+              </button>
+            )}
+            {node.children.length === 0 && <div className="ml-6 text-xs text-slate-500">{t("ruleEditor.tree.children.empty")}</div>}
+          </div>
+        )}
+      </div>
+
+      <div
+        className={`overflow-hidden transition-all duration-200 ${
+          isFolded || !canHaveSingleChild ? "max-h-0 opacity-0" : "max-h-[1200px] opacity-100"
+        }`}
+      >
+        {canHaveSingleChild && (
+          <div>
+            {node.child ? (
               <ExpressionNodeRenderer
-                node={child}
+                node={node.child}
                 selectedNodeId={selectedNodeId}
                 collapsed={collapsed}
+                compact={compact}
                 depth={depth + 1}
                 readOnly={readOnly}
                 capability={capabilityProp}
@@ -297,50 +626,50 @@ export function ExpressionNodeRenderer({
                 onDelete={onDelete}
                 onMoveChild={onMoveChild}
                 onEditTermSet={onEditTermSet}
+                onWrapChildren={onWrapChildren}
+                draggingNodeId={draggingNodeId}
+                draggingNodeType={draggingNodeType}
+                onDragStartNode={onDragStartNode}
+                onDragEndNode={onDragEndNode}
+                onDropOnNode={onDropOnNode}
+                canDropAt={canDropAt}
                 activePreviewNodeId={activePreviewNodeId}
                 onDebugNode={onDebugNode}
                 diffMode={diffMode}
                 diffStatusById={diffStatusById}
-                parentWeighted={node.type === "LOGIC" && isWeightedLogic(node.operator)}
-                moveContext={{ parentId: node.id, index, siblingCount: node.children.length }}
+                conflictNodeIds={conflictNodeIds}
+                nodeErrorById={nodeErrorById}
+                debugStateByNodeId={debugStateByNodeId}
+                heatLevelByNodeId={heatLevelByNodeId}
+                parentWeighted={false}
+                inheritedField={scopeField}
+                moveContext={undefined}
               />
-            </div>
-          ))}
-          {node.children.length === 0 && <div className="ml-6 text-xs text-slate-500">{t("ruleEditor.tree.children.empty")}</div>}
-        </div>
-      )}
+            ) : (
+              <div className="ml-6 text-xs text-slate-500">{t("ruleEditor.tree.child.unset")}</div>
+            )}
+          </div>
+        )}
+      </div>
 
-      {!isCollapsed && canHaveSingleChild && (
-        <div>
-          {node.child ? (
-            <ExpressionNodeRenderer
-              node={node.child}
-              selectedNodeId={selectedNodeId}
-              collapsed={collapsed}
-              depth={depth + 1}
-              readOnly={readOnly}
-              capability={capabilityProp}
-              onSelect={onSelect}
-              onToggleCollapse={onToggleCollapse}
-              onAddChild={onAddChild}
-              onSetPositionRelation={onSetPositionRelation}
-              onEditPositionRelation={onEditPositionRelation}
-              onCancelPositionRelation={onCancelPositionRelation}
-              onPatchNode={onPatchNode}
-              onDelete={onDelete}
-              onMoveChild={onMoveChild}
-              onEditTermSet={onEditTermSet}
-              activePreviewNodeId={activePreviewNodeId}
-              onDebugNode={onDebugNode}
-              diffMode={diffMode}
-              diffStatusById={diffStatusById}
-              parentWeighted={false}
-              moveContext={undefined}
-            />
-          ) : (
-            <div className="ml-6 text-xs text-slate-500">{t("ruleEditor.tree.child.unset")}</div>
-          )}
-        </div>
+      {isDragging && moveContext && (
+        <div
+          className={`ml-2 h-1 rounded ${
+            canDropAfter ? "bg-blue-300" : "bg-red-300"
+          } ${hoverInsert === "after" ? "opacity-100" : "opacity-40"}`}
+          style={{ marginLeft: depth * 12 }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            setHoverInsert("after");
+            event.dataTransfer.dropEffect = canDropAfter ? "move" : "none";
+          }}
+          onDragLeave={() => setHoverInsert((prev) => (prev === "after" ? null : prev))}
+          onDrop={(event) => {
+            event.preventDefault();
+            setHoverInsert(null);
+            onDropOnNode(moveContext.parentId, moveContext.index + 1);
+          }}
+        />
       )}
     </div>
   );
@@ -411,25 +740,123 @@ export function nodeLabel(node: UiExpressionNode): string {
   }
 }
 
-function addButtonLabel(type: UiNodeType): string {
-  switch (type) {
-    case "LOGIC":
-      return t("ruleEditor.tree.add.logic");
-    case "STRUCTURE":
-      return t("ruleEditor.tree.add.structure");
-    case "POSITION_RELATION":
-      return t("ruleEditor.tree.add.positionRelation");
-    case "FIELD":
-      return t("ruleEditor.tree.add.field");
-    case "TERM_SET":
-      return t("ruleEditor.tree.add.termSet");
-    case "NOT":
-      return t("ruleEditor.tree.add.not");
-    case "SCORE":
-      return t("ruleEditor.tree.add.score");
-    case "TOPIC_REF":
-      return t("ruleEditor.tree.add.topicRef");
+function buildNodeSummary(node: UiExpressionNode): string {
+  if (node.type === "LOGIC") {
+    const count = node.children.length;
+    if (node.operator === "AT_LEAST") {
+      return t("ruleEditor.tree.summary.logic.atLeast", { threshold: node.threshold ?? defaultThreshold(count), count });
+    }
+    if (node.operator === "AND" || node.operator === "ALL") {
+      return t("ruleEditor.tree.summary.logic.and", { count });
+    }
+    if (node.operator === "OR" || node.operator === "ANY") {
+      return t("ruleEditor.tree.summary.logic.or", { count });
+    }
+    return t("ruleEditor.tree.summary.logic.generic", { count });
   }
+  if (node.type === "FIELD") {
+    return t("ruleEditor.tree.summary.field", { scope: fieldLabel(node.field) });
+  }
+  if (node.type === "PROXIMITY") {
+    return t("ruleEditor.tree.summary.proximity", {
+      distance: node.distance ?? 3,
+      order: node.ordered ? t("ruleEditor.tree.summary.orderYes") : t("ruleEditor.tree.summary.orderNo"),
+    });
+  }
+  if (node.type === "POSITION_RELATION") {
+    return t("ruleEditor.tree.summary.proximity", {
+      distance: node.distance ?? 5,
+      order: node.ordered ? t("ruleEditor.tree.summary.orderYes") : t("ruleEditor.tree.summary.orderNo"),
+    });
+  }
+  if (node.type === "TERM_SET") {
+    const labels = node.terms.slice(0, 2).map((term) => term.conceptName).join("/");
+    return t("ruleEditor.tree.summary.term", { terms: labels || "-" });
+  }
+  return t("ruleEditor.tree.folded.generic", { count: childNodeCount(node) });
+}
+
+function buildCompactPreview(node: UiExpressionNode): string {
+  if (!("children" in node) || !Array.isArray(node.children) || node.children.length === 0) {
+    return "";
+  }
+  const preview = node.children.slice(0, 2).map((child) => compactChildLabel(child)).join(" / ");
+  const remain = node.children.length - 2;
+  return remain > 0 ? `${preview} ... +${remain}` : preview;
+}
+
+function compactChildLabel(node: UiExpressionNode): string {
+  if (node.type === "TERM_SET") {
+    return node.terms[0]?.conceptName || t("ruleEditor.tree.node.termSet", { count: node.terms.length });
+  }
+  if (node.type === "FIELD") {
+    return t("ruleEditor.tree.summary.field", { scope: fieldLabel(node.field) });
+  }
+  return nodeLabel(node);
+}
+
+function childNodeCount(node: UiExpressionNode): number {
+  if ("children" in node && Array.isArray(node.children)) return node.children.length;
+  if ("child" in node) return node.child ? 1 : 0;
+  return 0;
+}
+
+function shouldClipChildren(node: UiExpressionNode, isFolded: boolean, showAllChildren: boolean): boolean {
+  return !isFolded && !showAllChildren && node.type === "LOGIC" && node.children.length > 6;
+}
+
+function fieldLabel(field: RuleField): string {
+  if (field === "TITLE") return t("ruleEditor.tree.node.fieldOnly.title");
+  if (field === "COLUMN") return t("ruleEditor.tree.node.fieldOnly.column");
+  return t("ruleEditor.tree.node.fieldOnly.content");
+}
+
+function relationHeaderText(node: UiExpressionNode): string | null {
+  if (node.type === "LOGIC") {
+    if (node.operator === "AND" || node.operator === "ALL") {
+      return t("ruleEditor.structure.relation.and");
+    }
+    if (node.operator === "OR" || node.operator === "ANY") {
+      return t("ruleEditor.structure.relation.or");
+    }
+    if (node.operator === "AT_LEAST") {
+      return t("ruleEditor.structure.relation.atLeast", {
+        count: node.threshold ?? defaultThreshold(node.children.length),
+      });
+    }
+    if (node.operator === "ACCRUE") {
+      return t("ruleEditor.structure.relation.accrue");
+    }
+    if (node.operator === "LOGSUM" || node.operator === "WEIGHTED") {
+      return t("ruleEditor.structure.relation.logsum");
+    }
+  }
+
+  if (node.type === "PROXIMITY") {
+    if (node.relation === "SENTENCE") return t("ruleEditor.structure.relation.sameSentence");
+    if (node.relation === "PARAGRAPH") return t("ruleEditor.structure.relation.sameParagraph");
+    return node.ordered
+      ? t("ruleEditor.structure.relation.orderNear", { distance: node.distance ?? 3 })
+      : t("ruleEditor.structure.relation.near", { distance: node.distance ?? 3 });
+  }
+
+  if (node.type === "POSITION_RELATION") {
+    if (node.relation === "SENTENCE") return t("ruleEditor.structure.relation.sameSentence");
+    if (node.relation === "PARAGRAPH") return t("ruleEditor.structure.relation.sameParagraph");
+    return node.ordered || node.mode === "ORDER"
+      ? t("ruleEditor.structure.relation.orderNear", { distance: node.distance ?? 5 })
+      : t("ruleEditor.structure.relation.near", { distance: node.distance ?? 5 });
+  }
+
+  if (node.type === "NOT") {
+    return t("ruleEditor.structure.relation.not");
+  }
+
+  if (node.type === "SCORE") {
+    return t("ruleEditor.structure.relation.score");
+  }
+
+  return null;
 }
 
 function depthAccent(depth: number): string {
@@ -490,4 +917,3 @@ function patchImportance(node: UiExpressionNode, level: ImportanceLevel): UiExpr
     weight: levelToWeight(level),
   };
 }
-

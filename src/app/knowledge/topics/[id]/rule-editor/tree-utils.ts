@@ -5,7 +5,11 @@ import type {
   UiNodeType,
   UiPositionRelationNode,
 } from "./types";
-import { canUsePositionMode, canUsePositionRelation } from "./capability-policy";
+import {
+  canUsePositionMode,
+  canUsePositionRelation,
+} from "./capability-policy";
+import { getAllowedChildNodeTypesByMatrix } from "./nesting-matrix";
 
 export function createNode(type: UiNodeType): UiExpressionNode {
   const id = createId();
@@ -16,6 +20,15 @@ export function createNode(type: UiNodeType): UiExpressionNode {
       return { id, type, scope: "PARAGRAPH", child: null };
     case "POSITION_RELATION":
       return createPositionRelationNode("PROXIMITY");
+    case "PROXIMITY":
+      return {
+        id,
+        type,
+        relation: "NEAR",
+        ordered: false,
+        distance: 5,
+        children: [],
+      };
     case "FIELD":
       return { id, type, field: "CONTENT", child: null };
     case "TERM_SET":
@@ -122,8 +135,20 @@ function placeNodeAboveExisting(
 ): UiExpressionNode {
   switch (inserted.type) {
     case "LOGIC":
-    case "POSITION_RELATION":
     case "PROXIMITY":
+      return {
+        ...inserted,
+        children: [existing, ...inserted.children],
+      };
+    case "POSITION_RELATION":
+      if (existing.type !== "TERM_SET") {
+        return {
+          id: createId(),
+          type: "LOGIC",
+          operator: "AND",
+          children: [existing, inserted],
+        };
+      }
       return {
         ...inserted,
         children: [existing, ...inserted.children],
@@ -149,9 +174,6 @@ function placeNodeAboveExisting(
 
 export function removeNode(root: UiExpressionNode, nodeId: string): UiExpressionNode | null {
   if (root.id === nodeId) {
-    if (root.type === "FIELD") {
-      throw new Error("FIELD node cannot be deleted");
-    }
     return null;
   }
   switch (root.type) {
@@ -170,7 +192,7 @@ export function removeNode(root: UiExpressionNode, nodeId: string): UiExpression
           .map((child) => removeNode(child, nodeId))
           .filter(
             (child): child is Extract<UiExpressionNode, { type: "TERM_SET" }> =>
-              Boolean(child) && child.type === "TERM_SET"
+              child !== null && child.type === "TERM_SET"
           ),
       };
     case "FIELD":
@@ -191,28 +213,9 @@ export function getAllowedChildTypes(
   parentNode: UiExpressionNode,
   capability: UiCapabilityViewModel
 ): UiNodeType[] {
-  const allow: UiNodeType[] = [];
-  if (parentNode.type === "FIELD") {
-    if (parentNode.child) return allow;
-    allow.push("LOGIC");
-    return allow;
-  }
-  if (parentNode.type === "STRUCTURE") {
-    if (parentNode.child) return allow;
-    allow.push("LOGIC");
-    return allow;
-  }
-  if (parentNode.type === "LOGIC") {
-    allow.push("TERM_SET");
-    if (canUsePositionRelation(capability)) {
-      allow.push("POSITION_RELATION");
-    }
-    allow.push("LOGIC");
-    return allow;
-  }
-  if (parentNode.type === "POSITION_RELATION") {
-    allow.push("TERM_SET");
-    return allow;
+  const allow = getAllowedChildNodeTypesByMatrix(parentNode.type, capability);
+  if ((parentNode.type === "FIELD" || parentNode.type === "STRUCTURE" || parentNode.type === "NOT" || parentNode.type === "SCORE") && parentNode.child) {
+    return [];
   }
   return allow;
 }
