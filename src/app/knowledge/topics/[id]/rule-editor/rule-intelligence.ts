@@ -36,7 +36,7 @@ export type HitDistribution = {
 };
 
 export type OptimizationSuggestion = {
-  type: "USE_PROXIMITY" | "LOGSUM_TO_AND" | "FLATTEN_LOGIC" | "REMOVE_LOW_IMPACT";
+  type: "USE_PROXIMITY" | "LOGSUM_TO_AND" | "FLATTEN_LOGIC" | "REMOVE_LOW_IMPACT" | "BACKEND";
   nodeId: string;
   message: string;
   priority: "HIGH" | "MEDIUM" | "LOW";

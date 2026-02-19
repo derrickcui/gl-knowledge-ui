@@ -63,6 +63,36 @@ export interface GlossaryConceptSearchPage {
   hasMore: boolean;
 }
 
+async function readApiErrorMessage(res: Response, fallback: string) {
+  try {
+    const text = await res.text();
+    if (text.trim()) {
+      try {
+        const payload = JSON.parse(text) as unknown;
+        if (payload && typeof payload === "object") {
+          const data = payload as Record<string, unknown>;
+          if (typeof data.error === "string" && data.error.trim()) {
+            return data.error;
+          }
+          if (typeof data.message === "string" && data.message.trim()) {
+            return data.message;
+          }
+        }
+      } catch {
+        return text;
+      }
+      return text;
+    }
+  } catch {
+    // ignore parse failures and fallback to status
+  }
+
+  const status = res.status
+    ? ` (${res.status} ${res.statusText})`
+    : "";
+  return `${fallback}${status}`.trim();
+}
+
 export async function searchGlossaryConceptsPaged(params: {
   query: string;
   limit?: number;
@@ -81,7 +111,12 @@ export async function searchGlossaryConceptsPaged(params: {
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new Error("Unable to load glossary search results.");
+    throw new Error(
+      await readApiErrorMessage(
+        res,
+        "Unable to load glossary search results."
+      )
+    );
   }
 
   const payload = (await res.json()) as unknown;

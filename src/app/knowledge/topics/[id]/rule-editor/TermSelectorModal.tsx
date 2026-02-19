@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { searchGlossaryConceptsPaged, type GlossaryGraphResult } from "@/lib/glossary-api";
 import type { SelectedTerm, TermSearchResult } from "./term-selector-types";
 import { useDraggableDialog } from "@/lib/useDraggableDialog";
+import { SearchLoadingIndicator } from "@/components/ui/search-loading-indicator";
 
 export function TermSelectorModal({
   open,
@@ -17,6 +18,7 @@ export function TermSelectorModal({
 }) {
   const [keyword, setKeyword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [results, setResults] = useState<TermSearchResult[]>([]);
   const [selected, setSelected] = useState<Record<string, SelectedTerm>>({});
   const [page, setPage] = useState(1);
@@ -35,6 +37,7 @@ export function TermSelectorModal({
     setSelected(map);
     setKeyword("");
     setResults([]);
+    setSearchError(null);
     setPage(1);
     setHasMore(false);
     setActiveCategory(allCategory);
@@ -44,12 +47,15 @@ export function TermSelectorModal({
     if (!open) return;
     const q = keyword.trim();
     if (!q) {
+      setLoading(false);
       setResults([]);
       setHasMore(false);
+      setSearchError(null);
       return;
     }
+    setLoading(true);
+    setSearchError(null);
     const timer = setTimeout(() => {
-      setLoading(true);
       searchGlossaryConceptsPaged({
         query: q,
         limit: 12,
@@ -60,13 +66,20 @@ export function TermSelectorModal({
           setResults(mapped);
           setHasMore(data.hasMore);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           setResults([]);
           setHasMore(false);
+          setSearchError(
+            error instanceof Error
+              ? error.message
+              : t("ruleEditor.termSelector.searchFailed")
+          );
         })
         .finally(() => setLoading(false));
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [open, keyword, page]);
 
   const categories = useMemo(() => buildCategories(results, allCategory), [results, allCategory]);
@@ -124,8 +137,18 @@ export function TermSelectorModal({
           </div>
 
           <div className="min-h-0 overflow-auto rounded border p-2">
-            {loading && <div className="text-xs text-slate-500">{t("ruleEditor.termSelector.searching")}</div>}
-            {!loading && visibleResults.length === 0 && (
+            {loading && (
+              <SearchLoadingIndicator
+                text={t("ruleEditor.termSelector.searching")}
+                className="mb-2"
+              />
+            )}
+            {searchError && (
+              <div className="mb-2 rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-700">
+                {searchError}
+              </div>
+            )}
+            {!loading && !searchError && visibleResults.length === 0 && (
               <div className="text-xs text-slate-500">{t("ruleEditor.termSelector.noResult")}</div>
             )}
             <div className="space-y-2">

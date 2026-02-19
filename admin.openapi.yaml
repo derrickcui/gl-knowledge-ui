@@ -11,6 +11,8 @@ tags:
     description: Runtime environment selection for preview
   - name: RulePreview
     description: Rule preview and preview document detail
+  - name: RuleGovernance
+    description: Rule analysis and version governance APIs
 
 paths:
   /api/runtime/active:
@@ -27,6 +29,127 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/RuntimeActiveItem'
+
+  /api/rules/analyze:
+    post:
+      tags: [RuleGovernance]
+      summary: Analyze rule complexity from UiRuleViewModel
+      operationId: analyzeRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleAnalyzeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuleAnalyzeResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/rules/{id}/versions:
+    get:
+      tags: [RuleGovernance]
+      summary: List persisted rule versions
+      operationId: listRuleVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuleVersionList'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/rules/{id}/version/{v}:
+    get:
+      tags: [RuleGovernance]
+      summary: Get one persisted rule version
+      operationId: getRuleVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: v
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuleVersionResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/rules/{id}/diff:
+    get:
+      tags: [RuleGovernance]
+      summary: Diff two persisted rule versions
+      operationId: diffRuleVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuleDiffResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
 
   /api/rules/preview:
     post:
@@ -318,6 +441,241 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/rules/runtime/execute/analysis:
+    post:
+      tags: [RulePreview]
+      summary: Execute runtime rule analysis with aggregated statistics
+      description: Aggregated full-scope statistics for term hits, node hits, contribution distribution, and dataset-level hit rate.
+      operationId: executeRuntimeRuleAnalysis
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleRuntimeExecuteAnalysisRequest'
+            example:
+              runtimeEnvironmentId: 1
+              rule:
+                root:
+                  type: LOGIC
+                  nodeId: root-1
+                  operator: AND
+                  children:
+                    - type: FIELD
+                      nodeId: field-1
+                      field: CONTENT
+                      child:
+                        type: TERM_SET
+                        nodeId: term-1
+                        matchMode: ANY
+                        terms:
+                          - source: TERM
+                            conceptId: "alpha"
+                            conceptName: alpha
+                            includeDescendants: false
+                    - type: TERM_SET
+                      nodeId: term-2
+                      matchMode: ANY
+                      terms:
+                        - source: CONCEPT
+                          conceptId: "20"
+                          conceptName: 人才
+                          includeDescendants: false
+                references: []
+              options:
+                bucketSizePercent: 10
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleRuntimeExecuteAnalysisResponse'
+        '400':
+          description: Validation or mapping error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Execution timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/rules/runtime/compare:
+    post:
+      tags: [RulePreview]
+      summary: Compare two rules under same runtime environment
+      operationId: compareRuntimeRules
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleRuntimeCompareRequest'
+            example:
+              runtimeEnvironmentId: 1
+              ruleA:
+                root:
+                  type: TERM_SET
+                  nodeId: a1
+                  matchMode: ANY
+                  terms:
+                    - source: TERM
+                      conceptId: alpha
+                      conceptName: alpha
+                      includeDescendants: false
+                references: []
+              ruleB:
+                root:
+                  type: TERM_SET
+                  nodeId: b1
+                  matchMode: ANY
+                  terms:
+                    - source: TERM
+                      conceptId: beta
+                      conceptName: beta
+                      includeDescendants: false
+                references: []
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleRuntimeCompareResponse'
+        '400':
+          description: Validation or mapping error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Execution timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/rules/runtime/suggest:
+    post:
+      tags: [RulePreview]
+      summary: Generate optimization suggestions for rule
+      operationId: suggestRuntimeRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleRuntimeSuggestRequest'
+            example:
+              runtimeEnvironmentId: 1
+              rule:
+                root:
+                  type: TERM_SET
+                  nodeId: n1
+                  matchMode: ANY
+                  terms:
+                    - source: TERM
+                      conceptId: alpha
+                      conceptName: alpha
+                      includeDescendants: false
+                references: []
+              options:
+                lowContributionThreshold: 0.05
+                maxSuggestions: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleRuntimeSuggestResponse'
+        '400':
+          description: Validation or mapping error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Execution timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/rules/runtime/risk:
+    post:
+      tags: [RulePreview]
+      summary: Evaluate runtime risk of a rule
+      operationId: evaluateRuntimeRuleRisk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuleRuntimeRiskRequest'
+            example:
+              runtimeEnvironmentId: 1
+              rule:
+                root:
+                  type: TERM_SET
+                  nodeId: n1
+                  matchMode: ANY
+                  terms:
+                    - source: TERM
+                      conceptId: alpha
+                      conceptName: alpha
+                      includeDescendants: false
+                references: []
+              options:
+                slowExecutionMs: 2000
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleRuntimeRiskResponse'
+        '400':
+          description: Validation or mapping error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Runtime environment unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '408':
+          description: Execution timeout
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/rules/preview/document/{docId}:
     get:
       tags: [RulePreview]
@@ -489,6 +847,430 @@ components:
           enum: [false]
           default: false
 
+    RuleRuntimeExecuteAnalysisRequest:
+      type: object
+      properties:
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        options:
+          $ref: '#/components/schemas/RuleRuntimeExecuteAnalysisOptions'
+      required: [runtimeEnvironmentId, rule]
+
+    RuleRuntimeExecuteAnalysisOptions:
+      type: object
+      properties:
+        bucketSizePercent:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 50
+          default: 10
+
+    RuleRuntimeExecuteAnalysisResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [ANALYSIS]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        datasetTotal:
+          type: integer
+          format: int64
+        ruleHit:
+          type: integer
+          format: int64
+        hitRate:
+          type: number
+          format: double
+        termStats:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleRuntimeExecuteTermStat'
+        nodeStats:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleRuntimeExecuteNodeStat'
+        distribution:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+          example:
+            0-10%: 2
+            10-20%: 4
+            20-30%: 6
+        took:
+          type: integer
+          format: int64
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, datasetTotal, ruleHit, hitRate, termStats, nodeStats, distribution, took, metadata]
+
+    RuleRuntimeExecuteTermStat:
+      type: object
+      properties:
+        termId:
+          type: string
+        nodeId:
+          type: string
+          nullable: true
+        hitCount:
+          type: integer
+          format: int64
+        hitRate:
+          type: number
+          format: double
+      required: [termId, hitCount, hitRate]
+
+    RuleRuntimeExecuteNodeStat:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          nullable: true
+        nodeType:
+          type: string
+        hitCount:
+          type: integer
+          format: int64
+        contribution:
+          type: number
+          format: double
+      required: [nodeType, hitCount, contribution]
+
+    RuleRuntimeCompareRequest:
+      type: object
+      properties:
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        ruleA:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        ruleB:
+          $ref: '#/components/schemas/UiRuleViewModel'
+      required: [runtimeEnvironmentId, ruleA, ruleB]
+
+    RuleRuntimeCompareResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [COMPARE]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        ruleAHit:
+          type: integer
+          format: int64
+        ruleBHit:
+          type: integer
+          format: int64
+        overlap:
+          type: integer
+          format: int64
+        onlyA:
+          type: integer
+          format: int64
+        onlyB:
+          type: integer
+          format: int64
+        took:
+          type: integer
+          format: int64
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, ruleAHit, ruleBHit, overlap, onlyA, onlyB, took, metadata]
+
+    RuleRuntimeSuggestRequest:
+      type: object
+      properties:
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        options:
+          $ref: '#/components/schemas/RuleRuntimeSuggestOptions'
+      required: [runtimeEnvironmentId, rule]
+
+    RuleRuntimeSuggestOptions:
+      type: object
+      properties:
+        lowContributionThreshold:
+          type: number
+          format: double
+          default: 0.05
+        maxSuggestions:
+          type: integer
+          format: int32
+          minimum: 1
+          maximum: 100
+          default: 20
+
+    RuleRuntimeSuggestion:
+      type: object
+      properties:
+        type:
+          type: string
+        nodeId:
+          type: string
+          nullable: true
+        termId:
+          type: string
+          nullable: true
+        message:
+          type: string
+        score:
+          type: number
+          format: double
+      required: [type, message, score]
+
+    RuleRuntimeSuggestResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [SUGGEST]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleRuntimeSuggestion'
+        took:
+          type: integer
+          format: int64
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, suggestions, took, metadata]
+
+    RuleRuntimeRiskRequest:
+      type: object
+      properties:
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        options:
+          $ref: '#/components/schemas/RuleRuntimeRiskOptions'
+      required: [runtimeEnvironmentId, rule]
+
+    RuleRuntimeRiskOptions:
+      type: object
+      properties:
+        slowExecutionMs:
+          type: integer
+          format: int64
+          default: 2000
+
+    RuleRuntimeRiskResponse:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [RISK]
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        riskLevel:
+          type: string
+          enum: [LOW, MEDIUM, HIGH]
+        riskScore:
+          type: integer
+          format: int32
+        riskFactors:
+          type: array
+          items:
+            type: string
+        clauseCount:
+          type: integer
+          format: int32
+        maxDepth:
+          type: integer
+          format: int32
+        complexityScore:
+          type: integer
+          format: int32
+        hitRate:
+          type: number
+          format: double
+        executeTime:
+          type: integer
+          format: int64
+        took:
+          type: integer
+          format: int64
+        metadata:
+          $ref: '#/components/schemas/RuntimeExecuteMetadata'
+      required: [mode, runtimeEnvironmentId, riskLevel, riskScore, riskFactors, clauseCount, maxDepth, complexityScore, hitRate, executeTime, took, metadata]
+
+    RuleAnalyzeRequest:
+      type: object
+      properties:
+        rule_json:
+          $ref: '#/components/schemas/UiRuleViewModel'
+      required: [rule_json]
+
+    RuleAnalyzeResponse:
+      type: object
+      properties:
+        depth:
+          type: integer
+          format: int32
+        clauseCount:
+          type: integer
+          format: int32
+        logicCount:
+          type: integer
+          format: int32
+        operatorCount:
+          type: integer
+          format: int32
+        proximityCount:
+          type: integer
+          format: int32
+        logicDensity:
+          type: number
+          format: double
+        complexityScore:
+          type: integer
+          format: int32
+      required: [depth, clauseCount, logicCount, operatorCount, proximityCount, logicDensity, complexityScore]
+
+    RuleVersionListItem:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [version, createdAt]
+
+    RuleVersionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        version:
+          type: integer
+          format: int32
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        createdBy:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, version, rule, createdAt]
+
+    RuleDiffModifiedNode:
+      type: object
+      properties:
+        path:
+          type: string
+        before:
+          type: string
+        after:
+          type: string
+      required: [path, before, after]
+
+    RuleDiffResponse:
+      type: object
+      properties:
+        addedNodes:
+          type: array
+          items:
+            type: string
+        removedNodes:
+          type: array
+          items:
+            type: string
+        modifiedNodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleDiffModifiedNode'
+      required: [addedNodes, removedNodes, modifiedNodes]
+
+    ApiError:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+      required: [code, message]
+
+    ApiResponseVoid:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          nullable: true
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuleAnalyzeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuleAnalyzeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuleVersionList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleVersionListItem'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuleVersionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuleVersionResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuleDiffResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuleDiffResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     UiRuleViewModel:
       type: object
       properties:
@@ -504,6 +1286,8 @@ components:
       oneOf:
         - $ref: '#/components/schemas/UiLogicNode'
         - $ref: '#/components/schemas/UiProximityNode'
+        - $ref: '#/components/schemas/UiPositionRelationNode'
+        - $ref: '#/components/schemas/UiStructureNode'
         - $ref: '#/components/schemas/UiFieldNode'
         - $ref: '#/components/schemas/UiTermSetNode'
         - $ref: '#/components/schemas/UiNotNode'
@@ -514,6 +1298,8 @@ components:
         mapping:
           LOGIC: '#/components/schemas/UiLogicNode'
           PROXIMITY: '#/components/schemas/UiProximityNode'
+          POSITION_RELATION: '#/components/schemas/UiPositionRelationNode'
+          STRUCTURE: '#/components/schemas/UiStructureNode'
           FIELD: '#/components/schemas/UiFieldNode'
           TERM_SET: '#/components/schemas/UiTermSetNode'
           NOT: '#/components/schemas/UiNotNode'
@@ -530,11 +1316,7 @@ components:
           type: string
         operator:
           type: string
-          enum: [AND, OR, ACCRUE, LOGSUM, WEIGHTED]
         threshold:
-          type: integer
-          format: int32
-        minMatch:
           type: integer
           format: int32
         children:
@@ -563,6 +1345,45 @@ components:
           items:
             $ref: '#/components/schemas/UiExpressionNode'
       required: [type, children]
+
+    UiPositionRelationNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [POSITION_RELATION]
+        nodeId:
+          type: string
+        mode:
+          type: string
+          enum: [PROXIMITY]
+        relation:
+          type: string
+        ordered:
+          type: boolean
+        distance:
+          type: integer
+          format: int32
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, mode, children]
+
+    UiStructureNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [STRUCTURE]
+        nodeId:
+          type: string
+        scope:
+          type: string
+          enum: [NONE, SENTENCE, PARAGRAPH]
+        child:
+          $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, scope, child]
 
     UiFieldNode:
       type: object
@@ -617,11 +1438,7 @@ components:
           type: string
         operator:
           type: string
-          enum: [AND, OR, ACCRUE, LOGSUM, WEIGHTED]
         threshold:
-          type: integer
-          format: int32
-        minMatch:
           type: integer
           format: int32
         children:
@@ -764,6 +1581,12 @@ components:
         total:
           type: integer
           format: int64
+        clauseCount:
+          type: integer
+          format: int32
+        maxDepth:
+          type: integer
+          format: int32
         page:
           type: integer
           format: int32
@@ -779,7 +1602,7 @@ components:
             $ref: '#/components/schemas/RulePreviewItem'
         metadata:
           $ref: '#/components/schemas/RuntimeExecuteMetadata'
-      required: [mode, runtimeEnvironmentId, total, page, size, took, items, metadata]
+      required: [mode, runtimeEnvironmentId, total, clauseCount, maxDepth, page, size, took, items, metadata]
 
     RuleRuntimeExecuteNodeResponse:
       type: object
@@ -801,6 +1624,12 @@ components:
         delta:
           type: integer
           format: int64
+        clauseCount:
+          type: integer
+          format: int32
+        maxDepth:
+          type: integer
+          format: int32
         page:
           type: integer
           format: int32
@@ -816,7 +1645,7 @@ components:
             $ref: '#/components/schemas/RulePreviewItem'
         metadata:
           $ref: '#/components/schemas/RuntimeExecuteMetadata'
-      required: [mode, runtimeEnvironmentId, nodeId, nodeTotal, fullTotal, delta, page, size, took, items, metadata]
+      required: [mode, runtimeEnvironmentId, nodeId, nodeTotal, fullTotal, delta, clauseCount, maxDepth, page, size, took, items, metadata]
 
     RuleRuntimeExecuteImpactResponse:
       type: object

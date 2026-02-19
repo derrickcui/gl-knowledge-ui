@@ -472,6 +472,7 @@ function OptimizationList({
             type="button"
             className="mt-1 rounded border border-amber-300 bg-white px-2 py-0.5 text-[11px] text-amber-800 hover:bg-amber-100"
             onClick={() => onApply?.(item)}
+            disabled={item.type === "BACKEND"}
           >
             {t("ruleEditor.intel.optimize.apply")}
           </button>

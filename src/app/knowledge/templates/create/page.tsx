@@ -11,6 +11,7 @@ import {
   RuleTemplateTypeListItem,
 } from "@/lib/api";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
+import { SearchLoadingIndicator } from "@/components/ui/search-loading-indicator";
 import type {
   GroupOperator,
   RuleField,
@@ -411,7 +412,12 @@ function CategoryPicker({
 
         {open && (
           <div className="absolute left-0 top-10 z-20 max-h-64 w-[calc(100%-84px)] overflow-auto rounded-md border bg-white p-1 shadow-lg">
-            {loading && <div className="px-2 py-2 text-xs text-slate-500">搜索中...</div>}
+            {loading && (
+              <SearchLoadingIndicator
+                text="搜索中..."
+                className="m-1"
+              />
+            )}
             {!loading && error && <div className="px-2 py-2 text-xs text-red-600">{error}</div>}
             {!loading && !error && options.length === 0 && (
               <div className="px-2 py-2 text-xs text-slate-500">未找到分类</div>

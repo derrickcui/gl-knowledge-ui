@@ -11,7 +11,7 @@ import type {
   UiTermSetNode,
 } from "./rule-editor/types";
 import { ExplainPanel, type ExplainViewModel } from "./rule-editor/ExplainPanel";
-import { buildNodeDiffDetail } from "./rule-editor/diff";
+import { buildNodeDiffDetail, type NodeDiffDetail } from "./rule-editor/diff";
 import { validateTree } from "./rule-editor/validation";
 import { normalizeExpressionTree } from "./rule-editor/expression-normalizer";
 import { HeaderBar, type OpenViewOption } from "./rule-editor/HeaderBar";
@@ -61,6 +61,10 @@ import {
   computePerformanceMetrics,
   recommendTemplates,
   type OptimizationSuggestion,
+  type ComplexityMetrics,
+  type HitDistribution,
+  type PerformanceMetrics,
+  type RiskAssessment,
 } from "./rule-editor/rule-intelligence";
 import type {
   ConditionImpactItem,
@@ -82,6 +86,7 @@ export type RuleEditorProps = {
   capabilityLabel?: string;
   dirty?: boolean;
   actionBusy?: boolean;
+  saveDraftBusy?: boolean;
   onBack?: () => void;
   onSave?: () => void;
   onDeleteDraft?: () => void;
@@ -107,6 +112,13 @@ export type RuleEditorProps = {
   activeRuntimeId?: number | null;
   onChangeRuntime?: (id: number) => void;
   abTestResult?: RuleAbTestResult | null;
+  complexityMetricsOverride?: ComplexityMetrics | null;
+  hitDistributionOverride?: HitDistribution | null;
+  performanceMetricsOverride?: PerformanceMetrics | null;
+  riskAssessmentOverride?: RiskAssessment | null;
+  optimizationSuggestionsOverride?: OptimizationSuggestion[] | null;
+  versionHistoryOverride?: RuleVersionEntry[] | null;
+  diffOverride?: NodeDiffDetail | null;
 };
 
 type PreviewState = {
@@ -138,6 +150,7 @@ export function RuleEditor({
   capabilityLabel,
   dirty = false,
   actionBusy = false,
+  saveDraftBusy = false,
   onBack,
   onSave,
   onDeleteDraft,
@@ -163,6 +176,13 @@ export function RuleEditor({
   activeRuntimeId = null,
   onChangeRuntime,
   abTestResult = null,
+  complexityMetricsOverride = null,
+  hitDistributionOverride = null,
+  performanceMetricsOverride = null,
+  riskAssessmentOverride = null,
+  optimizationSuggestionsOverride = null,
+  versionHistoryOverride = null,
+  diffOverride = null,
 }: RuleEditorProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(rule.root?.id ?? null);
   const [collapsedByUser, setCollapsedByUser] = useState<Record<string, boolean>>({});
@@ -230,17 +250,17 @@ export function RuleEditor({
     () => buildHeatLevelByNodeId(impactRuntimeResult, impactRanking, intelligenceFullTotal),
     [impactRuntimeResult, impactRanking, intelligenceFullTotal]
   );
-  const complexityMetrics = useMemo(() => computeComplexityMetrics(rule.root), [rule.root]);
-  const hitDistribution = useMemo(() => computeHitDistribution(fullRuntimeResult), [fullRuntimeResult]);
-  const performanceMetrics = useMemo(
+  const localComplexityMetrics = useMemo(() => computeComplexityMetrics(rule.root), [rule.root]);
+  const localHitDistribution = useMemo(() => computeHitDistribution(fullRuntimeResult), [fullRuntimeResult]);
+  const localPerformanceMetrics = useMemo(
     () => computePerformanceMetrics(rule.root, fullRuntimeResult, impactRuntimeResult),
     [rule.root, fullRuntimeResult, impactRuntimeResult]
   );
-  const riskAssessment = useMemo(
+  const localRiskAssessment = useMemo(
     () => assessRuleRisk(rule.root, intelligenceFullTotal, impactRuntimeResult, impactRanking),
     [rule.root, intelligenceFullTotal, impactRuntimeResult, impactRanking]
   );
-  const optimizationSuggestions = useMemo(
+  const localOptimizationSuggestions = useMemo(
     () => buildOptimizationSuggestions(rule.root, impactRuntimeResult, impactRanking),
     [rule.root, impactRuntimeResult, impactRanking]
   );
@@ -259,7 +279,14 @@ export function RuleEditor({
     if (hasInvalidSemanticModeState) return t("ruleEditor.header.saveDisabledInvalidMode");
     return undefined;
   }, [hasEmptyConditionGroup, hasInvalidSemanticModeState]);
-  const diff = useMemo(() => buildNodeDiffDetail(baselineRootRef.current, rule.root), [rule.root]);
+  const localDiff = useMemo(() => buildNodeDiffDetail(baselineRootRef.current, rule.root), [rule.root]);
+  const complexityMetrics = complexityMetricsOverride ?? localComplexityMetrics;
+  const hitDistribution = hitDistributionOverride ?? localHitDistribution;
+  const performanceMetrics = performanceMetricsOverride ?? localPerformanceMetrics;
+  const riskAssessment = riskAssessmentOverride ?? localRiskAssessment;
+  const optimizationSuggestions = optimizationSuggestionsOverride ?? localOptimizationSuggestions;
+  const diff = diffOverride ?? localDiff;
+  const effectiveVersionHistory = versionHistoryOverride && versionHistoryOverride.length > 0 ? versionHistoryOverride : versionHistory;
   const explainViewModel = useMemo(
     () => buildExplainViewModel(rule.root, topicName, explain),
     [rule.root, explain, topicName]
@@ -471,6 +498,7 @@ export function RuleEditor({
 
   const handleApplyOptimizationSuggestion = (suggestion: OptimizationSuggestion) => {
     if (!rule.root) return;
+    if (suggestion.type === "BACKEND") return;
     if (suggestion.type === "USE_PROXIMITY") {
       const childIds = (suggestion.payload?.childIds as string[] | undefined) ?? [];
       if (childIds.length >= 2) {
@@ -1087,14 +1115,15 @@ export function RuleEditor({
     <CapabilityProvider value={capability}>
       <RuleEditorLayout
       header={
-        <HeaderBar
+          <HeaderBar
           topicName={topicName}
           status={status}
           templateLabel={templateLabel}
           capability={capability}
           capabilityLabel={capabilityLabel}
-          busy={actionBusy}
-          onBack={onBack}
+            busy={actionBusy}
+            saveDraftBusy={saveDraftBusy}
+            onBack={onBack}
           onSave={onSave}
           disableSave={hasEmptyConditionGroup || hasInvalidSemanticModeState}
           disableSaveHint={disableSaveHint}
@@ -1238,11 +1267,11 @@ export function RuleEditor({
                   performance={performanceMetrics}
                   risk={riskAssessment}
                   abTestResult={abTestResult}
-                  versionHistory={versionHistory}
+                  versionHistory={effectiveVersionHistory}
                   onApplySuggestion={handleApplyOptimizationSuggestion}
                 />
               }
-              versionTimelinePanel={<RuleVersionTimelinePanel entries={versionHistory} />}
+              versionTimelinePanel={<RuleVersionTimelinePanel entries={effectiveVersionHistory} />}
               diffPreviewPanel={openViews.diffCompare ? <DiffPreviewPanel diff={diff} /> : null}
               statusSummary={
                 <StatusSummary

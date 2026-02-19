@@ -38,8 +38,45 @@ import { validateTree } from "./rule-editor/validation";
 import { compileToGql } from "./rule-editor/gql-compiler";
 import { normalizeExpressionTree } from "./rule-editor/expression-normalizer";
 import { formatExpressionTree } from "./rule-editor/format-expression-tree";
-import { buildRuleAbTestResult, type RuleAbTestResult } from "./rule-editor/ab-test";
+import type { RuleAbTestResult } from "./rule-editor/ab-test";
 import { readDefaultRuntimeSceneSelection } from "@/lib/runtime-default-scene";
+import {
+  analyzeRule,
+  compareRuntimeRules,
+  diffRuleVersions,
+  evaluateRuntimeRuleRisk,
+  executeRuntimeRuleAnalysis,
+  getRuleVersion,
+  listRuleVersions,
+  suggestRuntimeRule,
+  type RuleAnalyzeResponse,
+  type RuleRuntimeExecuteAnalysisResponse,
+  type RuleRuntimeRiskResponse,
+  type RuleRuntimeSuggestResponse,
+  type RuleDiffResponse,
+} from "@/lib/api/ruleGovernance";
+import type { RuleVersionEntry } from "./rule-editor/RuleVersionTimelinePanel";
+import type { NodeDiffDetail } from "./rule-editor/diff";
+import type {
+  ComplexityMetrics,
+  HitDistribution,
+  OptimizationSuggestion,
+  PerformanceMetrics,
+  RiskAssessment,
+} from "./rule-editor/rule-intelligence";
+
+const DEFAULT_VERSION_WINDOW = 20;
+const MAX_VERSION_WINDOW = 100;
+
+function getVersionWindowSize(): number {
+  const raw = process.env.NEXT_PUBLIC_RULE_VERSION_WINDOW;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return DEFAULT_VERSION_WINDOW;
+  const normalized = Math.floor(parsed);
+  if (normalized < 1) return 1;
+  if (normalized > MAX_VERSION_WINDOW) return MAX_VERSION_WINDOW;
+  return normalized;
+}
 
 function hasDraftPayload(
   payload: unknown
@@ -218,6 +255,104 @@ function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
   }
 }
 
+function complexityLevelByScore(score: number): ComplexityMetrics["level"] {
+  if (score > 100) return "RISKY";
+  if (score > 50) return "COMPLEX";
+  if (score > 20) return "MEDIUM";
+  return "SIMPLE";
+}
+
+function mapAnalyzeToComplexity(metrics: RuleAnalyzeResponse): ComplexityMetrics {
+  return {
+    score: metrics.complexityScore,
+    level: complexityLevelByScore(metrics.complexityScore),
+    nodeCount: metrics.clauseCount + metrics.logicCount,
+    depth: metrics.depth,
+    proximityCount: metrics.proximityCount,
+    logsumCount: metrics.operatorCount,
+  };
+}
+
+function mapAnalysisToDistribution(result: RuleRuntimeExecuteAnalysisResponse): HitDistribution {
+  return {
+    byField: result.nodeStats
+      .slice()
+      .sort((a, b) => b.hitCount - a.hitCount)
+      .slice(0, 8)
+      .map((item) => ({ key: item.nodeType, count: item.hitCount })),
+    byKeyword: result.termStats
+      .slice()
+      .sort((a, b) => b.hitCount - a.hitCount)
+      .slice(0, 8)
+      .map((item) => ({ key: item.termId, count: item.hitCount })),
+  };
+}
+
+function mapRiskToAssessment(risk: RuleRuntimeRiskResponse): RiskAssessment {
+  return {
+    score: risk.riskScore,
+    level: risk.riskLevel === "HIGH" ? "HIGH" : risk.riskLevel === "MEDIUM" ? "MEDIUM" : "LOW",
+    reasons: risk.riskFactors,
+  };
+}
+
+function mapRiskToPerformance(risk: RuleRuntimeRiskResponse): PerformanceMetrics {
+  return {
+    tookMs: risk.executeTime,
+    clauseCount: risk.clauseCount,
+    nestedDepth: risk.maxDepth,
+    riskScore: risk.riskScore,
+    riskLevel: risk.riskLevel,
+  };
+}
+
+function mapSuggestToOptimization(
+  suggest: RuleRuntimeSuggestResponse
+): OptimizationSuggestion[] {
+  return suggest.suggestions.map((item) => {
+    const upper = item.type.toUpperCase();
+    let type: OptimizationSuggestion["type"] = "BACKEND";
+    if (upper.includes("PROXIMITY")) type = "USE_PROXIMITY";
+    else if (upper.includes("LOGSUM_TO_AND")) type = "LOGSUM_TO_AND";
+    else if (upper.includes("FLATTEN")) type = "FLATTEN_LOGIC";
+    else if (upper.includes("REMOVE_LOW_IMPACT")) type = "REMOVE_LOW_IMPACT";
+
+    const priority: OptimizationSuggestion["priority"] =
+      item.score >= 0.8 ? "HIGH" : item.score >= 0.5 ? "MEDIUM" : "LOW";
+
+    return {
+      type,
+      nodeId: item.nodeId ?? item.termId ?? "unknown",
+      message: item.message,
+      priority,
+      payload: { backendType: item.type, termId: item.termId },
+    };
+  });
+}
+
+function mapRuleDiff(diff: RuleDiffResponse): NodeDiffDetail {
+  const statusById: Record<string, "added" | "changed"> = {};
+  diff.addedNodes.forEach((node) => {
+    statusById[node] = "added";
+  });
+  diff.modifiedNodes.forEach((node) => {
+    statusById[node.path] = "changed";
+  });
+  return {
+    added: diff.addedNodes.length,
+    removed: diff.removedNodes.length,
+    changed: diff.modifiedNodes.length,
+    statusById,
+    removedNodes: diff.removedNodes.map((node) => ({ id: node, signature: "" })),
+  };
+}
+
+function mapStatusToLatestAction(status: string): RuleVersionEntry["action"] {
+  if (status === "PUBLISHED") return "PUBLISHED";
+  if (status === "IN_REVIEW") return "SUBMITTED";
+  return "SAVED";
+}
+
 export default function TopicDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
@@ -232,6 +367,7 @@ export default function TopicDetailPage() {
     message?: string;
   } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [saveDraftBusy, setSaveDraftBusy] = useState(false);
   const [topicName, setTopicName] = useState<string>(t("common.topic"));
   const [topicStatus, setTopicStatus] = useState("DRAFT");
   const [templateLabel, setTemplateLabel] = useState<string | undefined>(undefined);
@@ -253,6 +389,13 @@ export default function TopicDetailPage() {
   const [previewDocumentBusy, setPreviewDocumentBusy] = useState(false);
   const [previewDocument, setPreviewDocument] = useState<PreviewDocumentDetailResponse | null>(null);
   const [abTestResult, setAbTestResult] = useState<RuleAbTestResult | null>(null);
+  const [complexityMetricsOverride, setComplexityMetricsOverride] = useState<ComplexityMetrics | null>(null);
+  const [hitDistributionOverride, setHitDistributionOverride] = useState<HitDistribution | null>(null);
+  const [performanceMetricsOverride, setPerformanceMetricsOverride] = useState<PerformanceMetrics | null>(null);
+  const [riskAssessmentOverride, setRiskAssessmentOverride] = useState<RiskAssessment | null>(null);
+  const [optimizationSuggestionsOverride, setOptimizationSuggestionsOverride] = useState<OptimizationSuggestion[] | null>(null);
+  const [versionHistoryOverride, setVersionHistoryOverride] = useState<RuleVersionEntry[] | null>(null);
+  const [diffOverride, setDiffOverride] = useState<NodeDiffDetail | null>(null);
   const [runtimeOptions, setRuntimeOptions] = useState<RuntimeActiveItem[]>([]);
   const [editorState, setEditorState] = useState<{
     rule: UiRuleViewModel;
@@ -283,6 +426,83 @@ export default function TopicDetailPage() {
     }
   }
 
+  async function refreshGovernance(ruleId: string) {
+    try {
+      const versions = await listRuleVersions(ruleId);
+      const versionWindow = getVersionWindowSize();
+      const sorted = versions
+        .slice()
+        .sort((a, b) => a.version - b.version)
+        .slice(-versionWindow);
+      if (sorted.length === 0) {
+        setVersionHistoryOverride(null);
+        return;
+      }
+
+      const versionDetails = await Promise.all(
+        sorted.map(async (item) => {
+          const detail = await getRuleVersion(ruleId, item.version);
+          return {
+            ...item,
+            rule: detail.rule,
+          };
+        })
+      );
+
+      const runtimeIdForRisk = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
+      const timelineEntries = await Promise.all(
+        versionDetails.map(async (item, index) => {
+          const [analyzeRes, riskRes, prevDiff] = await Promise.all([
+            analyzeRule(item.rule).catch(() => null),
+            runtimeIdForRisk
+              ? evaluateRuntimeRuleRisk({
+                  runtimeEnvironmentId: runtimeIdForRisk,
+                  rule: item.rule,
+                }).catch(() => null)
+              : Promise.resolve(null),
+            index > 0
+              ? diffRuleVersions(ruleId, sorted[index - 1].version, item.version).catch(() => null)
+              : Promise.resolve(null),
+          ]);
+
+          const action: RuleVersionEntry["action"] =
+            index === 0
+              ? "LOADED"
+              : index === versionDetails.length - 1
+                ? mapStatusToLatestAction(topicStatus)
+                : "SAVED";
+
+          return {
+            id: `persisted-${item.version}`,
+            version: `v${item.version}.0`,
+            action,
+            at: item.createdAt,
+            added: prevDiff?.addedNodes.length ?? 0,
+            removed: prevDiff?.removedNodes.length ?? 0,
+            changed: prevDiff?.modifiedNodes.length ?? 0,
+            riskLevel: riskRes?.riskLevel ?? "-",
+            complexityScore: analyzeRes?.complexityScore ?? 0,
+          } satisfies RuleVersionEntry;
+        })
+      );
+
+      setVersionHistoryOverride(timelineEntries);
+
+      if (sorted.length >= 2) {
+        const from = sorted[sorted.length - 2]?.version;
+        const to = sorted[sorted.length - 1]?.version;
+        if (from != null && to != null) {
+          const latestDiff = await diffRuleVersions(ruleId, from, to);
+          setDiffOverride(mapRuleDiff(latestDiff));
+        }
+      } else {
+        setDiffOverride(null);
+      }
+    } catch {
+      // Keep UI fallback behavior when governance APIs are unavailable.
+    }
+  }
+
   async function handleSaveDraft() {
     if (!topicId || topicStatus === "IN_REVIEW" || !editorState) return;
     const issues = validateTree(editorState.rule.root, editorState.capability).filter(
@@ -296,8 +516,12 @@ export default function TopicDetailPage() {
       });
       return;
     }
+    setSaveDraftBusy(true);
     setActionBusy(true);
-    setActionFeedback(null);
+    setActionFeedback({
+      type: "info",
+      title: t("topicActions.savingDraft"),
+    });
     const normalizedRoot = normalizeRootForSave(editorState.rule.root);
     const normalizedExpression = normalizeExpressionTree(normalizedRoot).root;
     if (!normalizedExpression) {
@@ -306,6 +530,7 @@ export default function TopicDetailPage() {
         title: t("topicDetail.draft.saveFailed"),
         message: t("ruleEditor.validation.needAtLeastOneCondition"),
       });
+      setSaveDraftBusy(false);
       setActionBusy(false);
       return;
     }
@@ -320,6 +545,7 @@ export default function TopicDetailPage() {
         title: t("topicDetail.draft.saveFailed"),
         message: normalizedIssues[0].message,
       });
+      setSaveDraftBusy(false);
       setActionBusy(false);
       return;
     }
@@ -343,6 +569,7 @@ export default function TopicDetailPage() {
             explain: result.data.explain ?? null,
             dirty: false,
           });
+          await refreshGovernance(topicId);
         }
         setActionFeedback({
           type: "success",
@@ -359,6 +586,7 @@ export default function TopicDetailPage() {
         });
       }
 
+    setSaveDraftBusy(false);
     setActionBusy(false);
   }
 
@@ -462,9 +690,10 @@ export default function TopicDetailPage() {
     }
 
     try {
+      const runtimeRulePayload = { root: toRuntimeNode(normalizedExpression), references: [] };
       const fullRes = await execute({
         mode: "FULL",
-        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
+        rule: runtimeRulePayload,
         runtimeEnvironmentId: resolvedRuntimeId,
         options: { page: options?.page, size: options?.size, withHighlight: true, withItems: true },
       });
@@ -475,12 +704,42 @@ export default function TopicDetailPage() {
 
       const impactRes = await execute({
         mode: "IMPACT",
-        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
+        rule: runtimeRulePayload,
         runtimeEnvironmentId: resolvedRuntimeId,
         options: { withHighlight: false, withItems: false },
       });
       if (impactRes.mode === "IMPACT") {
         setImpactRuntimeResult(impactRes);
+      }
+
+      const [analyzeRes, analysisRes, suggestRes, riskRes] = await Promise.all([
+        analyzeRule(runtimeRulePayload).catch(() => null),
+        executeRuntimeRuleAnalysis({
+          runtimeEnvironmentId: resolvedRuntimeId,
+          rule: runtimeRulePayload,
+        }).catch(() => null),
+        suggestRuntimeRule({
+          runtimeEnvironmentId: resolvedRuntimeId,
+          rule: runtimeRulePayload,
+        }).catch(() => null),
+        evaluateRuntimeRuleRisk({
+          runtimeEnvironmentId: resolvedRuntimeId,
+          rule: runtimeRulePayload,
+        }).catch(() => null),
+      ]);
+
+      if (analyzeRes) {
+        setComplexityMetricsOverride(mapAnalyzeToComplexity(analyzeRes));
+      }
+      if (analysisRes) {
+        setHitDistributionOverride(mapAnalysisToDistribution(analysisRes));
+      }
+      if (suggestRes) {
+        setOptimizationSuggestionsOverride(mapSuggestToOptimization(suggestRes));
+      }
+      if (riskRes) {
+        setRiskAssessmentOverride(mapRiskToAssessment(riskRes));
+        setPerformanceMetricsOverride(mapRiskToPerformance(riskRes));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
@@ -561,21 +820,26 @@ export default function TopicDetailPage() {
     if (!candidateB) return;
 
     try {
-      const resA = await execute({
-        mode: "FULL",
-        rule: { root: toRuntimeNode(normalizedExpression), references: [] },
+      const runtimeRuleA = { root: toRuntimeNode(normalizedExpression), references: [] };
+      const runtimeRuleB = { root: toRuntimeNode(candidateB), references: [] };
+      const compare = await compareRuntimeRules({
         runtimeEnvironmentId: resolvedRuntimeId,
-        options: { page: 1, size: 20, withHighlight: false, withItems: true },
+        ruleA: runtimeRuleA,
+        ruleB: runtimeRuleB,
       });
-      const resB = await execute({
-        mode: "FULL",
-        rule: { root: toRuntimeNode(candidateB), references: [] },
-        runtimeEnvironmentId: resolvedRuntimeId,
-        options: { page: 1, size: 20, withHighlight: false, withItems: true },
+      const union = compare.overlap + compare.onlyA + compare.onlyB;
+      const deltaHit = compare.ruleBHit - compare.ruleAHit;
+      const deltaHitRate = compare.ruleAHit > 0 ? deltaHit / compare.ruleAHit : 0;
+      const overlapRate = union > 0 ? compare.overlap / union : 1;
+      setAbTestResult({
+        generatedAt: new Date().toLocaleString(),
+        ruleA: { label: "A (当前规则)", total: compare.ruleAHit, took: compare.took },
+        ruleB: { label: "B (自动整理后)", total: compare.ruleBHit, took: compare.took },
+        deltaHit,
+        deltaHitRate,
+        overlapRate,
+        winner: compare.ruleBHit > compare.ruleAHit ? "B" : compare.ruleBHit < compare.ruleAHit ? "A" : "TIE",
       });
-      if (resA.mode === "FULL" && resB.mode === "FULL") {
-        setAbTestResult(buildRuleAbTestResult(resA, resB));
-      }
     } catch (error) {
       const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
       setExecutionError(message);
@@ -714,6 +978,13 @@ export default function TopicDetailPage() {
       setLoading(true);
       setError(null);
       setActionFeedback(null);
+      setComplexityMetricsOverride(null);
+      setHitDistributionOverride(null);
+      setPerformanceMetricsOverride(null);
+      setRiskAssessmentOverride(null);
+      setOptimizationSuggestionsOverride(null);
+      setVersionHistoryOverride(null);
+      setDiffOverride(null);
       const result = await fetchTopicById(topicId);
       if (!active) return;
       if (result.data) {
@@ -763,6 +1034,7 @@ export default function TopicDetailPage() {
               t("topicDetail.draft.loadFailed"),
           });
         }
+      await refreshGovernance(topicId);
       setLoading(false);
     }
 
@@ -814,6 +1086,7 @@ export default function TopicDetailPage() {
                 dirty={editorState.dirty}
                 explain={editorState.explain}
                 actionBusy={actionBusy || executionLoading}
+                saveDraftBusy={saveDraftBusy}
                 onBack={() => router.push("/knowledge/topics")}
                 onSave={topicStatus === "IN_REVIEW" ? undefined : handleSaveDraft}
                 onDeleteDraft={topicStatus === "IN_REVIEW" ? undefined : handleDeleteDraft}
@@ -834,6 +1107,13 @@ export default function TopicDetailPage() {
                 impactRuntimeResult={impactRuntimeResult}
                 nodeRuntimeResults={nodeRuntimeResults}
                 abTestResult={abTestResult}
+                complexityMetricsOverride={complexityMetricsOverride}
+                hitDistributionOverride={hitDistributionOverride}
+                performanceMetricsOverride={performanceMetricsOverride}
+                riskAssessmentOverride={riskAssessmentOverride}
+                optimizationSuggestionsOverride={optimizationSuggestionsOverride}
+                versionHistoryOverride={versionHistoryOverride}
+                diffOverride={diffOverride}
                 runtimeOptions={runtimeOptions}
                 activeRuntimeId={activeRuntimeId}
                 onChangeRuntime={setActiveRuntime}

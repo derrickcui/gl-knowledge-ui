@@ -13,6 +13,7 @@ type HeaderBarProps = {
   capabilityLabel?: string;
   capability?: UiCapabilityViewModel;
   busy?: boolean;
+  saveDraftBusy?: boolean;
   onBack?: () => void;
   onSave?: () => void;
   onDeleteDraft?: () => void;
@@ -31,6 +32,7 @@ export function HeaderBar({
   capabilityLabel,
   capability,
   busy = false,
+  saveDraftBusy = false,
   onBack,
   onSave,
   onDeleteDraft,
@@ -87,7 +89,9 @@ export function HeaderBar({
               disabled={busy || !onSave || disableSave}
               title={disableSave ? disableSaveHint : undefined}
             >
-              {t("ruleEditor.header.saveDraft")}
+              {saveDraftBusy
+                ? t("topicActions.savingDraft")
+                : t("ruleEditor.header.saveDraft")}
             </button>
             <button
               type="button"

@@ -7,6 +7,7 @@ import {
   GlossaryGraphResult,
   searchGlossaryConcepts,
 } from "@/lib/glossary-api";
+import { SearchLoadingIndicator } from "@/components/ui/search-loading-indicator";
 import { ConceptConditionDraft } from "./conceptConditionDraft";
 import { t } from "@/i18n";
 
@@ -45,6 +46,7 @@ export default function ConceptPickerModal({
   const [query, setQuery] = useState(initialQuery);
   const [results, setResults] = useState<GlossaryGraphResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<GlossaryGraphResult | null>(null);
   const [detail, setDetail] = useState<GlossaryConceptDetail | null>(null);
   const [relationMode, setRelationMode] =
@@ -130,6 +132,7 @@ export default function ConceptPickerModal({
     const nextQuery = initialDraft?.concept.name ?? initialQuery;
     setQuery(nextQuery);
     setResults([]);
+    setSearchError(null);
     if (initialDraft?.concept.id) {
       setSelected({
         center: {
@@ -170,6 +173,7 @@ export default function ConceptPickerModal({
     setLocation(normalizeLocation(initialDraft?.location));
     if (nextQuery.trim()) {
       setLoading(true);
+      setSearchError(null);
       searchGlossaryConcepts(nextQuery.trim())
         .then((data) => {
           if (initialConceptId) {
@@ -185,7 +189,14 @@ export default function ConceptPickerModal({
           }
           setResults(data);
         })
-        .catch(() => setResults([]))
+        .catch((error: unknown) => {
+          setResults([]);
+          setSearchError(
+            error instanceof Error
+              ? error.message
+              : t("conceptPicker.searchFailed")
+          );
+        })
         .finally(() => setLoading(false));
     }
   }, [
@@ -202,14 +213,24 @@ export default function ConceptPickerModal({
     if (!open) return;
     const trimmed = query.trim();
     if (!trimmed) {
+      setLoading(false);
       setResults([]);
+      setSearchError(null);
       return;
     }
+    setLoading(true);
+    setSearchError(null);
     const handle = setTimeout(() => {
-      setLoading(true);
       searchGlossaryConcepts(trimmed)
         .then((data) => setResults(data))
-        .catch(() => setResults([]))
+        .catch((error: unknown) => {
+          setResults([]);
+          setSearchError(
+            error instanceof Error
+              ? error.message
+              : t("conceptPicker.searchFailed")
+          );
+        })
         .finally(() => setLoading(false));
     }, 300);
     return () => clearTimeout(handle);
@@ -367,11 +388,16 @@ export default function ConceptPickerModal({
               onChange={(event) => setQuery(event.target.value)}
             />
             {loading && (
-              <div className="text-xs text-slate-500">
-                {t("conceptPicker.searching")}
+              <SearchLoadingIndicator
+                text={t("conceptPicker.searching")}
+              />
+            )}
+            {searchError && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                {searchError}
               </div>
             )}
-            {!loading && results.length === 0 && query.trim() && (
+            {!loading && !searchError && results.length === 0 && query.trim() && (
               <div className="rounded-md border border-dashed p-3 text-xs text-slate-500">
                 {t("conceptPicker.searchEmpty")}
               </div>
