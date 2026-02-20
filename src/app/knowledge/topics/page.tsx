@@ -226,11 +226,23 @@ export default function TopicsPage() {
       expectedHash,
     });
     if (result.data) {
+      setTopics((prev) =>
+        prev.map((item) =>
+          item.id === topic.id
+            ? {
+                ...item,
+                status: "PUBLISHED",
+                updatedAt: result.data?.publishedAt ?? item.updatedAt,
+              }
+            : item
+        )
+      );
+      invalidateTopicListCache();
       setActionFeedback({
         type: "success",
         title: t("topics.publish.successTitle"),
       });
-      await loadTopics(false);
+      await loadTopics(false, true);
     } else {
       setActionFeedback({
         type: "error",
@@ -248,7 +260,8 @@ export default function TopicsPage() {
         type: "success",
         title: t("topics.review.submitSuccess"),
       });
-      await loadTopics(false);
+      invalidateTopicListCache();
+      await loadTopics(false, true);
       setReviewDialogOpen(false);
       setPendingReviewTopic(null);
       router.push(

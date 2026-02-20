@@ -14,6 +14,9 @@ type HeaderBarProps = {
   capability?: UiCapabilityViewModel;
   busy?: boolean;
   saveDraftBusy?: boolean;
+  deleteDraftBusy?: boolean;
+  submitReviewBusy?: boolean;
+  publishBusy?: boolean;
   onBack?: () => void;
   onSave?: () => void;
   onDeleteDraft?: () => void;
@@ -33,6 +36,9 @@ export function HeaderBar({
   capability,
   busy = false,
   saveDraftBusy = false,
+  deleteDraftBusy = false,
+  submitReviewBusy = false,
+  publishBusy = false,
   onBack,
   onSave,
   onDeleteDraft,
@@ -46,6 +52,10 @@ export function HeaderBar({
   const [capabilityOpen, setCapabilityOpen] = useState(false);
   const [openViewMenuOpen, setOpenViewMenuOpen] = useState(false);
   const capabilityDialogDrag = useDraggableDialog(capabilityOpen);
+  const saveDisabled = busy || !onSave || disableSave;
+  const deleteDisabled = busy || !onDeleteDraft;
+  const submitDisabled = busy || !onSubmit;
+  const publishDisabled = busy || !onPublish;
 
   return (
     <>
@@ -84,9 +94,13 @@ export function HeaderBar({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="rounded border px-3 py-1.5 text-sm"
+              className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                saveDisabled
+                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                  : "hover:bg-slate-50"
+              }`}
               onClick={onSave}
-              disabled={busy || !onSave || disableSave}
+              disabled={saveDisabled}
               title={disableSave ? disableSaveHint : undefined}
             >
               {saveDraftBusy
@@ -95,27 +109,45 @@ export function HeaderBar({
             </button>
             <button
               type="button"
-              className="rounded border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
+              className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                deleteDisabled
+                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                  : "border-red-300 text-red-700 hover:bg-red-50"
+              }`}
               onClick={onDeleteDraft}
-              disabled={busy || !onDeleteDraft}
+              disabled={deleteDisabled}
             >
-              {t("topicActions.deleteDraft")}
+              {deleteDraftBusy
+                ? t("topicActions.deletingDraft")
+                : t("topicActions.deleteDraft")}
             </button>
             <button
               type="button"
-              className="rounded border px-3 py-1.5 text-sm"
+              className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                submitDisabled
+                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                  : "hover:bg-slate-50"
+              }`}
               onClick={onSubmit}
-              disabled={busy || !onSubmit}
+              disabled={submitDisabled}
             >
-              {t("ruleEditor.header.submitReview")}
+              {submitReviewBusy
+                ? t("topicActions.submittingReview")
+                : t("ruleEditor.header.submitReview")}
             </button>
             <button
               type="button"
-              className="rounded border px-3 py-1.5 text-sm"
+              className={`rounded border px-3 py-1.5 text-sm transition-colors ${
+                publishDisabled
+                  ? "cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400"
+                  : "hover:bg-slate-50"
+              }`}
               onClick={onPublish}
-              disabled={busy || !onPublish}
+              disabled={publishDisabled}
             >
-              {t("ruleEditor.header.publish")}
+              {publishBusy
+                ? t("topicActions.publishing")
+                : t("ruleEditor.header.publish")}
             </button>
             <div className="relative">
               <button

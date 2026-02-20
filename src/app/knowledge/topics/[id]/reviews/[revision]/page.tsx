@@ -1,26 +1,271 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
 import {
   fetchTopicById,
-  fetchTopicReviews,
   fetchTopicReviewDetail,
+  fetchTopicReviews,
   submitTopicReviewDecision,
+  type TopicReviewDetailResponse,
 } from "@/lib/topic-api";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
-import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
-import { t } from "@/i18n";
-
-type ReviewDecision = "APPROVE" | "REJECT" | "";
+import {
+  GovernanceView,
+  HistoryCard,
+  LogicView,
+  ReviewActionBar,
+  ReviewHeader,
+  SemanticView,
+  ViewSwitcher,
+} from "@/components/review/governance";
+import type {
+  ComplexityMetrics,
+  ExplainTreeNode,
+  HistoryRecord,
+  ReviewDecision,
+  RiskFinding,
+  TemplateCheckItem,
+  ReviewViewMode,
+} from "@/components/review/governance";
 
 function statusLabel(status?: string) {
-  if (status === "IN_REVIEW") return t("review.status.inReview");
-  if (status === "PUBLISHED") return t("review.status.published");
-  if (status === "REJECTED") return t("review.status.rejected");
-  return status ?? t("review.status.draft");
+  if (status === "IN_REVIEW") return "待评审";
+  if (status === "APPROVED") return "已通过";
+  if (status === "PUBLISHED") return "已发布";
+  if (status === "REJECTED") return "被退回";
+  if (status === "DRAFT") return "草稿";
+  return status ?? "未知";
+}
+
+function normalizeComplexityLevel(level?: string): ComplexityMetrics["level"] {
+  const upper = (level ?? "").toUpperCase();
+  if (upper === "HIGH" || level === "高") return "高";
+  if (upper === "MEDIUM" || upper === "MID" || level === "中") return "中";
+  return "低";
+}
+
+function normalizeRiskLevel(level?: string): "低风险" | "中风险" | "高风险" {
+  const upper = (level ?? "").toUpperCase();
+  if (upper === "HIGH" || level === "高风险") return "高风险";
+  if (upper === "MEDIUM" || upper === "MID" || level === "中风险") return "中风险";
+  return "低风险";
+}
+
+function hasExplainContent(explain: unknown): boolean {
+  if (!explain || typeof explain !== "object") return false;
+  const value = explain as Record<string, unknown>;
+  if (typeof value.summary === "string" && value.summary.trim()) return true;
+  if (typeof value.title === "string" && value.title.trim()) return true;
+  if (Array.isArray(value.blocks) && value.blocks.length > 0) return true;
+  if (Array.isArray(value.lines) && value.lines.length > 0) return true;
+  if (value.tree && typeof value.tree === "object") return true;
+  return false;
+}
+
+function asString(value: unknown): string | null {
+  if (typeof value === "string" && value.trim().length > 0) return value;
+  return null;
+}
+
+function collectOperators(rule: unknown): string[] {
+  const operators = new Set<string>();
+  const queue: unknown[] = [rule];
+  const visited = new Set<unknown>();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      current.forEach((item) => queue.push(item));
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    const op = asString(record.operator) ?? asString(record.mode) ?? asString(record.logic);
+    if (op) operators.add(op.toUpperCase());
+    Object.values(record).forEach((value) => queue.push(value));
+  }
+
+  return Array.from(operators);
+}
+
+function includesRangeConstraint(rule: unknown): boolean {
+  const queue: unknown[] = [rule];
+  const visited = new Set<unknown>();
+  const keys = ["range", "rangeMode", "location", "scope", "relation", "field"];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    if (Array.isArray(current)) {
+      current.forEach((item) => queue.push(item));
+      continue;
+    }
+
+    const record = current as Record<string, unknown>;
+    for (const key of keys) {
+      const raw = record[key];
+      if (typeof raw !== "string") continue;
+      const value = raw.toUpperCase();
+      if (
+        value.includes("TITLE") ||
+        value.includes("BODY") ||
+        value.includes("SENTENCE") ||
+        value.includes("PARAGRAPH") ||
+        value.includes("LIMITED") ||
+        value.includes("CONTENT")
+      ) {
+        return true;
+      }
+    }
+    Object.values(record).forEach((value) => queue.push(value));
+  }
+
+  return false;
+}
+
+function computeComplexityFallback(rule: unknown, semanticCount: number): ComplexityMetrics {
+  const childKeys = ["children", "conditions", "nodes", "rules", "groups", "items", "childrenList"];
+  let logicDepth = 1;
+  let conditionCount = 0;
+  let orCount = 0;
+  let excludeCount = 0;
+
+  function visit(node: unknown, depth: number) {
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      node.forEach((item) => visit(item, depth));
+      return;
+    }
+
+    const record = node as Record<string, unknown>;
+    const operator = (
+      asString(record.operator) ??
+      asString(record.mode) ??
+      asString(record.logic) ??
+      ""
+    ).toUpperCase();
+
+    if (operator === "OR" || operator === "ANY") orCount += 1;
+    if (operator === "EXCLUDE" || operator === "NOT") excludeCount += 1;
+
+    const childArrays = childKeys
+      .map((key) => record[key])
+      .filter((value): value is unknown[] => Array.isArray(value));
+
+    if (childArrays.length > 0) {
+      const nextDepth = depth + 1;
+      if (nextDepth > logicDepth) logicDepth = nextDepth;
+      childArrays.forEach((array) => array.forEach((item) => visit(item, nextDepth)));
+      return;
+    }
+
+    const nodeType = asString(record.type)?.toUpperCase() ?? "";
+    const isLogicOnly = nodeType === "LOGIC" || nodeType === "GROUP" || operator.length > 0;
+    if (!isLogicOnly) conditionCount += 1;
+  }
+
+  visit(rule, 1);
+  if (conditionCount === 0) conditionCount = semanticCount;
+
+  const hasRangeConstraint = includesRangeConstraint(rule);
+  const score = Math.min(100, logicDepth * 12 + conditionCount * 6 + orCount * 10 + excludeCount * 8);
+  const level: ComplexityMetrics["level"] = score > 70 ? "高" : score > 35 ? "中" : "低";
+  const health: ComplexityMetrics["health"] = score <= 35 ? "优" : score <= 70 ? "良" : "需关注";
+
+  return {
+    logicDepth,
+    conditionCount,
+    orCount,
+    excludeCount,
+    hasRangeConstraint,
+    score,
+    level,
+    health,
+  };
+}
+
+function normalizeExplainTree(tree: unknown, path = "root"): ExplainTreeNode | null {
+  if (!tree || typeof tree !== "object") return null;
+  const raw = tree as Record<string, unknown>;
+  const children = Array.isArray(raw.children)
+    ? raw.children
+        .map((child, index) => normalizeExplainTree(child, `${path}.${index}`))
+        .filter((node): node is ExplainTreeNode => node !== null)
+    : [];
+
+  return {
+    id: asString(raw.id) ?? path,
+    type: asString(raw.type),
+    operator: asString(raw.operator),
+    text: asString(raw.text),
+    children,
+  };
+}
+
+function findFirstGroupNodeIdByOperator(
+  node: ExplainTreeNode | null,
+  operator: string
+): string | null {
+  if (!node) return null;
+  if ((node.type ?? "").toUpperCase() === "GROUP" && (node.operator ?? "").toUpperCase() === operator.toUpperCase()) {
+    return node.id ?? null;
+  }
+  const children = Array.isArray(node.children) ? node.children : [];
+  for (const child of children) {
+    const found = findFirstGroupNodeIdByOperator(child, operator);
+    if (found) return found;
+  }
+  return null;
+}
+
+function summarizeTreeNode(node: ExplainTreeNode | null): string {
+  if (!node) return "";
+  const type = (node.type ?? "").toUpperCase();
+  const children = Array.isArray(node.children) ? node.children : [];
+
+  if (type === "TERM") {
+    const raw = node.text ?? "";
+    const quoted = raw.match(/[「“](.+?)[」”]/);
+    if (quoted?.[1]) return `包含“${quoted[1]}”`;
+    return raw.trim() ? `包含“${raw.trim()}”` : "满足条件";
+  }
+
+  if (children.length === 0) return "";
+  const parts = children.map((child) => summarizeTreeNode(child)).filter(Boolean);
+  if (parts.length === 0) return "";
+
+  const operator = (node.operator ?? "").toUpperCase();
+  if (operator === "OR" || operator === "ANY") {
+    return `（${parts.join(" 或 ")}）`;
+  }
+  if (operator === "EXCLUDE" || operator === "NOT") {
+    return `排除（${parts.join(" 且 ")}）`;
+  }
+  return parts.join(" 且 ");
+}
+
+function buildFallbackRiskFindings(metrics: ComplexityMetrics): RiskFinding[] {
+  const findings: RiskFinding[] = [];
+  if (metrics.orCount > 0) findings.push({ id: "or", text: "使用 OR 逻辑", scoreImpact: metrics.orCount * 10 });
+  if (!metrics.hasRangeConstraint) findings.push({ id: "scope", text: "未设置结构范围（默认整篇匹配）", scoreImpact: 5 });
+  if (metrics.excludeCount === 0) findings.push({ id: "exclude", text: "未设置排除条件", scoreImpact: 5 });
+  return findings;
+}
+
+function summarizeFallbackRisk(metrics: ComplexityMetrics, findings: RiskFinding[]) {
+  const findingScore = findings.reduce((sum, item) => sum + item.scoreImpact, 0);
+  const score = Math.min(100, 20 + Math.floor(metrics.score * 0.35) + findingScore);
+  const level: "低风险" | "中风险" | "高风险" = score > 70 ? "高风险" : score > 40 ? "中风险" : "低风险";
+  return { score, level };
 }
 
 export default function TopicReviewPage() {
@@ -28,15 +273,23 @@ export default function TopicReviewPage() {
   const router = useRouter();
   const topicId = params?.id ?? "";
   const revision = Number(params?.revision ?? 0);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [topicName, setTopicName] = useState<string>(String(t("common.topic")));
+  const [topicName, setTopicName] = useState<string>("主题");
+  const [templateText, setTemplateText] = useState<string>("-");
+  const [submittedBy, setSubmittedBy] = useState<string>("-");
+  const [submittedAt, setSubmittedAt] = useState<string | null>(null);
   const [reviewStatus, setReviewStatus] = useState("IN_REVIEW");
-  const [rule, setRule] = useState<unknown | null>(null);
-  const [explain, setExplain] = useState<any>(null);
+  const [reviewDetail, setReviewDetail] = useState<TopicReviewDetailResponse | null>(null);
+  const [historyRecords, setHistoryRecords] = useState<HistoryRecord[]>([]);
+  const [view, setView] = useState<ReviewViewMode>("semantic");
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   const [reviewDecision, setReviewDecision] = useState<ReviewDecision>("");
   const [reviewComment, setReviewComment] = useState("");
   const [expectedHash, setExpectedHash] = useState<string | null>(null);
+  const [expectedHashHint, setExpectedHashHint] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{
     type: "error" | "success" | "info";
     title: string;
@@ -46,35 +299,97 @@ export default function TopicReviewPage() {
 
   useEffect(() => {
     let active = true;
+
     async function load() {
       if (!topicId || !revision) return;
       setLoading(true);
       setError(null);
-      const topicResult = await fetchTopicById(topicId);
-      if (topicResult.data) {
-        setTopicName(topicResult.data.name);
-      }
-      const reviewsResult = await fetchTopicReviews(topicId);
-      if (reviewsResult.data) {
-        const matched = reviewsResult.data.find((item) => item.revision === revision);
-        if (matched?.reviewId) {
-          try {
-            const packet = await fetchReviewPacketBusiness(String(matched.reviewId));
-            setExpectedHash(packet?.contentHash ?? null);
-          } catch {
-            setExpectedHash(null);
-          }
-        }
-      }
-      const detailResult = await fetchTopicReviewDetail(topicId, revision);
+      setExpectedHash(null);
+      setExpectedHashHint(null);
+
+      const [topicResult, reviewsResult, detailResult] = await Promise.all([
+        fetchTopicById(topicId),
+        fetchTopicReviews(topicId),
+        fetchTopicReviewDetail(topicId, revision),
+      ]);
+
       if (!active) return;
-      if (detailResult.data) {
-        setReviewStatus(detailResult.data.status);
-        setRule(detailResult.data.rule ?? null);
-        setExplain(detailResult.data.explain ?? null);
-      } else {
-        setError(detailResult.error ?? t("review.error.load"));
+
+      if (topicResult.data) {
+        setTopicName(topicResult.data.name?.trim() || "未命名规则");
+        const templateId = topicResult.data.template_id == null ? "-" : String(topicResult.data.template_id);
+        const templateVersion = topicResult.data.template_version == null ? "" : ` v${topicResult.data.template_version}`;
+        setTemplateText(`${templateId}${templateVersion}`);
       }
+      const topicStatusForFallback = asString((topicResult.data as { status?: unknown } | null | undefined)?.status);
+
+      let listHashForRevision: string | null = null;
+      let listStatusForRevision: string | null = null;
+      let listSubmittedByForRevision: string | null = null;
+      let listSubmittedAtForRevision: string | null = null;
+      if (reviewsResult.data) {
+        const sorted = [...reviewsResult.data].sort((a, b) => b.revision - a.revision);
+        setHistoryRecords(
+          sorted.map((item) => ({
+            revision: item.revision,
+            fromRevision: item.revision > 0 ? item.revision - 1 : 0,
+            actor: item.reviewedBy ?? item.submittedBy ?? "-",
+            time: item.reviewedAt ?? item.submittedAt ?? null,
+            summary: `状态：${statusLabel(item.status)}`,
+          }))
+        );
+
+        const matched = reviewsResult.data.find((item) => item.revision === revision);
+        listHashForRevision = asString(matched?.contentHash);
+        listStatusForRevision = asString(matched?.status);
+        listSubmittedByForRevision = asString(matched?.submittedBy);
+        listSubmittedAtForRevision = asString(matched?.submittedAt);
+      }
+
+      if (detailResult.data) {
+        const detailHash = asString((detailResult.data as { contentHash?: unknown }).contentHash);
+        if (detailHash) {
+          setExpectedHash(detailHash);
+          setExpectedHashHint("哈希来源：评审详情");
+        } else if (listHashForRevision) {
+          setExpectedHash(listHashForRevision);
+          setExpectedHashHint("哈希来源：评审列表");
+        } else {
+          setExpectedHash(null);
+          setExpectedHashHint("评审详情和评审列表均未返回 contentHash");
+        }
+
+        const topicExplain = (topicResult.data as any)?.explain;
+        const reviewExplain = detailResult.data.explain;
+        const effectiveExplain = hasExplainContent(reviewExplain)
+          ? reviewExplain
+          : hasExplainContent(topicExplain)
+            ? topicExplain
+            : reviewExplain;
+
+        setReviewDetail({
+          ...detailResult.data,
+          explain: effectiveExplain,
+        });
+        const detailStatus = asString((detailResult.data as { status?: unknown }).status);
+        setReviewStatus(detailStatus ?? listStatusForRevision ?? topicStatusForFallback ?? "IN_REVIEW");
+
+        const detailSubmittedBy = asString((detailResult.data as { submittedBy?: unknown }).submittedBy);
+        setSubmittedBy(detailSubmittedBy ?? listSubmittedByForRevision ?? "-");
+
+        const detailSubmittedAt = asString((detailResult.data as { submittedAt?: unknown }).submittedAt);
+        setSubmittedAt(detailSubmittedAt ?? listSubmittedAtForRevision ?? null);
+
+        if (detailResult.data.template_id != null) {
+          const templateId = String(detailResult.data.template_id);
+          const templateVersion =
+            detailResult.data.template_version == null ? "" : ` v${detailResult.data.template_version}`;
+          setTemplateText(`${templateId}${templateVersion}`);
+        }
+      } else {
+        setError(detailResult.error ?? "无法加载评审。");
+      }
+
       setLoading(false);
     }
 
@@ -84,9 +399,123 @@ export default function TopicReviewPage() {
     };
   }, [topicId, revision]);
 
-  const explainBlocks = useMemo(() => {
-    if (explain?.blocks && Array.isArray(explain.blocks)) return explain.blocks;
-    return [];
+  const explain = reviewDetail?.explain as Record<string, unknown> | undefined;
+  const logicRoot = useMemo(
+    () => normalizeExplainTree(explain?.tree),
+    [explain?.tree]
+  );
+
+  const rule = reviewDetail?.rule;
+
+  const complexity = useMemo(() => {
+    const fallback = computeComplexityFallback(rule, 1);
+    const schema = (explain?.complexity ?? null) as
+      | { depth?: number; clauseCount?: number; score?: number; level?: string }
+      | null;
+    if (!schema) return fallback;
+
+    const score = schema.score ?? fallback.score;
+    const level = normalizeComplexityLevel(schema.level);
+    const health: ComplexityMetrics["health"] = score <= 35 ? "优" : score <= 70 ? "良" : "需关注";
+
+    return {
+      logicDepth: schema.depth ?? fallback.logicDepth,
+      conditionCount: schema.clauseCount ?? fallback.conditionCount,
+      orCount: fallback.orCount,
+      excludeCount: fallback.excludeCount,
+      hasRangeConstraint: fallback.hasRangeConstraint,
+      score,
+      level,
+      health,
+    };
+  }, [rule, explain]);
+
+  const riskSummary = useMemo(() => {
+    const schemaRisk = (explain?.risk ?? null) as
+      | {
+          score?: number;
+          level?: string;
+          signals?: Array<{ code?: string; message?: string; weight?: number }>;
+        }
+      | null;
+
+    if (schemaRisk) {
+      const findings: RiskFinding[] = (schemaRisk.signals ?? []).map((signal, index) => ({
+        id: signal.code ?? `risk-${index}`,
+        text: signal.message ?? signal.code ?? "风险信号",
+        scoreImpact: typeof signal.weight === "number" ? signal.weight : 0,
+        targetNodeId:
+          asString((signal as { targetNodeId?: unknown }).targetNodeId) ??
+          ((signal.code ?? "").toUpperCase() === "OR_EXPANSION"
+            ? findFirstGroupNodeIdByOperator(logicRoot, "OR")
+            : (signal.code ?? "").toUpperCase() === "NO_EXCLUDE_CONDITION"
+              ? findFirstGroupNodeIdByOperator(logicRoot, "EXCLUDE")
+              : (signal.code ?? "").toUpperCase() === "NO_SCOPE_LIMIT"
+                ? logicRoot?.id ?? null
+                : null),
+      }));
+      return {
+        score: typeof schemaRisk.score === "number" ? schemaRisk.score : 0,
+        level: normalizeRiskLevel(schemaRisk.level),
+        findings,
+      };
+    }
+
+    const findings = buildFallbackRiskFindings(complexity).map((item) => ({
+      ...item,
+      targetNodeId:
+        item.id === "or"
+          ? findFirstGroupNodeIdByOperator(logicRoot, "OR")
+          : item.id === "scope"
+            ? logicRoot?.id ?? null
+            : item.id === "exclude"
+              ? findFirstGroupNodeIdByOperator(logicRoot, "EXCLUDE")
+              : null,
+    }));
+    const fallback = summarizeFallbackRisk(complexity, findings);
+    return { ...fallback, findings };
+  }, [complexity, explain, logicRoot]);
+
+  const riskMap = useMemo<Record<string, RiskFinding[]>>(() => {
+    const map: Record<string, RiskFinding[]> = {};
+    for (const item of riskSummary.findings) {
+      const nodeId = item.targetNodeId ?? null;
+      if (!nodeId) continue;
+      if (!map[nodeId]) map[nodeId] = [];
+      map[nodeId].push(item);
+    }
+    return map;
+  }, [riskSummary.findings]);
+
+  const templateChecks = useMemo<TemplateCheckItem[]>(() => {
+    const operators = collectOperators(rule);
+    const allowed = new Set(["AND", "ALL", "OR", "ANY", "EXCLUDE", "NOT", "LOGSUM", "ACCRUE"]);
+    const invalid = operators.filter((operator) => !allowed.has(operator));
+    return [
+      {
+        id: "check-ops",
+        passed: invalid.length === 0,
+        text: invalid.length === 0 ? "未发现违规操作" : `发现未授权操作符：${invalid.join(", ")}`,
+      },
+      {
+        id: "check-allow",
+        passed: invalid.length === 0,
+        text: invalid.length === 0 ? "操作符在允许范围内" : "存在超出模板能力的操作符",
+      },
+    ];
+  }, [rule]);
+
+  const semanticSummaryText = useMemo(() => {
+    const summaryI18n = explain?.summaryI18n as { zh?: string; en?: string } | undefined;
+    if (summaryI18n?.zh?.trim()) return summaryI18n.zh.trim();
+    if (typeof explain?.summary === "string" && explain.summary.trim()) return explain.summary.trim();
+    const treeSummary = summarizeTreeNode(logicRoot);
+    if (treeSummary) return `当文档${treeSummary}时，命中当前主题。`;
+    return "暂无语义摘要";
+  }, [explain, logicRoot]);
+  const semanticTitleText = useMemo(() => {
+    if (typeof explain?.title === "string" && explain.title.trim()) return explain.title.trim();
+    return "";
   }, [explain]);
 
   const canSubmit =
@@ -94,31 +523,24 @@ export default function TopicReviewPage() {
     !!expectedHash &&
     (reviewDecision === "APPROVE" || reviewComment.trim().length > 0);
 
+  const isReadOnly = reviewStatus !== "IN_REVIEW";
+  const readOnlyMessage = `当前状态为「${statusLabel(reviewStatus)}」，仅待评审状态可提交审批结果。`;
+  const handleRiskSignalClick = (targetNodeId?: string | null) => {
+    setView("logic");
+    if (targetNodeId) setHighlightedNodeId(targetNodeId);
+  };
+
   return (
     <div className="space-y-6 p-6">
-      <Link
-        className="text-sm text-muted-foreground hover:text-foreground"
-        href={`/knowledge/topics/${encodeURIComponent(topicId)}`}
-      >
-        {t("review.back")}
-      </Link>
-
-      <div className="rounded-lg border bg-white p-5">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {t("review.title")}
-            </div>
-            <div className="mt-1 text-xl font-semibold">{topicName}</div>
-            <div className="mt-1 text-xs text-muted-foreground">
-              {t("review.revision", { revision })}
-            </div>
-          </div>
-          <span className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800">
-            {statusLabel(reviewStatus)}
-          </span>
-        </div>
-      </div>
+      <ReviewHeader
+        topicId={topicId}
+        ruleName={topicName}
+        revision={revision}
+        status={statusLabel(reviewStatus)}
+        templateText={templateText}
+        submitter={submittedBy}
+        submittedAt={submittedAt}
+      />
 
       {error && <FeedbackBanner type="error" title={error} />}
       {actionFeedback && (
@@ -131,120 +553,75 @@ export default function TopicReviewPage() {
       )}
 
       {loading ? (
-        <div className="text-sm opacity-60">{t("common.loading")}</div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-4">
-            <div className="rounded-lg border bg-white p-4">
-              <div className="text-sm font-semibold">Rule Content</div>
-              <pre className="mt-3 max-h-[420px] overflow-auto rounded-md bg-slate-50 p-3 text-xs">
-                {JSON.stringify(rule, null, 2)}
-              </pre>
-            </div>
-
-            <div className="rounded-lg border bg-white p-4">
-              <div className="text-sm font-semibold">Explain</div>
-              {explainBlocks.length === 0 ? (
-                <div className="mt-3 rounded-md border border-dashed p-3 text-sm text-slate-500">
-                  {t("review.explain.empty")}
-                </div>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {explainBlocks.map((block: any, index: number) => (
-                    <div key={`explain-${index}`} className="rounded-md border p-3">
-                      <div className="text-sm font-medium">{block.title ?? `Block ${index + 1}`}</div>
-                      {Array.isArray(block.lines) && block.lines.length > 0 ? (
-                        <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-                          {block.lines.map((line: string, lineIndex: number) => (
-                            <li key={`line-${lineIndex}`}>{line}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <div className="mt-2 text-sm text-slate-500">-</div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-lg border bg-white p-4">
-            <div className="text-sm font-semibold">{t("review.actions.title")}</div>
-            <div className="mt-4 space-y-4 text-sm">
-              <div className="space-y-2">
-                <div className="font-medium">{t("review.actions.decision")}</div>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="review-decision"
-                    checked={reviewDecision === "APPROVE"}
-                    onChange={() => setReviewDecision("APPROVE")}
-                  />
-                  {t("review.actions.approve")}
-                </label>
-                <label className="flex items-center gap-2">
-                  <input
-                    type="radio"
-                    name="review-decision"
-                    checked={reviewDecision === "REJECT"}
-                    onChange={() => setReviewDecision("REJECT")}
-                  />
-                  {t("review.actions.reject")}
-                </label>
-              </div>
-
-              <div className="space-y-2">
-                <div className="font-medium">{t("review.actions.comment")}</div>
-                <textarea
-                  className="min-h-[96px] w-full rounded-md border px-3 py-2 text-sm"
-                  placeholder={
-                    reviewDecision === "REJECT"
-                      ? t("review.actions.commentReject")
-                      : t("review.actions.commentApprove")
-                  }
-                  value={reviewComment}
-                  onChange={(event) => setReviewComment(event.target.value)}
-                />
-                {!expectedHash && (
-                  <div className="text-xs text-amber-600">{t("review.actions.missingHash")}</div>
-                )}
-              </div>
-
-              <button
-                type="button"
-                className="h-9 w-full rounded-md bg-black text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
-                disabled={!canSubmit || submitting}
-                onClick={async () => {
-                  if (!canSubmit || submitting) return;
-                  setSubmitting(true);
-                  const result = await submitTopicReviewDecision(topicId, revision, {
-                    decision: reviewDecision,
-                    reviewer: "systemUser",
-                    comment: reviewComment.trim() || undefined,
-                    expectedHash: expectedHash ?? undefined,
-                  });
-                  if (result.data) {
-                    setActionFeedback({
-                      type: "success",
-                      title: t("review.submit.success"),
-                    });
-                    router.push("/knowledge/topics");
-                  } else {
-                    setActionFeedback({
-                      type: "error",
-                      title: t("review.submit.failure"),
-                      message: result.error ?? t("review.submit.failureMessage"),
-                    });
-                  }
-                  setSubmitting(false);
-                }}
-              >
-                {submitting ? t("review.submit.loading") : t("review.submit.confirm")}
-              </button>
-            </div>
-          </div>
+        <div className="rounded-xl border bg-white p-4 text-sm text-slate-600">
+          正在加载评审报告...
         </div>
+      ) : (
+        <>
+          <ViewSwitcher view={view} onChange={setView} />
+
+          {view === "semantic" ? (
+            <SemanticView title={semanticTitleText} summary={semanticSummaryText} />
+          ) : null}
+
+          {view === "logic" ? (
+            <LogicView
+              tree={logicRoot}
+              highlightedNodeId={highlightedNodeId}
+              riskMap={riskMap}
+            />
+          ) : null}
+
+          {view === "governance" ? (
+            <GovernanceView
+              risk={riskSummary}
+              complexity={complexity}
+              templateChecks={templateChecks}
+              onRiskSignalClick={handleRiskSignalClick}
+            />
+          ) : null}
+
+          <HistoryCard
+            expanded={historyExpanded}
+            onToggle={() => setHistoryExpanded((value) => !value)}
+            records={historyRecords}
+          />
+
+          <ReviewActionBar
+            decision={reviewDecision}
+            comment={reviewComment}
+            onDecisionChange={setReviewDecision}
+            onCommentChange={setReviewComment}
+            canSubmit={canSubmit}
+            submitting={submitting}
+            expectedHashReady={Boolean(expectedHash)}
+            expectedHashHint={expectedHashHint}
+            readOnly={isReadOnly}
+            readOnlyMessage={readOnlyMessage}
+            onSubmit={async () => {
+              if (isReadOnly || !canSubmit || submitting) return;
+              setSubmitting(true);
+              const result = await submitTopicReviewDecision(topicId, revision, {
+                decision: reviewDecision,
+                reviewer: "systemUser",
+                comment: reviewComment.trim() || undefined,
+                expectedHash: expectedHash ?? undefined,
+              });
+
+              if (result.data) {
+                setActionFeedback({ type: "success", title: "评审已完成" });
+                router.push(`/knowledge/topics/${encodeURIComponent(topicId)}`);
+              } else {
+                setActionFeedback({
+                  type: "error",
+                  title: "评审提交失败",
+                  message: result.error ?? "无法提交评审结果。",
+                });
+              }
+              setSubmitting(false);
+            }}
+          />
+        </>
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import {
   fetchTopicById,
+  fetchTopics,
   fetchTopicDraft,
   publishTopic,
   saveTopicDraft,
@@ -67,6 +68,10 @@ import type {
 
 const DEFAULT_VERSION_WINDOW = 20;
 const MAX_VERSION_WINDOW = 100;
+
+function isLockedActionStatus(status: string): boolean {
+  return status === "IN_REVIEW" || status === "PUBLISHED" || status === "APPROVED";
+}
 
 function getVersionWindowSize(): number {
   const raw = process.env.NEXT_PUBLIC_RULE_VERSION_WINDOW;
@@ -274,17 +279,33 @@ function mapAnalyzeToComplexity(metrics: RuleAnalyzeResponse): ComplexityMetrics
 }
 
 function mapAnalysisToDistribution(result: RuleRuntimeExecuteAnalysisResponse): HitDistribution {
+  function aggregateTop(
+    items: Array<{ key: string; count: number }>
+  ): Array<{ key: string; count: number }> {
+    const counter = new Map<string, number>();
+    items.forEach((item) => {
+      const current = counter.get(item.key) ?? 0;
+      counter.set(item.key, current + item.count);
+    });
+    return Array.from(counter.entries())
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }
+
   return {
-    byField: result.nodeStats
-      .slice()
-      .sort((a, b) => b.hitCount - a.hitCount)
-      .slice(0, 8)
-      .map((item) => ({ key: item.nodeType, count: item.hitCount })),
-    byKeyword: result.termStats
-      .slice()
-      .sort((a, b) => b.hitCount - a.hitCount)
-      .slice(0, 8)
-      .map((item) => ({ key: item.termId, count: item.hitCount })),
+    byField: aggregateTop(
+      result.nodeStats.map((item) => ({
+        key: item.nodeType || "UNKNOWN",
+        count: item.hitCount,
+      }))
+    ),
+    byKeyword: aggregateTop(
+      result.termStats.map((item) => ({
+        key: item.termId || "UNKNOWN",
+        count: item.hitCount,
+      }))
+    ),
   };
 }
 
@@ -368,6 +389,10 @@ export default function TopicDetailPage() {
   } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [saveDraftBusy, setSaveDraftBusy] = useState(false);
+  const [deleteDraftBusy, setDeleteDraftBusy] = useState(false);
+  const [submitReviewBusy, setSubmitReviewBusy] = useState(false);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [abTestBusy, setAbTestBusy] = useState(false);
   const [topicName, setTopicName] = useState<string>(t("common.topic"));
   const [topicStatus, setTopicStatus] = useState("DRAFT");
   const [templateLabel, setTemplateLabel] = useState<string | undefined>(undefined);
@@ -396,6 +421,7 @@ export default function TopicDetailPage() {
   const [optimizationSuggestionsOverride, setOptimizationSuggestionsOverride] = useState<OptimizationSuggestion[] | null>(null);
   const [versionHistoryOverride, setVersionHistoryOverride] = useState<RuleVersionEntry[] | null>(null);
   const [diffOverride, setDiffOverride] = useState<NodeDiffDetail | null>(null);
+  const actionsLocked = isLockedActionStatus(topicStatus);
   const [runtimeOptions, setRuntimeOptions] = useState<RuntimeActiveItem[]>([]);
   const [editorState, setEditorState] = useState<{
     rule: UiRuleViewModel;
@@ -504,7 +530,7 @@ export default function TopicDetailPage() {
   }
 
   async function handleSaveDraft() {
-    if (!topicId || topicStatus === "IN_REVIEW" || !editorState) return;
+    if (!topicId || isLockedActionStatus(topicStatus) || !editorState) return;
     const issues = validateTree(editorState.rule.root, editorState.capability).filter(
       (item) => item.severity === "error"
     );
@@ -591,9 +617,13 @@ export default function TopicDetailPage() {
   }
 
   async function handleDeleteDraft() {
-    if (!topicId || topicStatus === "IN_REVIEW") return;
+    if (!topicId || isLockedActionStatus(topicStatus)) return;
+    setDeleteDraftBusy(true);
     setActionBusy(true);
-    setActionFeedback(null);
+    setActionFeedback({
+      type: "info",
+      title: t("topicActions.deletingDraft"),
+    });
 
     const result = await deleteTopicDraft(topicId);
     if (result.error) {
@@ -614,7 +644,7 @@ export default function TopicDetailPage() {
   }
 
   async function handleSubmitReview() {
-    if (!topicId || topicStatus === "IN_REVIEW") return;
+    if (!topicId || isLockedActionStatus(topicStatus)) return;
     if (editorState) {
       const issues = validateTree(editorState.rule.root, editorState.capability).filter(
         (item) => item.severity === "error"
@@ -628,8 +658,12 @@ export default function TopicDetailPage() {
         return;
       }
     }
+    setPublishBusy(true);
     setActionBusy(true);
-    setActionFeedback(null);
+    setActionFeedback({
+      type: "info",
+      title: t("topicActions.publishing"),
+    });
 
     const result = await submitTopicReview(topicId, {});
     if (result.data) {
@@ -646,6 +680,7 @@ export default function TopicDetailPage() {
       });
     }
 
+    setDeleteDraftBusy(false);
     setActionBusy(false);
   }
 
@@ -795,10 +830,12 @@ export default function TopicDetailPage() {
 
   async function handleRunAbTest() {
     if (!editorState) return;
+    setAbTestBusy(true);
     setExecutionError(null);
     const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
     if (!resolvedRuntimeId) {
       setExecutionError("No runtime selected");
+      setAbTestBusy(false);
       return;
     }
     if (!activeRuntimeId) {
@@ -813,6 +850,7 @@ export default function TopicDetailPage() {
     );
     if (normalizedIssues.length > 0) {
       setExecutionError(normalizedIssues[0].message);
+      setAbTestBusy(false);
       return;
     }
 
@@ -843,6 +881,8 @@ export default function TopicDetailPage() {
     } catch (error) {
       const message = error instanceof Error ? error.message : t("topicDetail.preview.failed");
       setExecutionError(message);
+    } finally {
+      setAbTestBusy(false);
     }
   }
 
@@ -860,7 +900,7 @@ export default function TopicDetailPage() {
   }
 
   async function handlePublish() {
-    if (!topicId || topicStatus === "IN_REVIEW") return;
+    if (!topicId || isLockedActionStatus(topicStatus)) return;
     if (editorState) {
       const issues = validateTree(editorState.rule.root, editorState.capability).filter(
         (item) => item.severity === "error"
@@ -874,8 +914,12 @@ export default function TopicDetailPage() {
         return;
       }
     }
+    setSubmitReviewBusy(true);
     setActionBusy(true);
-    setActionFeedback(null);
+    setActionFeedback({
+      type: "info",
+      title: t("topicActions.submittingReview"),
+    });
 
     const reviewsResult = await fetchTopicReviews(topicId);
     if (!reviewsResult.data || reviewsResult.data.length === 0) {
@@ -884,6 +928,7 @@ export default function TopicDetailPage() {
         title: t("topicDetail.publish.failed"),
         message: t("topicDetail.publish.noReview"),
       });
+      setPublishBusy(false);
       setActionBusy(false);
       return;
     }
@@ -901,6 +946,7 @@ export default function TopicDetailPage() {
         title: t("topicDetail.publish.failed"),
         message: t("topicDetail.publish.noHash"),
       });
+      setPublishBusy(false);
       setActionBusy(false);
       return;
     }
@@ -923,6 +969,8 @@ export default function TopicDetailPage() {
       });
     }
 
+    setSubmitReviewBusy(false);
+    setPublishBusy(false);
     setActionBusy(false);
   }
 
@@ -985,11 +1033,21 @@ export default function TopicDetailPage() {
       setOptimizationSuggestionsOverride(null);
       setVersionHistoryOverride(null);
       setDiffOverride(null);
-      const result = await fetchTopicById(topicId);
+      const [result, topicsResult] = await Promise.all([
+        fetchTopicById(topicId),
+        fetchTopics(),
+      ]);
       if (!active) return;
       if (result.data) {
         setTopicName(result.data.name);
-        setTopicStatus(result.data.status);
+        const detailStatus =
+          typeof result.data.status === "string" && result.data.status.trim()
+            ? result.data.status.trim()
+            : null;
+        const listStatus =
+          topicsResult.data?.items.find((item) => item.id === topicId)?.status ??
+          null;
+        setTopicStatus(detailStatus ?? listStatus ?? "DRAFT");
         const templateId = result.data.template_id;
         const templateVersion = result.data.template_version;
         if (templateId == null) {
@@ -1087,20 +1145,23 @@ export default function TopicDetailPage() {
                 explain={editorState.explain}
                 actionBusy={actionBusy || executionLoading}
                 saveDraftBusy={saveDraftBusy}
+                deleteDraftBusy={deleteDraftBusy}
+                submitReviewBusy={submitReviewBusy}
+                publishBusy={publishBusy}
                 onBack={() => router.push("/knowledge/topics")}
-                onSave={topicStatus === "IN_REVIEW" ? undefined : handleSaveDraft}
-                onDeleteDraft={topicStatus === "IN_REVIEW" ? undefined : handleDeleteDraft}
+                onSave={actionsLocked ? undefined : handleSaveDraft}
+                onDeleteDraft={actionsLocked ? undefined : handleDeleteDraft}
                 onRunWorkspace={handleRunWorkspace}
                 onRunNode={handleRunNode}
                 onRunAbTest={handleRunAbTest}
                 onSelectPreviewDocument={handleSelectPreviewDocument}
-                onSubmit={topicStatus === "IN_REVIEW" ? undefined : handleSubmitReview}
-                onPublish={topicStatus === "IN_REVIEW" ? undefined : handlePublish}
+                onSubmit={actionsLocked ? undefined : handleSubmitReview}
+                onPublish={actionsLocked ? undefined : handlePublish}
                 previewResult={previewResult}
                 previewDocument={previewDocument}
                 previewDocumentBusy={previewDocumentBusy}
                 previewError={executionError}
-                previewBusy={executionLoading}
+                previewBusy={executionLoading || abTestBusy}
                 compiledGql={compiledGql}
                 compiledGqlSource={compiledGqlSource}
                 fullRuntimeResult={fullRuntimeResult}
@@ -1129,7 +1190,7 @@ export default function TopicDetailPage() {
                         }
                   )
                 }
-                readOnly={topicStatus === "IN_REVIEW"}
+                readOnly={actionsLocked}
               />
             ) : (
               <div className="text-sm text-red-500">

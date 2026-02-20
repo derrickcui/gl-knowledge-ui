@@ -87,6 +87,9 @@ export type RuleEditorProps = {
   dirty?: boolean;
   actionBusy?: boolean;
   saveDraftBusy?: boolean;
+  deleteDraftBusy?: boolean;
+  submitReviewBusy?: boolean;
+  publishBusy?: boolean;
   onBack?: () => void;
   onSave?: () => void;
   onDeleteDraft?: () => void;
@@ -151,6 +154,9 @@ export function RuleEditor({
   dirty = false,
   actionBusy = false,
   saveDraftBusy = false,
+  deleteDraftBusy = false,
+  submitReviewBusy = false,
+  publishBusy = false,
   onBack,
   onSave,
   onDeleteDraft,
@@ -1123,6 +1129,9 @@ export function RuleEditor({
           capabilityLabel={capabilityLabel}
             busy={actionBusy}
             saveDraftBusy={saveDraftBusy}
+            deleteDraftBusy={deleteDraftBusy}
+            submitReviewBusy={submitReviewBusy}
+            publishBusy={publishBusy}
             onBack={onBack}
           onSave={onSave}
           disableSave={hasEmptyConditionGroup || hasInvalidSemanticModeState}

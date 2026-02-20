@@ -703,6 +703,222 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /api/topics/{topicId}/reviews/{revision}:
+    get:
+      tags: [RuleGovernance]
+      summary: Get topic review snapshot by revision
+      operationId: getTopicReviewByRevision
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: revision
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicReviewResponse'
+              example:
+                success: true
+                data:
+                  id: topic-2c25c144-7f84-4349-bdcc-dff20519d0da
+                  contentHash: 9bc5f8a0c2f9dcb4c6d6f4bc9eead6b9a66cc7b3003cd8f71a8a7f6af9ecaa12
+                  template_id: 16
+                  template_version: 1
+                  rule:
+                    root:
+                      type: LOGIC
+                      nodeId: null
+                      operator: AND
+                      threshold: null
+                      children:
+                        - type: TERM_SET
+                          nodeId: null
+                          terms:
+                            - source: CONCEPT
+                              conceptId: '108'
+                              conceptName: 出站博士后
+                              includeDescendants: false
+                          matchMode: ANY
+                          childrenList: []
+                        - type: TERM_SET
+                          nodeId: null
+                          terms:
+                            - source: CONCEPT
+                              conceptId: '20'
+                              conceptName: 中青年专业技术人才
+                              includeDescendants: false
+                            - source: CONCEPT
+                              conceptId: '116'
+                              conceptName: 对象人选
+                              includeDescendants: false
+                          matchMode: ANY
+                          childrenList: []
+                      childrenList:
+                        - type: TERM_SET
+                          nodeId: null
+                          terms:
+                            - source: CONCEPT
+                              conceptId: '108'
+                              conceptName: 出站博士后
+                              includeDescendants: false
+                          matchMode: ANY
+                          childrenList: []
+                        - type: TERM_SET
+                          nodeId: null
+                          terms:
+                            - source: CONCEPT
+                              conceptId: '20'
+                              conceptName: 中青年专业技术人才
+                              includeDescendants: false
+                            - source: CONCEPT
+                              conceptId: '116'
+                              conceptName: 对象人选
+                              includeDescendants: false
+                          matchMode: ANY
+                          childrenList: []
+                    references: []
+                  capability:
+                    advanced:
+                      allowNot: true
+                      allowTopicRef: true
+                      allowExcludeGroup: false
+                      allowConcept: true
+                      allowKeyword: true
+                      allowWeight: true
+                      allowDescendants: true
+                    semantic:
+                      allowModes: [OR, AND]
+                      allowThreshold: false
+                      allowWeighted: false
+                    structure:
+                      allowRelation: [NONE, NEAR, PARAGRAPH, SENTENCE]
+                      allowOrder: false
+                      allowDistance: false
+                    where:
+                      allowFields: [CONTENT, TITLE]
+                  explain:
+                    title: 当文档满足以下条件时，将被视为【博士学历】主题：
+                    tree:
+                      type: GROUP
+                      operator: AND
+                      field: null
+                      distance: null
+                      threshold: null
+                      ordered: null
+                      text: null
+                      children:
+                        - type: TERM
+                          operator: null
+                          field: null
+                          distance: null
+                          threshold: null
+                          ordered: null
+                          text: 文档内容涉及相关概念：「出站博士后」
+                          children: null
+                        - type: GROUP
+                          operator: OR
+                          field: null
+                          distance: null
+                          threshold: null
+                          ordered: null
+                          text: null
+                          children:
+                            - type: TERM
+                              operator: null
+                              field: null
+                              distance: null
+                              threshold: null
+                              ordered: null
+                              text: 文档内容涉及相关概念：「中青年专业技术人才」
+                              children: null
+                            - type: TERM
+                              operator: null
+                              field: null
+                              distance: null
+                              threshold: null
+                              ordered: null
+                              text: 文档内容涉及相关概念：「对象人选」
+                              children: null
+                    blocks:
+                      - id: 016486e6-76f4-452d-a346-4cee3334e2a7
+                        text: 文档内容涉及相关概念：「出站博士后」
+                        level: INFO
+                        indent: 0
+                        children: null
+                        paletteKey: concept_match
+                        ruleType: CONCEPT_MATCH
+                      - id: 85ee9d21-1511-4e33-82f9-2f024d1c6135
+                        text: 满足以下任一条件：
+                        level: INFO
+                        indent: 0
+                        children:
+                          - id: 7432d80d-eb83-42f9-85e2-2e75f4c78780
+                            text: 文档内容涉及相关概念：「中青年专业技术人才」
+                            level: INFO
+                            indent: 1
+                            children: null
+                            paletteKey: concept_match
+                            ruleType: CONCEPT_MATCH
+                          - id: 58138d3f-4a3c-41ab-94f0-f8f21215ba84
+                            text: 文档内容涉及相关概念：「对象人选」
+                            level: INFO
+                            indent: 1
+                            children: null
+                            paletteKey: concept_match
+                            ruleType: CONCEPT_MATCH
+                        paletteKey: logic
+                        ruleType: LOGIC
+                    summary: 当文档（包含“出站博士后” 且 （包含“中青年专业技术人才” 或 包含“对象人选”））时，将被视为【博士学历】主题。
+                    summaryI18n:
+                      zh: 当文档（包含“出站博士后” 且 （包含“中青年专业技术人才” 或 包含“对象人选”））时，将被视为【博士学历】主题。
+                      en: 当文档（包含“出站博士后” 且 （包含“中青年专业技术人才” 或 包含“对象人选”））时，将被视为【博士学历】主题。
+                    complexity:
+                      depth: 3
+                      clauseCount: 3
+                      groupCount: 2
+                      score: 27
+                      level: LOW
+                    risk:
+                      score: 20
+                      level: LOW
+                      signals:
+                        - code: OR_EXPANSION
+                          message: Use of OR may widen match scope
+                          weight: 10
+                        - code: NO_SCOPE_LIMIT
+                          message: No field/scope restriction detected
+                          weight: 5
+                        - code: NO_EXCLUDE_CONDITION
+                          message: No exclusion condition detected
+                          weight: 5
+                    diff: null
+                  gql: null
+                  updatedAt: '2026-02-18T23:26:55.190304Z'
+                error: null
+        '404':
+          description: Review not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
 components:
   schemas:
     RuntimeActiveItem:
@@ -1270,6 +1486,297 @@ components:
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
+
+    ApiResponseTopicReviewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicReviewResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    TopicReviewResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        contentHash:
+          type: string
+        template_id:
+          type: integer
+          format: int64
+          nullable: true
+        template_version:
+          type: integer
+          format: int32
+          nullable: true
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        capability:
+          $ref: '#/components/schemas/TopicCapabilityViewModel'
+        explain:
+          $ref: '#/components/schemas/ExplainPreviewViewModel'
+        gql:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, contentHash, rule, capability, explain, updatedAt]
+
+    TopicCapabilityViewModel:
+      type: object
+      properties:
+        advanced:
+          $ref: '#/components/schemas/TopicCapabilityAdvanced'
+        semantic:
+          $ref: '#/components/schemas/TopicCapabilitySemantic'
+        structure:
+          $ref: '#/components/schemas/TopicCapabilityStructure'
+        where:
+          $ref: '#/components/schemas/TopicCapabilityWhere'
+      required: [advanced, semantic, structure, where]
+
+    TopicCapabilityAdvanced:
+      type: object
+      properties:
+        allowNot:
+          type: boolean
+        allowTopicRef:
+          type: boolean
+        allowExcludeGroup:
+          type: boolean
+        allowConcept:
+          type: boolean
+        allowKeyword:
+          type: boolean
+        allowWeight:
+          type: boolean
+        allowDescendants:
+          type: boolean
+
+    TopicCapabilitySemantic:
+      type: object
+      properties:
+        allowModes:
+          type: array
+          items:
+            type: string
+            enum: [AND, OR]
+        allowThreshold:
+          type: boolean
+        allowWeighted:
+          type: boolean
+
+    TopicCapabilityStructure:
+      type: object
+      properties:
+        allowRelation:
+          type: array
+          items:
+            type: string
+            enum: [NONE, NEAR, SENTENCE, PARAGRAPH]
+        allowOrder:
+          type: boolean
+        allowDistance:
+          type: boolean
+
+    TopicCapabilityWhere:
+      type: object
+      properties:
+        allowFields:
+          type: array
+          items:
+            type: string
+            enum: [CONTENT, TITLE]
+
+    ExplainPreviewViewModel:
+      type: object
+      properties:
+        title:
+          type: string
+        tree:
+          $ref: '#/components/schemas/ExplainTreeViewModel'
+          nullable: true
+        blocks:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ExplainBlockViewModel'
+        summary:
+          type: string
+          nullable: true
+        summaryI18n:
+          $ref: '#/components/schemas/ExplainSummaryI18nViewModel'
+          nullable: true
+        complexity:
+          $ref: '#/components/schemas/ExplainComplexityViewModel'
+          nullable: true
+        risk:
+          $ref: '#/components/schemas/ExplainRiskViewModel'
+          nullable: true
+        diff:
+          $ref: '#/components/schemas/ExplainDiffViewModel'
+          nullable: true
+      required: [title]
+
+    ExplainTreeViewModel:
+      type: object
+      properties:
+        type:
+          type: string
+        operator:
+          type: string
+          nullable: true
+        field:
+          type: string
+          nullable: true
+        distance:
+          type: integer
+          format: int32
+          nullable: true
+        threshold:
+          type: integer
+          format: int32
+          nullable: true
+        ordered:
+          type: boolean
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        children:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ExplainTreeViewModel'
+      required: [type]
+
+    ExplainBlockViewModel:
+      type: object
+      properties:
+        id:
+          type: string
+        text:
+          type: string
+        level:
+          type: string
+          enum: [INFO, WARNING]
+        indent:
+          type: integer
+          format: int32
+        children:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ExplainBlockViewModel'
+        paletteKey:
+          type: string
+          nullable: true
+        ruleType:
+          type: string
+          nullable: true
+      required: [id, text, level, indent]
+
+    ExplainSummaryI18nViewModel:
+      type: object
+      properties:
+        zh:
+          type: string
+          nullable: true
+        en:
+          type: string
+          nullable: true
+
+    ExplainComplexityViewModel:
+      type: object
+      properties:
+        depth:
+          type: integer
+          format: int32
+        clauseCount:
+          type: integer
+          format: int32
+        groupCount:
+          type: integer
+          format: int32
+        score:
+          type: integer
+          format: int32
+        level:
+          type: string
+      required: [depth, clauseCount, groupCount, score, level]
+
+    ExplainRiskViewModel:
+      type: object
+      properties:
+        score:
+          type: integer
+          format: int32
+        level:
+          type: string
+        signals:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExplainRiskSignalViewModel'
+      required: [score, level, signals]
+
+    ExplainRiskSignalViewModel:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        weight:
+          type: integer
+          format: int32
+      required: [code, message, weight]
+
+    ExplainDiffViewModel:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/ExplainDiffSummaryViewModel'
+          nullable: true
+        items:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/ExplainDiffItemViewModel'
+
+    ExplainDiffSummaryViewModel:
+      type: object
+      properties:
+        added:
+          type: integer
+          format: int32
+        removed:
+          type: integer
+          format: int32
+        modified:
+          type: integer
+          format: int32
+      required: [added, removed, modified]
+
+    ExplainDiffItemViewModel:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [ADDED, REMOVED, MODIFIED]
+        key:
+          type: string
+        before:
+          type: string
+          nullable: true
+        after:
+          type: string
+          nullable: true
+      required: [kind, key]
 
     UiRuleViewModel:
       type: object

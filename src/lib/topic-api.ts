@@ -1,5 +1,4 @@
 import { ApiResult } from "@/lib/api";
-import type { ExplainBlock } from "@/components/explain/explainTypes";
 import type { AntiPatternReport } from "@/components/review/antiPatternTypes";
 import { decodeUnicodeEscapes } from "@/lib/text-utils";
 
@@ -100,9 +99,43 @@ type TopicDetailApiResponse = {
   error: string | null;
 };
 
+export type ExplainPreviewLine = {
+  id?: string;
+  text?: string;
+  level?: "INFO" | "WARNING" | "ERROR" | string;
+  indent?: number;
+  paletteKey?: string | null;
+  ruleType?: string | null;
+  children?: ExplainPreviewLine[] | null;
+};
+
 export type ExplainPreviewViewModel = {
   title?: string;
-  blocks: ExplainBlock[];
+  tree?: unknown;
+  blocks?: ExplainPreviewLine[];
+  lines?: ExplainPreviewLine[];
+  summary?: string;
+  summaryI18n?: {
+    zh?: string;
+    en?: string;
+  };
+  complexity?: {
+    depth?: number;
+    clauseCount?: number;
+    groupCount?: number;
+    score?: number;
+    level?: string;
+  };
+  risk?: {
+    score?: number;
+    level?: string;
+    signals?: Array<{
+      code?: string;
+      message?: string;
+      weight?: number;
+    }>;
+  };
+  diff?: unknown;
 };
 
 type TopicDraftBusinessRequest = {
@@ -164,6 +197,7 @@ type SubmitReviewBusinessApiResponse = {
 export type TopicReviewListItem = {
   reviewId: number;
   revision: number;
+  contentHash?: string | null;
   status: string;
   submittedBy: string;
   submittedAt: string;
@@ -179,9 +213,26 @@ type TopicReviewListApiResponse = {
 
 export type TopicReviewDetailResponse = {
   revision: number;
+  id?: string;
+  contentHash?: string | null;
+  template_id?: number | string | null;
+  template_version?: number | string | null;
   rule: unknown;
+  capability?: unknown;
   explain?: ExplainPreviewViewModel;
+  complexity?: {
+    logic_depth?: number;
+    condition_count?: number;
+    or_count?: number;
+    exclude_count?: number;
+    has_range_constraint?: boolean;
+    score?: number;
+    level?: string;
+    health?: string;
+  };
+  risk_score?: number;
   gql?: string | null;
+  updatedAt?: string | null;
   status: string;
   submittedBy?: string | null;
   submittedAt: string;
