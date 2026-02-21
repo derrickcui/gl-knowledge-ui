@@ -524,7 +524,7 @@ export function ExpressionNodeRenderer({
               </div>
             )}
 
-            {node.terms.length === 1 && (
+            {node.terms.length > 0 && (
               <div className="mb-2 flex items-center gap-2">
                 <span>{t("ruleEditor.tree.term.weight")}</span>
                 {readOnly ? (

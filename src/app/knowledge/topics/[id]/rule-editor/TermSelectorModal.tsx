@@ -32,7 +32,10 @@ export function TermSelectorModal({
     if (!open) return;
     const map: Record<string, SelectedTerm> = {};
     initialSelected.forEach((item) => {
-      map[item.conceptId] = item;
+      map[item.conceptId] = {
+        ...item,
+        weight: Number.isFinite(item.weight) && item.weight > 0 ? item.weight : 1,
+      };
     });
     setSelected(map);
     setKeyword("");
@@ -176,10 +179,12 @@ export function TermSelectorModal({
                           setSelected((prev) => {
                             const next = { ...prev };
                             if (e.target.checked) {
+                              const existing = next[term.id];
                               next[term.id] = {
                                 conceptId: term.id,
                                 conceptName: term.name,
-                                includeDescendants: false,
+                                includeDescendants: existing?.includeDescendants ?? false,
+                                weight: existing?.weight ?? 1,
                               };
                             } else {
                               delete next[term.id];

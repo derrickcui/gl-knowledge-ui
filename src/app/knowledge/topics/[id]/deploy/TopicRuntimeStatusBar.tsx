@@ -10,6 +10,7 @@ export function TopicRuntimeStatusBar({ topicId }: { topicId: string }) {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [items, setItems] = useState<RuntimeDeploymentItem[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -18,6 +19,7 @@ export function TopicRuntimeStatusBar({ topicId }: { topicId: string }) {
       const result = await fetchRuntimeDeployments(topicId);
       if (!active) return;
       setItems(result.data ?? []);
+      setError(result.error ?? null);
       setLoading(false);
     }
     void load();
@@ -66,7 +68,7 @@ export function TopicRuntimeStatusBar({ topicId }: { topicId: string }) {
 
   const deployedEnvironmentCount = environmentStatuses.length;
   const hasActive = environmentStatuses.some((item) => item.status.toUpperCase() === "ACTIVE");
-  const dotClass = hasActive ? "bg-emerald-500" : "bg-amber-500";
+  const dotClass = error ? "bg-red-500" : hasActive ? "bg-emerald-500" : "bg-amber-500";
 
   return (
     <div className="rounded-lg border bg-white p-4">
@@ -78,9 +80,11 @@ export function TopicRuntimeStatusBar({ topicId }: { topicId: string }) {
         <div className="flex items-center gap-2 text-sm">
           <span className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
           <span>
-            {t("topicRuntimeStatus.summary", {
-              count: loading ? "-" : deployedEnvironmentCount,
-            })}
+            {error
+              ? t("topicRuntimeStatus.summaryError")
+              : t("topicRuntimeStatus.summary", {
+                  count: loading ? "-" : deployedEnvironmentCount,
+                })}
           </span>
         </div>
         <span className="text-xs text-slate-500">{expanded ? t("topicRuntimeStatus.collapse") : t("topicRuntimeStatus.expand")}</span>
@@ -88,7 +92,11 @@ export function TopicRuntimeStatusBar({ topicId }: { topicId: string }) {
 
       {expanded && (
         <div className="mt-3 space-y-2 text-sm">
-          {environmentStatuses.length === 0 ? (
+          {error ? (
+            <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-red-700">
+              {t("topicRuntimeStatus.error", { message: error })}
+            </div>
+          ) : environmentStatuses.length === 0 ? (
             <div className="text-slate-500">{t("topicRuntimeStatus.empty")}</div>
           ) : (
             environmentStatuses.map((item) => (

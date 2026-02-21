@@ -100,7 +100,9 @@ function signature(node: UiExpressionNode): string {
     case "FIELD":
       return `${node.type}:${node.field}:${node.child?.id ?? ""}`;
     case "TERM_SET":
-      return `${node.type}:${node.matchMode}:${node.importanceWeight ?? node.weight ?? ""}:${node.terms.map((item) => item.conceptId).join(",")}`;
+      return `${node.type}:${node.matchMode}:${node.importanceWeight ?? node.weight ?? ""}:${node.terms
+        .map((item) => `${item.conceptId}:${item.weight ?? 1}`)
+        .join(",")}`;
     case "NOT":
       return `${node.type}:${node.child?.id ?? ""}`;
     case "SCORE":

@@ -73,7 +73,10 @@ function dedupeTermSets(children: UiExpressionNode[]): UiExpressionNode[] {
 
 function serializeTermSet(node: UiTermSetNode): string {
   const terms = [...node.terms]
-    .map((term) => `${term.conceptId}:${term.includeDescendants ? 1 : 0}`)
+    .map(
+      (term) =>
+        `${term.conceptId}:${term.includeDescendants ? 1 : 0}:${Number.isFinite(term.weight) && (term.weight ?? 0) > 0 ? term.weight : 1}`
+    )
     .sort()
     .join("|");
   const weight = node.weight ?? node.importanceWeight ?? "";

@@ -279,6 +279,32 @@ export function NodeInspector({
                 : t("ruleEditor.nodeInspector.term.empty"),
             })}
           </div>
+          {node.terms.length > 0 && (
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500">{t("ruleEditor.nodeInspector.term.weight")}</div>
+              <input
+                type="number"
+                min={0.1}
+                step={0.1}
+                className="h-9 w-full rounded-md border px-2 text-sm"
+                value={Number.isFinite(node.weight) && (node.weight ?? 0) > 0 ? node.weight : 1}
+                onChange={(event) => {
+                  const parsed = Number(event.target.value);
+                  const nextWeight = Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
+                  onPatchNode(node.id, (n) =>
+                    n.type === "TERM_SET"
+                      ? {
+                          ...n,
+                          weight: nextWeight,
+                          importanceWeight: nextWeight,
+                        }
+                      : n
+                  );
+                }}
+                disabled={readOnly}
+              />
+            </div>
+          )}
 
           {!readOnly && (
             <button
@@ -370,9 +396,8 @@ function ensureImportance(node: UiExpressionNode): UiExpressionNode {
 
 function stripTermImportance(node: UiExpressionNode): UiExpressionNode {
   if (node.type !== "TERM_SET") return node;
-  const { importance, importanceWeight, weight, ...rest } = node;
+  const { importance, importanceWeight, ...rest } = node;
   void importance;
   void importanceWeight;
-  void weight;
   return rest;
 }

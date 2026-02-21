@@ -29,6 +29,10 @@ type Feedback = {
   message?: string;
 };
 
+type ConfirmAction =
+  | { type: "ACTIVATE"; item: RuntimeDeploymentItem }
+  | { type: "DELETE"; item: RuntimeDeploymentItem };
+
 export function TopicDeployTab({
   topicId,
   topicName,
@@ -65,6 +69,7 @@ export function TopicDeployTab({
   const [expandedMetricRowId, setExpandedMetricRowId] = useState<number | null>(null);
   const [rowMetricsByDeploymentId, setRowMetricsByDeploymentId] = useState<Record<number, RuntimeDeployMetrics | null>>({});
   const [rowMetricLoadingId, setRowMetricLoadingId] = useState<number | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
 
   const selectedEnvironment = useMemo(
     () => environments.find((item) => item.id === selectedEnvId) ?? null,
@@ -428,10 +433,7 @@ export function TopicDeployTab({
                                     <button
                                       type="button"
                                       className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                                      onClick={() => {
-                                        if (!window.confirm(t("topicDeploy.confirmActivate"))) return;
-                                        void handleActivate(item);
-                                      }}
+                                      onClick={() => setConfirmAction({ type: "ACTIVATE", item })}
                                       disabled={busy || !item.canActivate}
                                     >
                                       {t("topicDeploy.action.activate")}
@@ -439,10 +441,7 @@ export function TopicDeployTab({
                                     <button
                                       type="button"
                                       className="rounded border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
-                                      onClick={() => {
-                                        if (!window.confirm(t("topicDeploy.confirmDelete"))) return;
-                                        void handleDelete(item);
-                                      }}
+                                      onClick={() => setConfirmAction({ type: "DELETE", item })}
                                       disabled={busy || !item.canDelete}
                                     >
                                       {t("topicDeploy.action.delete")}
@@ -453,10 +452,7 @@ export function TopicDeployTab({
                                   <button
                                     type="button"
                                     className="rounded border px-2 py-1 text-xs hover:bg-slate-50"
-                                    onClick={() => {
-                                      if (!window.confirm(t("topicDeploy.confirmActivate"))) return;
-                                      void handleActivate(item);
-                                    }}
+                                    onClick={() => setConfirmAction({ type: "ACTIVATE", item })}
                                     disabled={busy || !item.canActivate}
                                   >
                                     {t("topicDeploy.action.activate")}
@@ -641,11 +637,17 @@ export function TopicDeployTab({
                 ) : (
                   <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <div className="font-medium">{t("topicDeploy.wizard.step2.fail")}</div>
-                    <ul className="mt-2 list-disc pl-5 text-xs">
-                      {(validationResult?.missingFields ?? []).map((field) => (
-                        <li key={field}>{field}</li>
-                      ))}
-                    </ul>
+                    {(validationResult?.missingFields ?? []).length > 0 ? (
+                      <ul className="mt-2 list-disc pl-5 text-xs">
+                        {(validationResult?.missingFields ?? []).map((field) => (
+                          <li key={field}>{field}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="mt-2 text-xs">
+                        {validationResult?.message ?? t("topicDeploy.wizard.step2.failEmpty")}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -775,6 +777,49 @@ export function TopicDeployTab({
                 }}
               >
                 {t("topicDeploy.rollback.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <div className="text-base font-semibold">
+              {confirmAction.type === "ACTIVATE" ? t("topicDeploy.confirmActivate") : t("topicDeploy.confirmDelete")}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              {t("topicDeploy.detail.environment", { value: confirmAction.item.runtimeEnvironmentName })}
+            </div>
+            <div className="mt-1 text-sm text-slate-600">
+              {t("topicDeploy.detail.snapshotVersion", {
+                value: confirmAction.item.snapshotVersion == null ? "-" : `v${confirmAction.item.snapshotVersion}`,
+              })}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
+                onClick={() => setConfirmAction(null)}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white"
+                onClick={async () => {
+                  const action = confirmAction;
+                  setConfirmAction(null);
+                  if (!action) return;
+                  if (action.type === "ACTIVATE") {
+                    await handleActivate(action.item);
+                    return;
+                  }
+                  await handleDelete(action.item);
+                }}
+              >
+                {t("common.confirm")}
               </button>
             </div>
           </div>

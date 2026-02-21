@@ -79,6 +79,7 @@ export interface UiTermExpression {
   conceptId: string;
   conceptName: string;
   includeDescendants: boolean;
+  weight?: number;
 }
 
 export interface UiTermSetNode {

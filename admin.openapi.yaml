@@ -1,8 +1,23 @@
 openapi: 3.0.3
 info:
   title: RuleOps Rule Preview API
-  version: 2.1.0
-  description: APIs for in-memory rule editing, full preview, and node-level preview.
+  version: 2.2.0
+  description: |
+    APIs for in-memory rule editing, full preview, and node-level preview.
+
+    Frontend breaking-change scope (rule weight support):
+    - Added `BOOST` expression node (`type=BOOST`, fields: `weight`, `child`)
+    - Added `terms[].weight` in `TERM_SET`
+
+    Frontend must update request/response parsing for these APIs:
+    - POST `/api/rules/analyze`
+    - GET `/api/rules/{id}/version/{v}`
+    - POST `/api/rules/runtime/execute`
+    - POST `/api/rules/runtime/execute/analysis`
+    - POST `/api/rules/runtime/compare`
+    - POST `/api/rules/runtime/suggest`
+    - POST `/api/rules/runtime/risk`
+    - GET `/api/topics/{topicId}/reviews/{revision}`
 servers:
   - url: http://localhost:8080
 
@@ -280,6 +295,7 @@ paths:
     post:
       tags: [RuleGovernance]
       summary: Analyze rule complexity from UiRuleViewModel
+      description: Supports weighted rule syntax via `BOOST` node and `TERM_SET.terms[].weight`.
       operationId: analyzeRule
       requestBody:
         required: true
@@ -330,6 +346,7 @@ paths:
     get:
       tags: [RuleGovernance]
       summary: Get one persisted rule version
+      description: `rule` response supports weighted nodes (`BOOST`) and term-level `weight`.
       operationId: getRuleVersion
       parameters:
         - name: id
@@ -497,7 +514,7 @@ paths:
     post:
       tags: [RulePreview]
       summary: Execute runtime rule in FULL, NODE or IMPACT mode
-      description: Preferred unified runtime execution endpoint for preview and analysis. IMPACT mode enforces count-only analysis, max 15 conditions, and a server-side timeout guard.
+      description: Preferred unified runtime execution endpoint for preview and analysis. IMPACT mode enforces count-only analysis, max 15 conditions, and a server-side timeout guard. Supports weighted rule syntax via `BOOST` node and `TERM_SET.terms[].weight`.
       x-max-condition-count: 15
       x-impact-timeout-ms: 2000
       operationId: executeRuntimeRule
@@ -691,7 +708,7 @@ paths:
     post:
       tags: [RulePreview]
       summary: Execute runtime rule analysis with aggregated statistics
-      description: Aggregated full-scope statistics for term hits, node hits, contribution distribution, and dataset-level hit rate.
+      description: Aggregated full-scope statistics for term hits, node hits, contribution distribution, and dataset-level hit rate. Supports weighted rule syntax via `BOOST` node and `TERM_SET.terms[].weight`.
       operationId: executeRuntimeRuleAnalysis
       requestBody:
         required: true
@@ -760,6 +777,7 @@ paths:
     post:
       tags: [RulePreview]
       summary: Compare two rules under same runtime environment
+      description: Both `ruleA` and `ruleB` support weighted rule syntax via `BOOST` node and `TERM_SET.terms[].weight`.
       operationId: compareRuntimeRules
       requestBody:
         required: true
@@ -821,6 +839,7 @@ paths:
     post:
       tags: [RulePreview]
       summary: Generate optimization suggestions for rule
+      description: Supports weighted rule syntax via `BOOST` node and `TERM_SET.terms[].weight`.
       operationId: suggestRuntimeRule
       requestBody:
         required: true
@@ -874,6 +893,7 @@ paths:
     post:
       tags: [RulePreview]
       summary: Evaluate runtime risk of a rule
+      description: Supports weighted rule syntax via `BOOST` node and `TERM_SET.terms[].weight`.
       operationId: evaluateRuntimeRuleRisk
       requestBody:
         required: true
@@ -953,6 +973,7 @@ paths:
     get:
       tags: [RuleGovernance]
       summary: Get topic review snapshot by revision
+      description: `data.rule` response supports weighted nodes (`BOOST`) and term-level `weight`.
       operationId: getTopicReviewByRevision
       parameters:
         - name: topicId
@@ -2124,6 +2145,7 @@ components:
         - $ref: '#/components/schemas/UiTermSetNode'
         - $ref: '#/components/schemas/UiNotNode'
         - $ref: '#/components/schemas/UiScoreNode'
+        - $ref: '#/components/schemas/UiBoostNode'
         - $ref: '#/components/schemas/UiTopicRefNode'
       discriminator:
         propertyName: type
@@ -2136,6 +2158,7 @@ components:
           TERM_SET: '#/components/schemas/UiTermSetNode'
           NOT: '#/components/schemas/UiNotNode'
           SCORE: '#/components/schemas/UiScoreNode'
+          BOOST: '#/components/schemas/UiBoostNode'
           TOPIC_REF: '#/components/schemas/UiTopicRefNode'
 
     UiLogicNode:
@@ -2279,6 +2302,23 @@ components:
             $ref: '#/components/schemas/UiExpressionNode'
       required: [type, children]
 
+    UiBoostNode:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [BOOST]
+        nodeId:
+          type: string
+        weight:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+        child:
+          $ref: '#/components/schemas/UiExpressionNode'
+      required: [type, weight, child]
+
     UiTopicRefNode:
       type: object
       properties:
@@ -2304,6 +2344,13 @@ components:
           type: string
         includeDescendants:
           type: boolean
+        weight:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+          nullable: true
+          description: Optional term boost weight. When absent, defaults to `1.0`.
       required: [source, conceptId]
 
     UiRuleReference:

@@ -12,5 +12,5 @@ export interface SelectedTerm {
   conceptId: string;
   conceptName: string;
   includeDescendants: boolean;
+  weight: number;
 }
-

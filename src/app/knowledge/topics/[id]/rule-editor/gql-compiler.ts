@@ -162,11 +162,13 @@ function compileTermSet(node: UiTermSetNode): string {
     throw new CompileError(node.id, "TERM_SET requires at least one term.");
   }
   const terms = node.terms.map((item) => compileTerm(item));
+  const setWeight = Number.isFinite(node.weight) && (node.weight ?? 0) > 0 ? node.weight : 1;
   if (terms.length === 1) {
-    return wrapInlineWeight(terms[0], node.weight ?? node.importanceWeight);
+    return wrapInlineWeight(terms[0], setWeight);
   }
   const fn = node.matchMode === "ALL" ? "and" : "or";
-  return `<${fn}>(${terms.join(",")})`;
+  const inner = `<${fn}>(${terms.join(",")})`;
+  return wrapGroupWeight(inner, setWeight);
 }
 
 function compileTopicRef(
@@ -197,7 +199,16 @@ function isAtomicNode(node: UiExpressionNode): boolean {
 
 function wrapInlineWeight(inner: string, weight: number | undefined): string {
   if (weight == null || !Number.isFinite(weight) || weight < 0) return inner;
-  return `[${Math.round(weight)}]${inner}`;
+  if (Math.abs(weight - 1) < 1e-6) return inner;
+  const normalized = Number(weight.toFixed(3)).toString();
+  return `[${normalized}]${inner}`;
+}
+
+function wrapGroupWeight(inner: string, weight: number | undefined): string {
+  if (weight == null || !Number.isFinite(weight) || weight < 0) return inner;
+  if (Math.abs(weight - 1) < 1e-6) return inner;
+  const normalized = Number(weight.toFixed(3)).toString();
+  return `[${normalized}](${inner})`;
 }
 
 function logicOperatorToFn(operator: LogicOperator): "and" | "or" | "accrue" {

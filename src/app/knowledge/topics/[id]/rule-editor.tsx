@@ -828,6 +828,14 @@ export function RuleEditor({
         conceptId: item.conceptId,
         conceptName: item.conceptName,
         includeDescendants: item.includeDescendants,
+        weight:
+          node.terms.length === 1
+            ? typeof node.weight === "number" && Number.isFinite(node.weight) && node.weight > 0
+              ? node.weight
+              : typeof item.weight === "number" && Number.isFinite(item.weight) && item.weight > 0
+                ? item.weight
+                : 1
+            : 1,
       })),
     });
   };
@@ -848,7 +856,16 @@ export function RuleEditor({
     if (termSelector.targetNodeId) {
       setRoot(
         updateNode(rule.root, termSelector.targetNodeId, (node) =>
-          node.type === "TERM_SET" ? { ...node, terms: selectedTermsToExpressions(terms) } : node
+          node.type === "TERM_SET"
+            ? {
+                ...node,
+                terms: selectedTermsToExpressions(terms).map((term) => ({ ...term, weight: 1 })),
+                weight:
+                  terms.length === 1 && Number.isFinite(terms[0]?.weight) && (terms[0]?.weight ?? 0) > 0
+                    ? terms[0].weight
+                    : node.weight ?? 1,
+              }
+            : node
         )
       );
       setSelectedNodeId(termSelector.targetNodeId);
@@ -858,7 +875,11 @@ export function RuleEditor({
     if (termSelector.targetParentId) {
       const child = createNode("TERM_SET");
       if (child.type === "TERM_SET") {
-        const next = { ...child, terms: selectedTermsToExpressions(terms) };
+        const next = {
+          ...child,
+          terms: selectedTermsToExpressions(terms).map((term) => ({ ...term, weight: 1 })),
+          weight: terms.length === 1 && Number.isFinite(terms[0]?.weight) && (terms[0]?.weight ?? 0) > 0 ? terms[0].weight : 1,
+        };
         setRoot(insertChild(rule.root, termSelector.targetParentId, next));
         setSelectedNodeId(next.id);
       }

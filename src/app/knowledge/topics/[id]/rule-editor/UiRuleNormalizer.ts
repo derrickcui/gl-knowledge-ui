@@ -9,6 +9,7 @@ export function selectedTermsToExpressions(terms: SelectedTerm[]): UiTermExpress
     conceptId: item.conceptId,
     conceptName: item.conceptName,
     includeDescendants: item.includeDescendants,
+    weight: Number.isFinite(item.weight) && item.weight > 0 ? item.weight : 1,
   }));
 }
 

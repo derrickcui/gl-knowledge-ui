@@ -10,7 +10,8 @@ export function normalizeRootForSave(root: UiExpressionNode | null): UiExpressio
 
 export function hydrateRootForEditor(root: UiExpressionNode | null): UiExpressionNode | null {
   if (!root) return null;
-  return ensureRootExpressionGroup(upgradeLegacyNode(hydrateNode(root), undefined));
+  const normalizedTypeRoot = mapScoreTypeForTransport(root, "toEditor");
+  return ensureRootExpressionGroup(upgradeLegacyNode(hydrateNode(normalizedTypeRoot), undefined));
 }
 
 function normalizeNode(node: UiExpressionNode): UiExpressionNode {
@@ -63,10 +64,9 @@ function normalizeImportanceForChild(node: UiExpressionNode): UiExpressionNode {
 
 function stripTermImportance(node: UiExpressionNode): UiExpressionNode {
   if (node.type !== "TERM_SET") return node;
-  const { importance, importanceWeight, weight, ...rest } = node;
+  const { importance, importanceWeight, ...rest } = node;
   void importance;
   void importanceWeight;
-  void weight;
   return rest;
 }
 
@@ -231,4 +231,42 @@ function ensureRootExpressionGroup(root: UiExpressionNode): UiExpressionNode {
     operator: "AND",
     children: [root],
   };
+}
+
+function mapScoreTypeForTransport(
+  root: UiExpressionNode,
+  direction: "toEditor" | "toBackend"
+): UiExpressionNode {
+  const walk = (node: UiExpressionNode): UiExpressionNode => {
+    const raw = node as any;
+    if (direction === "toEditor" && raw.type === "BOOST") {
+      const rawChild = raw.child ? walk(raw.child as UiExpressionNode) : null;
+      const weight =
+        typeof raw.weight === "number" && Number.isFinite(raw.weight) && raw.weight > 0 ? raw.weight : 1;
+      if (!rawChild) {
+        return {
+          id: normalizeNodeId(raw.id, raw.nodeId),
+          type: "SCORE",
+          weight,
+          child: null,
+        };
+      }
+      if (rawChild.type === "TERM_SET" || rawChild.type === "LOGIC") {
+        return { ...rawChild, weight };
+      }
+      return {
+        id: normalizeNodeId(raw.id, raw.nodeId),
+        type: "SCORE",
+        weight,
+        child: rawChild,
+      };
+    }
+
+    const mappedType = direction === "toBackend" && raw.type === "SCORE" ? "BOOST" : raw.type;
+    const next: any = { ...raw, type: mappedType };
+    if (Array.isArray(raw.children)) next.children = raw.children.map((child: UiExpressionNode) => walk(child));
+    if ("child" in raw) next.child = raw.child ? walk(raw.child) : null;
+    return next as UiExpressionNode;
+  };
+  return walk(root);
 }

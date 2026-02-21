@@ -153,4 +153,25 @@ describe("compileUiTreeToGql", () => {
     };
     expect(compileToGql(root)).toBe("<in/title>[5]神经网络");
   });
+
+  it("compiles term-set weight for multi terms", () => {
+    const root: UiExpressionNode = {
+      id: "root",
+      type: "LOGIC",
+      operator: "ANY",
+      children: [
+        {
+          id: "ts1",
+          type: "TERM_SET",
+          matchMode: "ANY",
+          weight: 2.5,
+          terms: [
+            { source: "CONCEPT", conceptId: "a", conceptName: "算法", includeDescendants: false },
+            { source: "CONCEPT", conceptId: "b", conceptName: "模型", includeDescendants: false },
+          ],
+        },
+      ],
+    };
+    expect(compileToGql(root)).toBe("<or>([2.5](<or>(算法,模型)))");
+  });
 });

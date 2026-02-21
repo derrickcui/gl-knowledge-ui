@@ -177,8 +177,16 @@ function toRuntimeLogicPayload(node: Extract<UiExpressionNode, { type: "LOGIC" }
   return { operator: node.operator, threshold: node.threshold, minMatch: undefined };
 }
 
+function pickBoostWeight(node: UiExpressionNode): number | null {
+  const value = (node as { weight?: unknown }).weight;
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return null;
+  if (value === 1) return null;
+  return value;
+}
+
 function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
-  switch (node.type) {
+  const base: Record<string, unknown> = (() => {
+    switch (node.type) {
     case "LOGIC": {
       const logic = toRuntimeLogicPayload(node);
       return {
@@ -189,7 +197,6 @@ function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
         minMatch: logic.minMatch,
         importance: node.importance,
         importanceWeight: node.importanceWeight,
-        weight: node.weight,
         children: node.children.map((child) => toRuntimeNode(child)),
       };
     }
@@ -235,7 +242,6 @@ function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
         matchMode: node.matchMode,
         importance: node.importance,
         importanceWeight: node.importanceWeight,
-        weight: node.weight,
       };
     case "NOT":
       return {
@@ -245,7 +251,7 @@ function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
       };
     case "SCORE":
       return {
-        type: "SCORE",
+        type: "BOOST",
         nodeId: node.id,
         weight: node.weight,
         child: node.child ? toRuntimeNode(node.child) : null,
@@ -260,7 +266,19 @@ function toRuntimeNode(node: UiExpressionNode): Record<string, unknown> {
       const _never: never = node;
       return _never;
     }
-  }
+    }
+  })();
+
+  if (node.type === "SCORE") return base;
+
+  const boostWeight = pickBoostWeight(node);
+  if (boostWeight == null) return base;
+  return {
+    type: "BOOST",
+    nodeId: node.id,
+    weight: boostWeight,
+    child: base,
+  };
 }
 
 function complexityLevelByScore(score: number): ComplexityMetrics["level"] {
