@@ -77,6 +77,7 @@ export type RuntimeEnvironment = {
   code?: string;
   name?: string;
   description?: string;
+  searchEndpoint?: string;
   envType?: "DEV" | "TEST" | "PROD" | string;
   status?: "DRAFT" | "ACTIVE" | "ARCHIVED" | string;
   datasetName?: string;
@@ -95,6 +96,7 @@ export type CreateRuntimeEnvironmentRequest = {
   name: string;
   code: string;
   description?: string;
+  searchEndpoint?: string;
   envType: "DEV" | "TEST" | "PROD";
   datasetName: string;
   scopeType?: "LAST_N" | "FULL" | "CUSTOM";
@@ -107,6 +109,7 @@ export type CreateRuntimeEnvironmentRequest = {
 export type UpdateRuntimeEnvironmentRequest = {
   name?: string;
   description?: string;
+  searchEndpoint?: string;
   datasetName?: string;
   scopeType?: "LAST_N" | "FULL" | "CUSTOM";
   scopeValue?: number;
@@ -197,8 +200,18 @@ function normalizeRuntimeEnvironment(item: RuntimeEnvironment): RuntimeEnvironme
     typeof item.scopeValue === "number"
       ? item.scopeValue
       : toNullableNumber(item.scopeValue) ?? undefined;
+  const record = item as RuntimeEnvironment & {
+    search_endpoint?: string;
+  };
   return {
     ...item,
+    searchEndpoint:
+      (typeof item.searchEndpoint === "string" && item.searchEndpoint.trim()
+        ? item.searchEndpoint
+        : undefined) ??
+      (typeof record.search_endpoint === "string" && record.search_endpoint.trim()
+        ? record.search_endpoint
+        : undefined),
     scopeValue: normalizedScopeValue,
   };
 }

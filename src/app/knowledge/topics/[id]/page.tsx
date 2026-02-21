@@ -28,6 +28,8 @@ import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import FromReviewBanner from "@/components/review/FromReviewBanner";
 import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
 import { RuleEditor } from "./rule-editor";
+import { TopicDeployTab } from "./deploy/TopicDeployTab";
+import { TopicRuntimeStatusBar } from "./deploy/TopicRuntimeStatusBar";
 import type {
   UiRuleViewModel,
   UiCapabilityViewModel,
@@ -40,6 +42,7 @@ import { compileToGql } from "./rule-editor/gql-compiler";
 import { normalizeExpressionTree } from "./rule-editor/expression-normalizer";
 import { formatExpressionTree } from "./rule-editor/format-expression-tree";
 import type { RuleAbTestResult } from "./rule-editor/ab-test";
+import type { ExplainViewModel } from "./rule-editor/ExplainPanel";
 import { readDefaultRuntimeSceneSelection } from "@/lib/runtime-default-scene";
 import {
   analyzeRule,
@@ -380,6 +383,7 @@ export default function TopicDetailPage() {
   const router = useRouter();
   const topicId = params?.id ?? "";
 
+  const [activeTab, setActiveTab] = useState<"RULE" | "REVIEW" | "PUBLISH" | "DEPLOY">("RULE");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionFeedback, setActionFeedback] = useState<{
@@ -396,6 +400,7 @@ export default function TopicDetailPage() {
   const [topicName, setTopicName] = useState<string>(t("common.topic"));
   const [topicStatus, setTopicStatus] = useState("DRAFT");
   const [templateLabel, setTemplateLabel] = useState<string | undefined>(undefined);
+  const [latestRevision, setLatestRevision] = useState<number | null>(null);
   const [reviewReason, setReviewReason] = useState<string | null>(null);
   const executionLoading = useRuleExecutionStore((s) => s.loading);
   const executionError = useRuleExecutionStore((s) => s.error);
@@ -1033,9 +1038,10 @@ export default function TopicDetailPage() {
       setOptimizationSuggestionsOverride(null);
       setVersionHistoryOverride(null);
       setDiffOverride(null);
-      const [result, topicsResult] = await Promise.all([
+      const [result, topicsResult, reviewsResult] = await Promise.all([
         fetchTopicById(topicId),
         fetchTopics(),
+        fetchTopicReviews(topicId),
       ]);
       if (!active) return;
       if (result.data) {
@@ -1063,6 +1069,10 @@ export default function TopicDetailPage() {
       } else {
         setError(result.error ?? t("topicDetail.loadFailed"));
       }
+      const latest = (reviewsResult.data ?? [])
+        .slice()
+        .sort((a, b) => b.revision - a.revision)[0];
+      setLatestRevision(latest?.revision ?? null);
 
       const draftResult = await fetchTopicDraft(topicId);
         if (draftResult.data) {
@@ -1118,6 +1128,37 @@ export default function TopicDetailPage() {
         <div className="text-sm opacity-60">{t("common.loading")}</div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-6">
+          <div className="rounded-lg border bg-white p-2">
+            <div className="flex flex-wrap gap-2">
+              {[
+                { key: "RULE", label: t("topicTabs.rule") },
+                { key: "REVIEW", label: t("topicTabs.review") },
+                { key: "PUBLISH", label: t("topicTabs.publish") },
+                { key: "DEPLOY", label: t("topicTabs.deploy") },
+              ].map((tab) => {
+                const active = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    className={`rounded-md px-3 py-1.5 text-sm ${
+                      active
+                        ? "bg-slate-900 text-white"
+                        : "border border-slate-200 text-slate-700 hover:bg-slate-50"
+                    }`}
+                    onClick={() =>
+                      setActiveTab(
+                        tab.key as "RULE" | "REVIEW" | "PUBLISH" | "DEPLOY"
+                      )
+                    }
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {searchParams.get("fromReview") && (
             <FromReviewBanner
               reviewId={searchParams.get("fromReview") ?? ""}
@@ -1131,9 +1172,11 @@ export default function TopicDetailPage() {
               message={t("topicDetail.review.lockedMessage")}
             />
           )}
+          <TopicRuntimeStatusBar topicId={topicId} />
 
           <div className="min-h-0 flex-1">
-            {editorState ? (
+            {activeTab === "RULE" &&
+              (editorState ? (
               <RuleEditor
                 rule={editorState.rule}
                 capability={editorState.capability}
@@ -1142,7 +1185,7 @@ export default function TopicDetailPage() {
                 templateLabel={templateLabel}
                 capabilityLabel={editorState.capability.semantic.allowModes.join(" / ")}
                 dirty={editorState.dirty}
-                explain={editorState.explain}
+                explain={editorState.explain as ExplainViewModel | null}
                 actionBusy={actionBusy || executionLoading}
                 saveDraftBusy={saveDraftBusy}
                 deleteDraftBusy={deleteDraftBusy}
@@ -1196,6 +1239,68 @@ export default function TopicDetailPage() {
               <div className="text-sm text-red-500">
                 {t("topicDetail.draft.missingCapability")}
               </div>
+              ))}
+            {activeTab === "REVIEW" && (
+              <div className="rounded-lg border bg-white p-5">
+                <div className="text-sm font-semibold">{t("topicReviewTab.title")}</div>
+                <div className="mt-2 text-sm text-slate-600">{t("topicReviewTab.description")}</div>
+                <div className="mt-2 text-sm text-slate-700">
+                  {t("topicReviewTab.latestRevision", {
+                    revision: latestRevision == null ? "-" : latestRevision,
+                  })}
+                </div>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                    onClick={() => void handleSubmitReview()}
+                    disabled={actionsLocked || submitReviewBusy}
+                  >
+                    {submitReviewBusy
+                      ? t("topicActions.submittingReview")
+                      : t("ruleEditor.header.submitReview")}
+                  </button>
+                  {latestRevision != null && (
+                    <button
+                      type="button"
+                      className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
+                      onClick={() =>
+                        router.push(`/knowledge/topics/${topicId}/reviews/${latestRevision}`)
+                      }
+                    >
+                      {t("topicReviewTab.openReview")}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {activeTab === "PUBLISH" && (
+              <div className="rounded-lg border bg-white p-5">
+                <div className="text-sm font-semibold">{t("topicPublishTab.title")}</div>
+                <div className="mt-2 text-sm text-slate-600">{t("topicPublishTab.description")}</div>
+                <div className="mt-2 text-sm text-slate-700">
+                  {t("topicPublishTab.latestRevision", {
+                    revision: latestRevision == null ? "-" : latestRevision,
+                  })}
+                </div>
+                <div className="mt-4">
+                  <button
+                    type="button"
+                    className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    onClick={() => void handlePublish()}
+                    disabled={actionsLocked || publishBusy}
+                  >
+                    {publishBusy ? t("topicActions.publishing") : t("ruleEditor.header.publish")}
+                  </button>
+                </div>
+              </div>
+            )}
+            {activeTab === "DEPLOY" && (
+              <TopicDeployTab
+                topicId={topicId}
+                topicName={topicName}
+                currentPublishedRevision={latestRevision}
+              />
             )}
           </div>
         </div>

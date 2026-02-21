@@ -152,6 +152,7 @@ export default function RuntimeEnvironmentEditor({ environmentId, forceReadOnly 
   const [runtimeEnv, setRuntimeEnv] = useState<RuntimeEnv>("TEST");
   const [description, setDescription] = useState("用于规则效果验证");
   const [status, setStatus] = useState<SceneStatus>("DRAFT");
+  const [searchEndpoint, setSearchEndpoint] = useState("");
   const [datasets, setDatasets] = useState<UiDataset[]>([]);
   const [libraryId, setLibraryId] = useState("");
   const [runtimeScope, setRuntimeScope] = useState<RuntimeScope>("RECENT");
@@ -274,6 +275,7 @@ export default function RuntimeEnvironmentEditor({ environmentId, forceReadOnly 
     );
     setSceneName(loadedEnvironment.name ?? sceneName);
     setDescription(loadedEnvironment.description ?? "");
+    setSearchEndpoint(loadedEnvironment.searchEndpoint ?? "");
     setRuntimeEnv(loadedEnvironment.envType === "PROD" ? "PROD" : "TEST");
     setStatus(
       loadedEnvironment.status === "ACTIVE"
@@ -328,6 +330,7 @@ export default function RuntimeEnvironmentEditor({ environmentId, forceReadOnly 
         name: sceneName.trim(),
         code: generatedCode,
         description: description.trim() || undefined,
+        searchEndpoint: searchEndpoint.trim() || undefined,
         envType: runtimeEnv === "PROD" ? "PROD" : "TEST",
         datasetName: selectedLibrary.code,
         fieldMappings,
@@ -349,6 +352,7 @@ export default function RuntimeEnvironmentEditor({ environmentId, forceReadOnly 
     const updateResult = await updateRuntimeEnvironment(runtimeEnvironmentId, {
       name: sceneName.trim(),
       description: description.trim() || undefined,
+      searchEndpoint: searchEndpoint.trim() || undefined,
       datasetName: selectedLibrary.code,
       fieldMappings,
       ...scopePayload,
@@ -418,6 +422,16 @@ export default function RuntimeEnvironmentEditor({ environmentId, forceReadOnly 
             <label className="block">
               <div className="mb-1 text-sm text-slate-700">说明</div>
               <input value={description} onChange={(event) => setDescription(event.target.value)} disabled={isLocked} className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-slate-100" />
+            </label>
+            <label className="block">
+              <div className="mb-1 text-sm text-slate-700">检索服务地址 (searchEndpoint)</div>
+              <input
+                value={searchEndpoint}
+                onChange={(event) => setSearchEndpoint(event.target.value)}
+                disabled={isLocked}
+                placeholder="http://host:port/search"
+                className="w-full rounded-md border px-3 py-2 text-sm disabled:bg-slate-100"
+              />
             </label>
             <div className="text-sm text-slate-700">
               当前状态：

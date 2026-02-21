@@ -30,6 +30,252 @@ paths:
                 items:
                   $ref: '#/components/schemas/RuntimeActiveItem'
 
+  /api/runtime/deploy/validate:
+    post:
+      tags: [Runtime]
+      summary: Validate topic deployability on runtime environment
+      operationId: validateRuntimeDeploy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeDeployValidateRequest'
+            example:
+              topicId: TALENT_POLICY
+              environmentId: 3
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeDeployValidateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/runtime/deploy:
+    post:
+      tags: [Runtime]
+      summary: Create runtime snapshot and deployment record
+      operationId: createRuntimeDeploy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeDeployRequest'
+            example:
+              topicId: TALENT_POLICY
+              environmentId: 3
+              activate: true
+              operator: admin
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeDeployResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/runtime/deploy/{deploymentId}/activate:
+    post:
+      tags: [Runtime]
+      summary: Activate an existing runtime deployment
+      operationId: activateRuntimeDeployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeTransitionRequest'
+            example:
+              operator: admin
+              verifyExecution: true
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeDeployResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/runtime/deploy/metrics:
+    get:
+      tags: [Runtime]
+      summary: Get runtime deploy observability metrics
+      operationId: getRuntimeDeployMetrics
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeDeployMetricsResponse'
+
+  /api/runtime/execution/metrics:
+    get:
+      tags: [Runtime]
+      summary: Get runtime execution metrics for last 60 minutes
+      operationId: getRuntimeExecutionMetrics
+      parameters:
+        - name: snapshotId
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeExecutionMetricsResponse'
+
+  /api/runtime/deployments/{snapshotId}/metrics:
+    get:
+      tags: [Runtime]
+      summary: Get runtime execution metrics for one snapshot (last 60 minutes)
+      operationId: getRuntimeExecutionMetricsBySnapshot
+      parameters:
+        - name: snapshotId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeExecutionMetricsResponse'
+
+  /api/runtime/deployments:
+    get:
+      tags: [Runtime]
+      summary: List deployments for a topic
+      operationId: listRuntimeDeployments
+      parameters:
+        - name: topicId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeDeploymentListResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/runtime/deployments/{deploymentId}:
+    get:
+      tags: [Runtime]
+      summary: Get deployment detail
+      operationId: getRuntimeDeploymentDetail
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeDeploymentDetailResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/runtime/topic/{topicId}/status:
+    get:
+      tags: [Runtime]
+      summary: Get aggregated runtime deployment status for a topic
+      operationId: getRuntimeTopicStatus
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeTopicStatusResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+    delete:
+      tags: [Runtime]
+      summary: Delete a pending deployment
+      operationId: deleteRuntimePendingDeployment
+      parameters:
+        - name: deploymentId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/rules/analyze:
     post:
       tags: [RuleGovernance]
@@ -1498,6 +1744,85 @@ components:
           $ref: '#/components/schemas/ApiError'
       required: [success]
 
+    ApiResponseRuntimeDeployValidateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeDeployValidateResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeDeployResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeDeployResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeDeployMetricsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeDeployMetricsView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeExecutionMetricsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeExecutionMetricsView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeTopicStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeTopicStatusView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeDeploymentListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeDeploymentListItemView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeDeploymentDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeDeploymentDetailView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     TopicReviewResponse:
       type: object
       properties:
@@ -2189,6 +2514,237 @@ components:
         executionId:
           type: string
       required: [engineVersion, executionId]
+
+    RuntimeDeployValidateRequest:
+      type: object
+      properties:
+        topicId:
+          type: string
+        environmentId:
+          type: integer
+          format: int64
+      required: [topicId, environmentId]
+
+    RuntimeDeployValidateResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        missingFields:
+          type: array
+          items:
+            type: string
+        currentActiveSnapshotId:
+          type: integer
+          format: int64
+          nullable: true
+        message:
+          type: string
+          nullable: true
+      required: [valid, missingFields]
+
+    RuntimeDeployRequest:
+      type: object
+      properties:
+        topicId:
+          type: string
+        environmentId:
+          type: integer
+          format: int64
+        activate:
+          type: boolean
+          nullable: true
+        verifyExecution:
+          type: boolean
+          nullable: true
+        operator:
+          type: string
+          nullable: true
+      required: [topicId, environmentId]
+
+    RuntimeDeployResponse:
+      type: object
+      properties:
+        snapshotId:
+          type: integer
+          format: int64
+        deploymentId:
+          type: integer
+          format: int64
+        status:
+          type: string
+      required: [snapshotId, deploymentId, status]
+
+    RuntimeTransitionRequest:
+      type: object
+      properties:
+        operator:
+          type: string
+          nullable: true
+        verifyExecution:
+          type: boolean
+          nullable: true
+
+    RuntimeDeployMetricsView:
+      type: object
+      properties:
+        counters:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int64
+        avgDurationMs:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+      required: [counters, avgDurationMs]
+
+    RuntimeExecutionMetricsView:
+      type: object
+      properties:
+        snapshotId:
+          type: integer
+          format: int64
+          nullable: true
+        windowMinutes:
+          type: integer
+          format: int32
+        executionCount:
+          type: integer
+          format: int64
+        avgLatencyMs:
+          type: number
+          format: double
+        cacheHitRate:
+          type: number
+          format: double
+        failedCount:
+          type: integer
+          format: int64
+      required: [windowMinutes, executionCount, avgLatencyMs, cacheHitRate, failedCount]
+
+    RuntimeTopicEnvironmentStatusView:
+      type: object
+      properties:
+        environmentId:
+          type: integer
+          format: int64
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        revision:
+          type: integer
+          format: int32
+          nullable: true
+      required: [environmentId, name, status, revision]
+
+    RuntimeTopicStatusView:
+      type: object
+      properties:
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeTopicEnvironmentStatusView'
+        activeCount:
+          type: integer
+          format: int32
+      required: [environments, activeCount]
+
+    RuntimeDeploymentListItemView:
+      type: object
+      properties:
+        deploymentId:
+          type: integer
+          format: int64
+        topicId:
+          type: string
+        snapshotId:
+          type: integer
+          format: int64
+        snapshotVersion:
+          type: integer
+          format: int32
+          nullable: true
+        publishedRevision:
+          type: integer
+          format: int32
+          nullable: true
+        environmentId:
+          type: integer
+          format: int64
+          nullable: true
+        environmentName:
+          type: string
+          nullable: true
+        status:
+          type: string
+        rawStatus:
+          type: string
+          nullable: true
+        deployedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deployedBy:
+          type: string
+          nullable: true
+        canActivate:
+          type: boolean
+        canRollback:
+          type: boolean
+        canDelete:
+          type: boolean
+        canViewLog:
+          type: boolean
+      required: [deploymentId, topicId, snapshotId, status, canActivate, canRollback, canDelete, canViewLog]
+
+    RuntimeDeploymentDetailView:
+      type: object
+      properties:
+        deploymentId:
+          type: integer
+          format: int64
+        topicId:
+          type: string
+        snapshotId:
+          type: integer
+          format: int64
+        snapshotVersion:
+          type: integer
+          format: int32
+          nullable: true
+        publishedRevision:
+          type: integer
+          format: int32
+          nullable: true
+        environmentId:
+          type: integer
+          format: int64
+          nullable: true
+        environmentName:
+          type: string
+          nullable: true
+        status:
+          type: string
+        rawStatus:
+          type: string
+          nullable: true
+        deployedAt:
+          type: string
+          format: date-time
+          nullable: true
+        deployedBy:
+          type: string
+          nullable: true
+        deploymentLog:
+          type: string
+          nullable: true
+      required: [deploymentId, topicId, snapshotId, status]
 
     PreviewDocumentDetailResponse:
       type: object
