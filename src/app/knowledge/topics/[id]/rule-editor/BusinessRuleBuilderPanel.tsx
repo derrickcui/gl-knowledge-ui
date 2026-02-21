@@ -5,6 +5,7 @@ import {
   createEmptyBlock,
   parseBuilder,
   reorderBlocks,
+  updateBlock,
   type BuilderMode,
   type ConditionBlock,
 } from "./builder-model";
@@ -172,6 +173,37 @@ export function BusinessRuleBuilderPanel({
                 )}
               </div>
               <div className="mt-3 text-xs text-slate-600">
+                {block.terms.length > 1 && (
+                  <div className="mb-2 rounded border bg-white px-2 py-1.5">
+                    <div className="mb-1 text-[11px] text-slate-500">术语逻辑</div>
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          checked={block.matchMode === "ANY"}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            apply(view.mode, updateBlock(view.blocks, block.id, { matchMode: "ANY" }));
+                          }}
+                          disabled={readOnly}
+                        />
+                        任一匹配
+                      </label>
+                      <label className="flex items-center gap-1">
+                        <input
+                          type="radio"
+                          checked={block.matchMode === "ALL"}
+                          onChange={(event) => {
+                            event.stopPropagation();
+                            apply(view.mode, updateBlock(view.blocks, block.id, { matchMode: "ALL" }));
+                          }}
+                          disabled={readOnly}
+                        />
+                        全部匹配
+                      </label>
+                    </div>
+                  </div>
+                )}
                 词语：{block.terms.length ? block.terms.map((item) => item.conceptName).join("、") : "未选择"}
               </div>
             </div>

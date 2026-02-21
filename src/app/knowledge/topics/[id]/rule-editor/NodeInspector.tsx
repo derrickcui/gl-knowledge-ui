@@ -254,6 +254,24 @@ export function NodeInspector({
 
       {node.type === "TERM_SET" && (
         <div className="space-y-2">
+          {node.terms.length > 1 && (
+            <div className="space-y-1">
+              <div className="text-xs text-slate-500">{t("ruleEditor.nodeInspector.term.matchMode")}</div>
+              <select
+                className="h-9 w-full rounded-md border px-2 text-sm"
+                value={node.matchMode}
+                onChange={(event) => {
+                  const value = event.target.value as "ANY" | "ALL";
+                  onPatchNode(node.id, (n) => (n.type === "TERM_SET" ? { ...n, matchMode: value } : n));
+                }}
+                disabled={readOnly}
+              >
+                <option value="ANY">{t("ruleEditor.nodeInspector.term.mode.any")}</option>
+                <option value="ALL">{t("ruleEditor.nodeInspector.term.mode.all")}</option>
+              </select>
+            </div>
+          )}
+
           <div className="rounded border bg-slate-50 p-2 text-xs text-slate-700">
             {t("ruleEditor.nodeInspector.term.label", {
               terms: node.terms.length

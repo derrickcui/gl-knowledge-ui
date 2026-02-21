@@ -137,4 +137,20 @@ describe("compileUiTreeToGql", () => {
     if (result.ok) return;
     expect(result.errors.length).toBeGreaterThan(0);
   });
+
+  it("compiles single weighted term inline", () => {
+    const root: UiExpressionNode = {
+      id: "root",
+      type: "FIELD",
+      field: "TITLE",
+      child: {
+        id: "n1",
+        type: "TERM_SET",
+        terms: [{ source: "CONCEPT", conceptId: "n1", conceptName: "神经网络", includeDescendants: false }],
+        matchMode: "ANY",
+        weight: 5,
+      },
+    };
+    expect(compileToGql(root)).toBe("<in/title>[5]神经网络");
+  });
 });

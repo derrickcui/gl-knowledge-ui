@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+﻿import { Search } from "lucide-react";
 import { t } from "@/i18n";
 import type { RuntimeExecuteFullResponse } from "@/lib/api/ruleRuntime";
 import { HighlightFragment } from "./HighlightFragment";
@@ -50,15 +50,22 @@ export function FullResultPanel({
       </div>
       <div className="max-h-[440px] space-y-2 overflow-auto">
         {items.map((item) => (
-          <button
+          <div
             key={item.id}
-            type="button"
+            role="button"
+            tabIndex={0}
             className="w-full rounded border px-2 py-2 text-left text-xs hover:bg-slate-50"
             onClick={() => onSelectDocument?.(item.id)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelectDocument?.(item.id);
+              }
+            }}
           >
             <div className="font-medium text-slate-800">{item.title}</div>
             <div className="mt-1 text-slate-600">
-              <span className="font-medium text-slate-700">命中原因：</span>
+              <span className="font-medium text-slate-700">{t("ruleEditor.execution.matchedReason")}</span>
               <span className="ml-1 inline-flex flex-wrap gap-1 align-middle">
                 {item.matchedReasons.map((reason, index) => {
                   const keywordText = reason.matchedTerms?.[0] ?? reason.displayText ?? reason.label;
@@ -84,7 +91,7 @@ export function FullResultPanel({
                 className="mt-1 text-slate-600 [&_mark]:rounded [&_mark]:bg-amber-200 [&_mark]:px-0.5 [&_mark]:text-slate-900"
               />
             )}
-          </button>
+          </div>
         ))}
       </div>
       <div className="mt-2 flex items-center justify-end gap-2 text-xs">
@@ -109,3 +116,4 @@ export function FullResultPanel({
     </div>
   );
 }
+

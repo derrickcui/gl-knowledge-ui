@@ -76,5 +76,6 @@ function serializeTermSet(node: UiTermSetNode): string {
     .map((term) => `${term.conceptId}:${term.includeDescendants ? 1 : 0}`)
     .sort()
     .join("|");
-  return `${node.matchMode}::${terms}`;
+  const weight = node.weight ?? node.importanceWeight ?? "";
+  return `${node.matchMode}:${weight}:${terms}`;
 }

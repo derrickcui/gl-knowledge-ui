@@ -86,6 +86,9 @@ function compileField(node: Extract<UiExpressionNode, { type: "FIELD" }>): strin
   }
   const child = compileNode(node.child);
   const field = mapField(node.field);
+  if (isAtomicNode(node.child)) {
+    return `<in/${field}>${child}`;
+  }
   return `<in/${field}>(${child})`;
 }
 
@@ -160,7 +163,7 @@ function compileTermSet(node: UiTermSetNode): string {
   }
   const terms = node.terms.map((item) => compileTerm(item));
   if (terms.length === 1) {
-    return terms[0];
+    return wrapInlineWeight(terms[0], node.weight ?? node.importanceWeight);
   }
   const fn = node.matchMode === "ALL" ? "and" : "or";
   return `<${fn}>(${terms.join(",")})`;
@@ -182,7 +185,19 @@ function compileScore(node: Extract<UiExpressionNode, { type: "SCORE" }>): strin
   }
   const inner = compileNode(node.child);
   const safeWeight = Number.isFinite(node.weight) && node.weight >= 0 ? node.weight : 1;
+  if (isAtomicNode(node.child)) {
+    return `[${safeWeight}]${inner}`;
+  }
   return `[${safeWeight}](${inner})`;
+}
+
+function isAtomicNode(node: UiExpressionNode): boolean {
+  return node.type === "TERM_SET" || node.type === "TOPIC_REF";
+}
+
+function wrapInlineWeight(inner: string, weight: number | undefined): string {
+  if (weight == null || !Number.isFinite(weight) || weight < 0) return inner;
+  return `[${Math.round(weight)}]${inner}`;
 }
 
 function logicOperatorToFn(operator: LogicOperator): "and" | "or" | "accrue" {

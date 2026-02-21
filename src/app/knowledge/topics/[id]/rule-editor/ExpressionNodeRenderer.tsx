@@ -506,6 +506,55 @@ export function ExpressionNodeRenderer({
 
         {node.type === "TERM_SET" && (
           <div className="mt-2 rounded border bg-slate-50 p-2 text-xs text-slate-700">
+            {node.terms.length > 1 && (
+              <div className="mb-2 flex items-center gap-2">
+                <span>{t("ruleEditor.nodeInspector.term.matchMode")}</span>
+                <select
+                  className="h-7 rounded border bg-white px-2 text-xs"
+                  value={node.matchMode}
+                  onChange={(event) => {
+                    const value = event.target.value as "ANY" | "ALL";
+                    onPatchNode(node.id, (n) => (n.type === "TERM_SET" ? { ...n, matchMode: value } : n));
+                  }}
+                  disabled={readOnly}
+                >
+                  <option value="ANY">{t("ruleEditor.nodeInspector.term.mode.any")}</option>
+                  <option value="ALL">{t("ruleEditor.nodeInspector.term.mode.all")}</option>
+                </select>
+              </div>
+            )}
+
+            {node.terms.length === 1 && (
+              <div className="mb-2 flex items-center gap-2">
+                <span>{t("ruleEditor.tree.term.weight")}</span>
+                {readOnly ? (
+                  <span className="rounded border bg-white px-1.5 py-0.5 font-mono">
+                    [{Math.max(0, Math.round(Number(node.weight ?? node.importanceWeight ?? 5)))}]
+                  </span>
+                ) : (
+                  <input
+                    type="number"
+                    min={0}
+                    step={1}
+                    className="h-7 w-20 rounded border bg-white px-2 text-xs"
+                    value={Math.max(0, Math.round(Number(node.weight ?? node.importanceWeight ?? 5)))}
+                    onChange={(event) => {
+                      const parsed = Number(event.target.value);
+                      const nextWeight = Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 5;
+                      onPatchNode(node.id, (n) =>
+                        n.type === "TERM_SET"
+                          ? {
+                              ...n,
+                              weight: nextWeight,
+                              importanceWeight: nextWeight,
+                            }
+                          : n
+                      );
+                    }}
+                  />
+                )}
+              </div>
+            )}
             {node.terms.length === 0 ? (
               <div>{t("ruleEditor.tree.term.empty")}</div>
             ) : (
