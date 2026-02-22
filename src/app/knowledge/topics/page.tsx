@@ -78,7 +78,7 @@ const STATUS_STYLES: Record<string, string> = {
   PUBLISHED: "bg-green-100 text-green-800",
   DRAFT: "bg-amber-100 text-amber-800",
   IN_REVIEW: "bg-blue-100 text-blue-800",
-  APPROVED: "bg-emerald-100 text-emerald-800",
+  APPROVED: "bg-green-100 text-green-800",
   REJECTED: "bg-rose-100 text-rose-800",
 };
 
@@ -95,7 +95,7 @@ function getStatusLabel(status: string) {
   const normalized = normalizeStatus(status);
   if (normalized === "DRAFT") return t("topics.status.draft");
   if (normalized === "IN_REVIEW") return t("topics.status.inReview");
-  if (normalized === "APPROVED") return t("topics.status.approved");
+  if (normalized === "APPROVED") return t("topics.status.published");
   if (normalized === "REJECTED") return t("topics.status.rejected");
   if (normalized === "PUBLISHED") return t("topics.status.published");
   return status;

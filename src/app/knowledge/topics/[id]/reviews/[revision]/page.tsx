@@ -29,14 +29,16 @@ import type {
   TemplateCheckItem,
   ReviewViewMode,
 } from "@/components/review/governance";
+import { t } from "@/i18n";
 
 function statusLabel(status?: string) {
-  if (status === "IN_REVIEW") return "待评审";
-  if (status === "APPROVED") return "已通过";
-  if (status === "PUBLISHED") return "已发布";
-  if (status === "REJECTED") return "被退回";
-  if (status === "DRAFT") return "草稿";
-  return status ?? "未知";
+  const normalized = String(status ?? "").trim().toUpperCase();
+  if (normalized === "IN_REVIEW") return t("topics.status.inReview");
+  if (normalized === "APPROVED") return t("topics.status.published");
+  if (normalized === "PUBLISHED") return t("topics.status.published");
+  if (normalized === "REJECTED") return t("topics.status.rejected");
+  if (normalized === "DRAFT") return t("topics.status.draft");
+  return (status ?? "").trim() || "UNKNOWN";
 }
 
 function normalizeComplexityLevel(level?: string): ComplexityMetrics["level"] {
@@ -277,6 +279,7 @@ export default function TopicReviewPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [topicName, setTopicName] = useState<string>("主题");
+  const [topicCreatedAt, setTopicCreatedAt] = useState<string | null>(null);
   const [templateText, setTemplateText] = useState<string>("-");
   const [submittedBy, setSubmittedBy] = useState<string>("-");
   const [submittedAt, setSubmittedAt] = useState<string | null>(null);
@@ -301,11 +304,20 @@ export default function TopicReviewPage() {
     let active = true;
 
     async function load() {
-      if (!topicId || !revision) return;
+      if (!topicId) {
+        setLoading(false);
+        return;
+      }
+      if (!Number.isFinite(revision)) {
+        setError("Invalid review revision.");
+        setLoading(false);
+        return;
+      }
       setLoading(true);
       setError(null);
       setExpectedHash(null);
       setExpectedHashHint(null);
+      try {
 
       const [topicResult, reviewsResult, detailResult] = await Promise.all([
         fetchTopicById(topicId),
@@ -317,6 +329,13 @@ export default function TopicReviewPage() {
 
       if (topicResult.data) {
         setTopicName(topicResult.data.name?.trim() || "未命名规则");
+        setTopicCreatedAt(
+          typeof topicResult.data.createdAt === "string" && topicResult.data.createdAt.trim()
+            ? topicResult.data.createdAt
+            : typeof topicResult.data.updatedAt === "string" && topicResult.data.updatedAt.trim()
+              ? topicResult.data.updatedAt
+              : null
+        );
         const templateId = topicResult.data.template_id == null ? "-" : String(topicResult.data.template_id);
         const templateVersion = topicResult.data.template_version == null ? "" : ` v${topicResult.data.template_version}`;
         setTemplateText(`${templateId}${templateVersion}`);
@@ -327,8 +346,9 @@ export default function TopicReviewPage() {
       let listStatusForRevision: string | null = null;
       let listSubmittedByForRevision: string | null = null;
       let listSubmittedAtForRevision: string | null = null;
-      if (reviewsResult.data) {
-        const sorted = [...reviewsResult.data].sort((a, b) => b.revision - a.revision);
+      const reviewItems = Array.isArray(reviewsResult.data) ? reviewsResult.data : [];
+      if (reviewItems.length > 0) {
+        const sorted = [...reviewItems].sort((a, b) => b.revision - a.revision);
         setHistoryRecords(
           sorted.map((item) => ({
             revision: item.revision,
@@ -339,11 +359,13 @@ export default function TopicReviewPage() {
           }))
         );
 
-        const matched = reviewsResult.data.find((item) => item.revision === revision);
+        const matched = reviewItems.find((item) => item.revision === revision);
         listHashForRevision = asString(matched?.contentHash);
         listStatusForRevision = asString(matched?.status);
         listSubmittedByForRevision = asString(matched?.submittedBy);
         listSubmittedAtForRevision = asString(matched?.submittedAt);
+      } else {
+        setHistoryRecords([]);
       }
 
       if (detailResult.data) {
@@ -390,7 +412,12 @@ export default function TopicReviewPage() {
         setError(detailResult.error ?? "无法加载评审。");
       }
 
-      setLoading(false);
+      } catch (err) {
+        if (!active) return;
+        setError(err instanceof Error ? err.message : "Unable to load review.");
+      } finally {
+        if (active) setLoading(false);
+      }
     }
 
     load();
@@ -535,6 +562,7 @@ export default function TopicReviewPage() {
       <ReviewHeader
         topicId={topicId}
         ruleName={topicName}
+        createdAt={topicCreatedAt}
         revision={revision}
         status={statusLabel(reviewStatus)}
         templateText={templateText}

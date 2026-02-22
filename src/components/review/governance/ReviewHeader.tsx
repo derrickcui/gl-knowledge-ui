@@ -3,6 +3,7 @@
 type ReviewHeaderProps = {
   topicId: string;
   ruleName: string;
+  createdAt?: string | null;
   revision: number;
   status: string;
   templateText: string;

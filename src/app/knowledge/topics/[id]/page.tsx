@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -27,6 +27,7 @@ import { useRuntimeExecution } from "@/hooks/useRuntimeExecution";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import FromReviewBanner from "@/components/review/FromReviewBanner";
 import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
+import { TopicHeaderTabs } from "@/components/topics/TopicHeaderTabs";
 import { RuleEditor } from "./rule-editor";
 import { TopicDeployTab } from "./deploy/TopicDeployTab";
 import { TopicRuntimeStatusBar } from "./deploy/TopicRuntimeStatusBar";
@@ -71,6 +72,20 @@ import type {
 
 const DEFAULT_VERSION_WINDOW = 20;
 const MAX_VERSION_WINDOW = 100;
+
+function normalizeStatus(status: string) {
+  return String(status ?? "").trim().toUpperCase();
+}
+
+function getStatusLabel(status: string) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "DRAFT") return t("topics.status.draft");
+  if (normalized === "IN_REVIEW") return t("topics.status.inReview");
+  if (normalized === "APPROVED") return t("topics.status.published");
+  if (normalized === "REJECTED") return t("topics.status.rejected");
+  if (normalized === "PUBLISHED") return t("topics.status.published");
+  return status || "-";
+}
 
 function isLockedActionStatus(status: string): boolean {
   return status === "IN_REVIEW" || status === "PUBLISHED" || status === "APPROVED";
@@ -416,6 +431,7 @@ export default function TopicDetailPage() {
   const [publishBusy, setPublishBusy] = useState(false);
   const [abTestBusy, setAbTestBusy] = useState(false);
   const [topicName, setTopicName] = useState<string>(t("common.topic"));
+  const [topicCreatedAt, setTopicCreatedAt] = useState<string | null>(null);
   const [topicStatus, setTopicStatus] = useState("DRAFT");
   const [templateLabel, setTemplateLabel] = useState<string | undefined>(undefined);
   const [latestRevision, setLatestRevision] = useState<number | null>(null);
@@ -452,6 +468,7 @@ export default function TopicDetailPage() {
     explain: ExplainPreviewViewModel | null;
     dirty: boolean;
   } | null>(null);
+  const submitReviewPendingRef = useRef(false);
   const localCompilerEnabled =
     process.env.NEXT_PUBLIC_RULE_LOCAL_GQL_COMPILER !== "0";
 
@@ -667,7 +684,7 @@ export default function TopicDetailPage() {
   }
 
   async function handleSubmitReview() {
-    if (!topicId || isLockedActionStatus(topicStatus)) return;
+    if (!topicId || isLockedActionStatus(topicStatus) || submitReviewPendingRef.current) return;
     if (editorState) {
       const issues = validateTree(editorState.rule.root, editorState.capability).filter(
         (item) => item.severity === "error"
@@ -681,30 +698,34 @@ export default function TopicDetailPage() {
         return;
       }
     }
-    setPublishBusy(true);
+    submitReviewPendingRef.current = true;
+    setSubmitReviewBusy(true);
     setActionBusy(true);
     setActionFeedback({
       type: "info",
-      title: t("topicActions.publishing"),
+      title: t("topicActions.submittingReview"),
     });
 
-    const result = await submitTopicReview(topicId, {});
-    if (result.data) {
-      setTopicStatus("IN_REVIEW");
-      setActionFeedback({
-        type: "success",
-        title: t("topicDetail.review.submitted"),
-      });
-    } else {
-      setActionFeedback({
-        type: "error",
-        title: t("topicDetail.review.submitFailed"),
-        message: result.error ?? t("topicDetail.review.submitFailedMessage"),
-      });
+    try {
+      const result = await submitTopicReview(topicId, {});
+      if (result.data) {
+        setTopicStatus("IN_REVIEW");
+        setActionFeedback({
+          type: "success",
+          title: t("topicDetail.review.submitted"),
+        });
+      } else {
+        setActionFeedback({
+          type: "error",
+          title: t("topicDetail.review.submitFailed"),
+          message: result.error ?? t("topicDetail.review.submitFailedMessage"),
+        });
+      }
+    } finally {
+      submitReviewPendingRef.current = false;
+      setSubmitReviewBusy(false);
+      setActionBusy(false);
     }
-
-    setDeleteDraftBusy(false);
-    setActionBusy(false);
   }
 
   async function handleRunWorkspace(options?: { page?: number; size?: number }) {
@@ -1019,6 +1040,13 @@ export default function TopicDetailPage() {
   }, [setActiveRuntime]);
 
   useEffect(() => {
+    const tab = (searchParams.get("tab") ?? "").toUpperCase();
+    if (tab === "RULE" || tab === "REVIEW" || tab === "PUBLISH" || tab === "DEPLOY") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     const fromReview = searchParams.get("fromReview");
     if (!fromReview) {
       setReviewReason(null);
@@ -1048,6 +1076,7 @@ export default function TopicDetailPage() {
       if (!topicId) return;
       setLoading(true);
       setError(null);
+      setTopicCreatedAt(null);
       setActionFeedback(null);
       setComplexityMetricsOverride(null);
       setHitDistributionOverride(null);
@@ -1063,14 +1092,26 @@ export default function TopicDetailPage() {
       ]);
       if (!active) return;
       if (result.data) {
-        setTopicName(result.data.name);
+        const listTopic = topicsResult.data?.items.find((item) => item.id === topicId) ?? null;
+        const resolvedTopicName =
+          (typeof result.data.name === "string" && result.data.name.trim()
+            ? result.data.name.trim()
+            : typeof listTopic?.name === "string" && listTopic.name.trim()
+              ? listTopic.name.trim()
+              : t("common.topic"));
+        setTopicName(resolvedTopicName);
+        setTopicCreatedAt(
+          typeof result.data.createdAt === "string" && result.data.createdAt.trim()
+            ? result.data.createdAt
+            : typeof result.data.updatedAt === "string" && result.data.updatedAt.trim()
+              ? result.data.updatedAt
+            : null
+        );
         const detailStatus =
           typeof result.data.status === "string" && result.data.status.trim()
             ? result.data.status.trim()
             : null;
-        const listStatus =
-          topicsResult.data?.items.find((item) => item.id === topicId)?.status ??
-          null;
+        const listStatus = listTopic?.status ?? null;
         setTopicStatus(detailStatus ?? listStatus ?? "DRAFT");
         const templateId = result.data.template_id;
         const templateVersion = result.data.template_version;
@@ -1146,36 +1187,16 @@ export default function TopicDetailPage() {
         <div className="text-sm opacity-60">{t("common.loading")}</div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-6">
-          <div className="rounded-lg border bg-white p-2">
-            <div className="flex flex-wrap gap-2">
-              {[
-                { key: "RULE", label: t("topicTabs.rule") },
-                { key: "REVIEW", label: t("topicTabs.review") },
-                { key: "PUBLISH", label: t("topicTabs.publish") },
-                { key: "DEPLOY", label: t("topicTabs.deploy") },
-              ].map((tab) => {
-                const active = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    type="button"
-                    className={`rounded-md px-3 py-1.5 text-sm ${
-                      active
-                        ? "bg-slate-900 text-white"
-                        : "border border-slate-200 text-slate-700 hover:bg-slate-50"
-                    }`}
-                    onClick={() =>
-                      setActiveTab(
-                        tab.key as "RULE" | "REVIEW" | "PUBLISH" | "DEPLOY"
-                      )
-                    }
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <TopicHeaderTabs
+            topicId={topicId}
+            topicName={topicName}
+            createdAt={topicCreatedAt}
+            statusCode={topicStatus}
+            statusText={getStatusLabel(topicStatus)}
+            activeTab={activeTab}
+            onTabChange={(tab) => setActiveTab(tab)}
+            reviewRevision={latestRevision}
+          />
 
           {searchParams.get("fromReview") && (
             <FromReviewBanner
@@ -1318,6 +1339,7 @@ export default function TopicDetailPage() {
                 topicId={topicId}
                 topicName={topicName}
                 currentPublishedRevision={latestRevision}
+                onRequestOpenPublish={() => setActiveTab("PUBLISH")}
               />
             )}
           </div>

@@ -28,6 +28,20 @@ type HeaderBarProps = {
   onToggleOpenView?: (option: OpenViewOption, checked: boolean) => void;
 };
 
+function normalizeStatus(status: string) {
+  return String(status ?? "").trim().toUpperCase();
+}
+
+function statusLabel(status: string) {
+  const normalized = normalizeStatus(status);
+  if (normalized === "DRAFT") return t("topics.status.draft");
+  if (normalized === "IN_REVIEW") return t("topics.status.inReview");
+  if (normalized === "APPROVED") return t("topics.status.published");
+  if (normalized === "REJECTED") return t("topics.status.rejected");
+  if (normalized === "PUBLISHED") return t("topics.status.published");
+  return status;
+}
+
 export function HeaderBar({
   topicName,
   status,
@@ -49,6 +63,7 @@ export function HeaderBar({
   openViews,
   onToggleOpenView,
 }: HeaderBarProps) {
+  const displayStatus = statusLabel(status);
   const [capabilityOpen, setCapabilityOpen] = useState(false);
   const [openViewMenuOpen, setOpenViewMenuOpen] = useState(false);
   const capabilityDialogDrag = useDraggableDialog(capabilityOpen);
@@ -72,7 +87,7 @@ export function HeaderBar({
               </button>
               <div className="text-sm font-semibold">{topicName}</div>
               <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700">
-                {t("ruleEditor.header.status", { status })}
+                {t("ruleEditor.header.status", { status: displayStatus })}
               </span>
             </div>
             <div className="text-xs text-slate-500">

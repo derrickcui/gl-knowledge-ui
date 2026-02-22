@@ -89,6 +89,9 @@ paths:
               environmentId: 3
               activate: true
               operator: admin
+              deployMode: FILTER
+              weight: 10
+              namespace: policy
       responses:
         '200':
           description: Success
@@ -614,6 +617,54 @@ paths:
                     references: []
                   options:
                     withItems: false
+              fullModeWeighted:
+                summary: FULL mode weighted request (BOOST + term weight)
+                value:
+                  mode: FULL
+                  runtimeEnvironmentId: 1
+                  rule:
+                    root:
+                      type: LOGIC
+                      nodeId: root-weighted-1
+                      operator: AND
+                      children:
+                        - type: FIELD
+                          nodeId: field-title-1
+                          field: TITLE
+                          child:
+                            type: BOOST
+                            nodeId: boost-1
+                            weight: 2.0
+                            child:
+                              type: TERM_SET
+                              nodeId: termset-title-1
+                              matchMode: ALL
+                              terms:
+                                - source: CONCEPT
+                                  conceptId: "15"
+                                  conceptName: 各地人力社保部门组织
+                                  includeDescendants: false
+                                  weight: 1.2
+                                - source: CONCEPT
+                                  conceptId: "36"
+                                  conceptName: 区级人力社保部门
+                                  includeDescendants: false
+                                  weight: 1.8
+                        - type: TERM_SET
+                          nodeId: termset-content-1
+                          matchMode: ANY
+                          terms:
+                            - source: CONCEPT
+                              conceptId: "17"
+                              conceptName: 区人才服务中心戚老师
+                              includeDescendants: false
+                              weight: 1.5
+                    references: []
+                  options:
+                    page: 1
+                    size: 20
+                    withHighlight: true
+                    withItems: true
       responses:
         '200':
           description: Success
@@ -2269,6 +2320,13 @@ components:
         matchMode:
           type: string
           enum: [ANY, ALL]
+        weight:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+          nullable: true
+          description: Optional compatibility field. Equivalent to wrapping this TERM_SET with `BOOST`.
       required: [type, terms]
 
     UiNotNode:
@@ -2607,6 +2665,23 @@ components:
         operator:
           type: string
           nullable: true
+        deployMode:
+          type: string
+          nullable: true
+          description: |
+            Topic usage mode for deployment. Set only at deploy time.
+            Current backend supports `FILTER` as stable mode.
+          enum: [FILTER]
+        weight:
+          type: integer
+          format: int32
+          minimum: 1
+          nullable: true
+          description: Optional runtime weight for search-topics export. Default is 10.
+        namespace:
+          type: string
+          nullable: true
+          description: Optional runtime namespace for search-topics export. Default is policy.
       required: [topicId, environmentId]
 
     RuntimeDeployResponse:

@@ -90,6 +90,7 @@ type TopicDetailResponse = {
   usedBy?: string[];
   template_id?: number | string | null;
   template_version?: number | string | null;
+  createdAt?: string | null;
   updatedAt?: string | null;
 };
 

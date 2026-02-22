@@ -12,6 +12,14 @@ export type RuntimeDeploymentStatus =
   | "FAILED"
   | string;
 
+export type RuntimeDeployMode =
+  | "FILTER"
+  | "BOOST"
+  | "LABEL"
+  | "MAP"
+  | "SIGNAL"
+  | string;
+
 export type RuntimeDeploymentItem = {
   deploymentId: number;
   topicId: string;
@@ -334,6 +342,9 @@ export async function createRuntimeDeploy(payload: {
   activate: boolean;
   verifyExecution?: boolean;
   operator?: string;
+  deployMode?: RuntimeDeployMode | RuntimeDeployMode[];
+  weight?: number;
+  namespace?: string;
 }): Promise<
   ApiResult<{
     deploymentId: number;

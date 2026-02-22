@@ -142,19 +142,19 @@ export function ExpressionTreePanel({
           <div className="flex flex-wrap items-center gap-3">
             <span className="inline-flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-              HIGH
+              {t("ruleEditor.intel.heat.high")}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full bg-orange-500" />
-              MEDIUM
+              {t("ruleEditor.intel.heat.medium")}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full bg-yellow-400" />
-              LOW
+              {t("ruleEditor.intel.heat.low")}
             </span>
             <span className="inline-flex items-center gap-1">
               <span className="inline-block h-2 w-2 rounded-full bg-slate-200" />
-              NONE
+              {t("ruleEditor.intel.heat.none")}
             </span>
           </div>
         </div>

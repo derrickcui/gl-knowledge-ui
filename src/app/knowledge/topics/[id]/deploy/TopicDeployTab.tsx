@@ -15,6 +15,7 @@ import {
   fetchRuntimeDeployMetrics,
   fetchRuntimeDeployments,
   validateRuntimeDeploy,
+  type RuntimeDeployMode,
   type RuntimeDeploymentDetail,
   type RuntimeDeploymentItem,
   type RuntimeDeployMetrics,
@@ -29,6 +30,8 @@ type Feedback = {
   message?: string;
 };
 
+const DEPLOY_MODE_OPTIONS: RuntimeDeployMode[] = ["FILTER", "BOOST", "LABEL", "MAP", "SIGNAL"];
+
 type ConfirmAction =
   | { type: "ACTIVATE"; item: RuntimeDeploymentItem }
   | { type: "DELETE"; item: RuntimeDeploymentItem };
@@ -37,10 +40,12 @@ export function TopicDeployTab({
   topicId,
   topicName,
   currentPublishedRevision,
+  onRequestOpenPublish,
 }: {
   topicId: string;
   topicName: string;
   currentPublishedRevision: number | null;
+  onRequestOpenPublish?: () => void;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -56,6 +61,9 @@ export function TopicDeployTab({
   const [selectedEnvironmentDetail, setSelectedEnvironmentDetail] = useState<RuntimeEnvironment | null>(null);
   const [activateNow, setActivateNow] = useState(true);
   const [verifyExecution, setVerifyExecution] = useState(true);
+  const [deployModes, setDeployModes] = useState<RuntimeDeployMode[]>(["FILTER"]);
+  const [deployWeight, setDeployWeight] = useState<string>("1");
+  const [deployNamespace, setDeployNamespace] = useState("");
   const [validationBusy, setValidationBusy] = useState(false);
   const [validationResult, setValidationResult] = useState<RuntimeDeployValidation | null>(null);
   const [deployBusy, setDeployBusy] = useState(false);
@@ -174,6 +182,9 @@ export function TopicDeployTab({
     setSelectedEnvironmentDetail(null);
     setActivateNow(true);
     setVerifyExecution(true);
+    setDeployModes(["FILTER"]);
+    setDeployWeight("1");
+    setDeployNamespace("");
     setValidationResult(null);
     setValidationBusy(false);
     setDeployBusy(false);
@@ -207,6 +218,11 @@ export function TopicDeployTab({
 
   async function handleConfirmDeploy() {
     if (selectedEnvId == null) return;
+    const normalizedDeployModes = Array.from(
+      new Set(deployModes.map((item) => String(item).trim().toUpperCase()).filter(Boolean))
+    ) as RuntimeDeployMode[];
+    const hasBoostMode = normalizedDeployModes.includes("BOOST");
+    const normalizedWeight = Number(deployWeight);
     setDeployBusy(true);
     const result = await createRuntimeDeploy({
       topicId,
@@ -214,6 +230,13 @@ export function TopicDeployTab({
       activate: activateNow,
       verifyExecution,
       operator: "systemUser",
+      deployMode:
+        normalizedDeployModes.length <= 1 ? normalizedDeployModes[0] : normalizedDeployModes,
+      namespace: deployNamespace.trim() || undefined,
+      weight:
+        hasBoostMode && Number.isFinite(normalizedWeight) && normalizedWeight > 0
+          ? normalizedWeight
+          : undefined,
     });
     setDeployBusy(false);
     if (!result.data) {
@@ -232,7 +255,7 @@ export function TopicDeployTab({
       message: t("topicDeploy.deploySuccessDetail", {
         snapshotId: result.data.snapshotId ?? "-",
         deploymentId: result.data.deploymentId,
-        status: result.data.status,
+        status: runtimeStatusLabel(result.data.status),
       }),
     });
     await refreshAll();
@@ -333,6 +356,12 @@ export function TopicDeployTab({
 
   const publishedVersionLabel =
     currentPublishedRevision == null ? "-" : `v${currentPublishedRevision}`;
+  const canStartDeploy = currentPublishedRevision != null;
+  const noPublishedRevisionIssue = useMemo(() => {
+    if (!validationResult || validationResult.passed) return false;
+    const entries = [...(validationResult.missingFields ?? []), validationResult.message ?? ""];
+    return entries.some((item) => /no published revision/i.test(String(item)));
+  }, [validationResult]);
 
   return (
     <div className="space-y-4">
@@ -359,12 +388,18 @@ export function TopicDeployTab({
           <div className="text-sm font-semibold">{t("topicDeploy.deploySectionTitle")}</div>
           <button
             type="button"
-            className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-700"
+            className="rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
             onClick={openWizard}
+            disabled={!canStartDeploy}
           >
             {t("topicDeploy.deployButton")}
           </button>
         </div>
+        {!canStartDeploy && (
+          <div className="mt-2 text-xs text-amber-700">
+            {t("topicDeploy.deployNeedPublish")}
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border bg-white p-4">
@@ -578,7 +613,7 @@ export function TopicDeployTab({
                         onChange={() => setSelectedEnvId(env.id)}
                       />
                       <span className="text-sm">
-                        {env.name || env.code || `#${env.id}`} ({inferEngineType(env)})
+                        {env.name || env.code || `#${env.id}`} ({engineTypeLabel(inferEngineType(env))})
                       </span>
                     </label>
                   ))}
@@ -592,12 +627,12 @@ export function TopicDeployTab({
                     </div>
                     <div>
                       {t("topicDeploy.wizard.step1.engine", {
-                        engine: inferEngineType(selectedEnvironmentDetail ?? selectedEnvironment),
+                        engine: engineTypeLabel(inferEngineType(selectedEnvironmentDetail ?? selectedEnvironment)),
                       })}
                     </div>
                     <div>
                       {t("topicDeploy.wizard.step1.status", {
-                        status: selectedEnvironmentDetail?.status ?? selectedEnvironment.status ?? "-",
+                        status: runtimeStatusLabel(selectedEnvironmentDetail?.status ?? selectedEnvironment.status),
                       })}
                     </div>
                   </div>
@@ -637,6 +672,9 @@ export function TopicDeployTab({
                 ) : (
                   <div className="rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700">
                     <div className="font-medium">{t("topicDeploy.wizard.step2.fail")}</div>
+                    {noPublishedRevisionIssue && (
+                      <div className="mt-2 text-xs">{t("topicDeploy.wizard.step2.noPublishedRevision")}</div>
+                    )}
                     {(validationResult?.missingFields ?? []).length > 0 ? (
                       <ul className="mt-2 list-disc pl-5 text-xs">
                         {(validationResult?.missingFields ?? []).map((field) => (
@@ -651,7 +689,15 @@ export function TopicDeployTab({
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
+                <div className="flex justify-between gap-2">
+                  <button
+                    type="button"
+                    className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
+                    onClick={() => setWizardStep(1)}
+                  >
+                    {t("topicDeploy.wizard.back")}
+                  </button>
+                  <div className="flex gap-2">
                   <button
                     type="button"
                     className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
@@ -672,14 +718,20 @@ export function TopicDeployTab({
                       type="button"
                       className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
                       onClick={() => {
-                        if (selectedEnvId != null) {
+                        if (noPublishedRevisionIssue) {
+                          setWizardOpen(false);
+                          onRequestOpenPublish?.();
+                        } else if (selectedEnvId != null) {
                           router.push(`/runtime/${selectedEnvId}`);
                         }
                       }}
                     >
-                      {t("topicDeploy.wizard.fixMapping")}
+                      {noPublishedRevisionIssue
+                        ? t("topicDeploy.wizard.fixPublish")
+                        : t("topicDeploy.wizard.fixMapping")}
                     </button>
                   )}
+                  </div>
                 </div>
               </div>
             )}
@@ -712,6 +764,73 @@ export function TopicDeployTab({
                   <span>{t("topicDeploy.wizard.verifyExecution")}</span>
                 </label>
 
+                <div className="rounded border px-3 py-2 text-sm">
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <div className="text-xs text-slate-500">{t("topicDeploy.wizard.deployMode")}</div>
+                    <button
+                      type="button"
+                      className="rounded border px-2 py-0.5 text-xs hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      onClick={() => setDeployModes([...DEPLOY_MODE_OPTIONS])}
+                      disabled={DEPLOY_MODE_OPTIONS.every((mode) => deployModes.includes(mode))}
+                    >
+                      {t("topicDeploy.wizard.deployMode.selectAll")}
+                    </button>
+                  </div>
+                  <div className="space-y-2">
+                    {DEPLOY_MODE_OPTIONS.map((mode) => {
+                      const checked = deployModes.includes(mode);
+                      return (
+                        <label key={mode} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              const nextChecked = event.target.checked;
+                              setDeployModes((prev) => {
+                                if (nextChecked) {
+                                  if (prev.includes(mode)) return prev;
+                                  return [...prev, mode];
+                                }
+                                const next = prev.filter((item) => item !== mode);
+                                return next.length > 0 ? next : ["FILTER"];
+                              });
+                            }}
+                          />
+                          <span>{t(`topicDeploy.wizard.deployMode.${mode.toLowerCase()}`)}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {deployModes.includes("BOOST") && (
+                  <label className="block rounded border px-3 py-2 text-sm">
+                    <div className="mb-1 text-xs text-slate-500">{t("topicDeploy.wizard.weight")}</div>
+                    <input
+                      type="number"
+                      min={0.0001}
+                      step="0.1"
+                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                      value={deployWeight}
+                      onChange={(event) => setDeployWeight(event.target.value)}
+                      placeholder="1.0"
+                    />
+                    <div className="mt-1 text-xs text-slate-500">{t("topicDeploy.wizard.weightHint")}</div>
+                  </label>
+                )}
+
+                <label className="block rounded border px-3 py-2 text-sm">
+                  <div className="mb-1 text-xs text-slate-500">{t("topicDeploy.wizard.namespace")}</div>
+                  <input
+                    type="text"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+                    value={deployNamespace}
+                    onChange={(event) => setDeployNamespace(event.target.value)}
+                    placeholder={t("topicDeploy.wizard.namespacePlaceholder")}
+                  />
+                  <div className="mt-1 text-xs text-slate-500">{t("topicDeploy.wizard.namespaceHint")}</div>
+                </label>
+
                 {activeDeploymentOnEnv && (
                   <div className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                     {t("topicDeploy.wizard.riskHint")}
@@ -730,7 +849,11 @@ export function TopicDeployTab({
                     type="button"
                     className="rounded bg-slate-900 px-3 py-1.5 text-sm text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                     onClick={() => void handleConfirmDeploy()}
-                    disabled={deployBusy}
+                    disabled={
+                      deployBusy ||
+                      (deployModes.includes("BOOST") &&
+                        (!Number.isFinite(Number(deployWeight)) || Number(deployWeight) <= 0))
+                    }
                   >
                     {deployBusy ? t("topicDeploy.wizard.deploying") : t("topicDeploy.wizard.confirmDeploy")}
                   </button>
@@ -891,7 +1014,7 @@ function StatusBadge({ status }: { status: string }) {
         : normalized === "FAILED"
           ? "bg-red-100 text-red-700"
           : "bg-slate-100 text-slate-700";
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{normalized}</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>{runtimeStatusLabel(normalized)}</span>;
 }
 
 function MetricItem({ label, value }: { label: string; value: string }) {
@@ -918,4 +1041,23 @@ function inferEngineType(env: RuntimeEnvironment): string {
   if (raw.includes("chroma")) return "CHROMA";
   if (raw.includes("hybrid") || raw.includes("mix")) return "HYBRID";
   return "UNKNOWN";
+}
+
+function engineTypeLabel(type: string): string {
+  const normalized = String(type ?? "").trim().toUpperCase();
+  if (normalized === "SOLR") return t("topicDeploy.engine.solr");
+  if (normalized === "CHROMA") return t("topicDeploy.engine.chroma");
+  if (normalized === "HYBRID") return t("topicDeploy.engine.hybrid");
+  return t("topicDeploy.engine.unknown");
+}
+
+function runtimeStatusLabel(status?: string | null): string {
+  const normalized = String(status ?? "").trim().toUpperCase();
+  if (normalized === "ACTIVE") return t("topicDeploy.status.active");
+  if (normalized === "PENDING") return t("topicDeploy.status.pending");
+  if (normalized === "INACTIVE") return t("topicDeploy.status.inactive");
+  if (normalized === "FAILED") return t("topicDeploy.status.failed");
+  if (normalized === "SUCCESS") return t("topicDeploy.status.success");
+  if (normalized.length === 0) return "-";
+  return t("topicDeploy.status.unknown");
 }
