@@ -625,7 +625,7 @@ export default function TopicDetailPage() {
           setActionFeedback({
             type: "error",
             title: t("topicDetail.draft.saveFailed"),
-            message: "ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â¨Ãƒâ€šÃ‚Â¿ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚Â¿ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¥ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒâ€¦Ã‚Â¾ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â»ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¾ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚Â¼ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¼Ãƒâ€¦Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚Â¯Ãƒâ€šÃ‚Â·ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â³Ãƒâ€šÃ‚Â»ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚ÂÃƒâ€¦Ã‚Â½ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â«Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã‚Â¦Ãƒâ€šÃ‚Â£ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¥ draft API ÃƒÆ’Ã‚Â¥ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚ÂºÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â»ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¾ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ÃƒÆ’Ã‚Â£ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡",
+            message: t("topicDetail.draft.missingUiRule"),
           });
         } else {
           const hydratedRoot = hydrateRootForEditor(result.data.rule.root);
@@ -734,7 +734,7 @@ export default function TopicDetailPage() {
     setPreviewDocument(null);
     const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
     if (!resolvedRuntimeId) {
-      setExecutionError("No runtime selected");
+      setExecutionError(t("topicDetail.runtime.notSelected"));
       return;
     }
     if (!activeRuntimeId) {
@@ -831,7 +831,7 @@ export default function TopicDetailPage() {
     setExecutionError(null);
     const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
     if (!resolvedRuntimeId) {
-      setExecutionError("No runtime selected");
+      setExecutionError(t("topicDetail.runtime.notSelected"));
       return;
     }
     if (!activeRuntimeId) {
@@ -878,7 +878,7 @@ export default function TopicDetailPage() {
     setExecutionError(null);
     const resolvedRuntimeId = activeRuntimeId ?? runtimeOptions[0]?.id ?? null;
     if (!resolvedRuntimeId) {
-      setExecutionError("No runtime selected");
+      setExecutionError(t("topicDetail.runtime.notSelected"));
       setAbTestBusy(false);
       return;
     }
@@ -915,8 +915,8 @@ export default function TopicDetailPage() {
       const overlapRate = union > 0 ? compare.overlap / union : 1;
       setAbTestResult({
         generatedAt: new Date().toLocaleString(),
-        ruleA: { label: "A (当前规则)", total: compare.ruleAHit, took: compare.took },
-        ruleB: { label: "B (自动整理后)", total: compare.ruleBHit, took: compare.took },
+        ruleA: { label: t("topicDetail.ab.labelA"), total: compare.ruleAHit, took: compare.took },
+        ruleB: { label: t("topicDetail.ab.labelB"), total: compare.ruleBHit, took: compare.took },
         deltaHit,
         deltaHitRate,
         overlapRate,
@@ -935,7 +935,7 @@ export default function TopicDetailPage() {
     setPreviewDocumentBusy(true);
     const result = await fetchPreviewDocumentDetail(docId);
     if (!result.data) {
-      setExecutionError(result.error ?? "无法加载文档详情。");
+      setExecutionError(result.error ?? t("topicDetail.preview.documentLoadFailed"));
       setPreviewDocumentBusy(false);
       return;
     }
@@ -1139,7 +1139,7 @@ export default function TopicDetailPage() {
             setActionFeedback({
               type: "error",
               title: t("topicDetail.draft.loadFailed"),
-              message: "ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â¨Ãƒâ€šÃ‚Â¿ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚Â¿ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â¥ÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂºÃƒâ€¦Ã‚Â¾ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â»ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¾ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚Â¼ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚Â¸Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¯Ãƒâ€šÃ‚Â¼Ãƒâ€¦Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚Â¯Ãƒâ€šÃ‚Â·ÃƒÆ’Ã‚Â¨Ãƒâ€šÃ‚ÂÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â³Ãƒâ€šÃ‚Â»ÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚ÂÃƒâ€¦Ã‚Â½ÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â«Ãƒâ€šÃ‚Â¯ÃƒÆ’Ã‚Â¦Ãƒâ€šÃ‚Â£ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¸Ãƒâ€šÃ‚Â¥ draft API ÃƒÆ’Ã‚Â¥ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒâ€šÃ‚ÂÃƒÆ’Ã‚Â¥Ãƒâ€šÃ‚ÂºÃƒÂ¢Ã¢â€šÂ¬Ã‚ÂÃƒÆ’Ã‚Â§Ãƒâ€šÃ‚Â»ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã‚Â¦Ãƒâ€¦Ã‚Â¾ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾ÃƒÆ’Ã‚Â£ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡",
+              message: t("topicDetail.draft.missingUiRule"),
             });
             setEditorState(null);
           } else {
@@ -1348,3 +1348,4 @@ export default function TopicDetailPage() {
     </div>
   );
 }
+

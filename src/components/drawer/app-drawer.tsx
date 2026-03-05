@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Book,
   Layers,
+  Tags,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -110,6 +111,15 @@ export function AppDrawer() {
             collapsed={collapsed}
             nested
             active={isActive("/knowledge/topics")}
+          />
+
+          <DrawerItem
+            href="/knowledge/governance"
+            label={t("drawer.semanticTagging")}
+            icon={<Tags className="h-4 w-4" />}
+            collapsed={collapsed}
+            nested
+            active={isActive("/knowledge/governance") || isActive("/knowledge/tagging")}
           />
 
           <DrawerItem

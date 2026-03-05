@@ -99,10 +99,11 @@ export default function PageClient({
         query: query.trim() || undefined,
       });
 
-      if (res.data) {
-        setItems((prev) => [...prev, ...res.data.items]);
-        setCursor(res.data.nextCursor);
-        setHasMore(res.data.hasMore);
+      const data = res.data;
+      if (data) {
+        setItems((prev) => [...prev, ...data.items]);
+        setCursor(data.nextCursor);
+        setHasMore(data.hasMore);
       }
     } finally {
       setLoading(false);
@@ -119,8 +120,8 @@ export default function PageClient({
       )}
       <AuditHeader
         actions={actionOptions}
-        selectedActions={activeActions}
-        onToggleAction={toggleAction}
+        selectedActions={activeActions as Set<string>}
+        onToggleAction={(action) => toggleAction(action as AuditAction)}
         query={query}
         onQueryChange={setQuery}
         beforeDate={beforeDate}

@@ -1,0 +1,4511 @@
+openapi: 3.0.3
+info:
+  title: Search Service API (Search)
+  version: "1.0.0"
+  description: |
+    Search API contract focused on `/api/search` endpoints.
+
+    Recent changes:
+    - `POST /api/search` supports optional `topicId` (manual topic filter).
+    - Added `POST /api/search/topic/{topicId}` for topic-entry search.
+    - Response `debug` may include `topic`, `queryPipeline`, and (optionally) `rewrite`.
+
+servers:
+  - url: http://localhost:8081
+    description: Local search service
+
+tags:
+  - name: search
+    description: Search endpoints
+  - name: topic
+    description: Topic rule evaluation endpoints
+  - name: suggest
+    description: Suggest endpoints
+  - name: retrieval
+    description: RAG retrieval endpoints
+  - name: docview
+    description: Document view endpoints
+  - name: governance-internal
+    description: Internal / embedded reference governance endpoints (non-production)
+
+paths:
+  /api/runtime/search-topics:
+    get:
+      tags: [search]
+      summary: List in-memory available search topics
+      description: |
+        Returns the topic runtime currently loaded in Search Service memory (`TopicRuntimeCache`).
+
+        If `datasetName` is provided, the response includes:
+        - topics for that dataset
+        - global topics (`datasetName = null`)
+      operationId: getRuntimeSearchTopics
+      parameters:
+        - name: datasetName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional dataset name to filter available topics (global topics are included as fallback)
+      responses:
+        "200":
+          description: Runtime topics loaded in memory
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicRuntimeApiResponse'
+              examples:
+                allTopics:
+                  value:
+                    version: 2
+                    topics:
+                      - topicId: topic-0118e8a7-f328-4443-a654-1af67f038abd
+                        topicName: æµ‹è¯•æƒé‡
+                        compiledGql: "<and>([6.0] å‡ºç«™åšå£«åŽ, [3.0] <or>(åŒºäººæ‰æœåŠ¡ä¸­å¿ƒæˆšè€å¸ˆ, ä¸­é’å¹´ä¸“ä¸šæŠ€æœ¯äººæ‰))"
+                        datasetName: null
+                        deployMode: [FILTER]
+                        weight: 10
+                        namespace: policy
+                      - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        topicName: testHeader
+                        compiledGql: åŒºçº§äººåŠ›ç¤¾ä¿éƒ¨é—¨
+                        datasetName: gl_demo
+                        deployMode: [FILTER, BOOST, LABEL, MAP, SIGNAL]
+                        weight: 1
+                        namespace: policy
+
+  /api/topic/evaluate-doc:
+    post:
+      tags: [topic]
+      summary: Evaluate topic match on input document text
+      description: |
+        Runs doc-level topic evaluation (`DocTopicEvaluationService`) against the provided text payload.
+        This endpoint is intended for topic rule debugging/review and UI semantic labeling.
+      operationId: evaluateTopicDoc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicEvaluateDocRequest'
+            examples:
+              evaluateDocBasic:
+                value:
+                  topicId: topic-1
+                  dataset: gl_demo
+                  title: 博士后人才补贴通知
+                  content: 出站博士后可申请人才补贴
+                  includeStructure: true
+                  includeExplain: true
+      responses:
+        "200":
+          description: Evaluation success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicDocEvaluationResponse'
+        "400":
+          description: Invalid request / topic runtime not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topic/evaluate-doc-by-id:
+    post:
+      tags: [topic]
+      summary: Evaluate topic match by document id
+      description: |
+        Loads document by `docId` then runs doc-level topic evaluation.
+        Useful for checking whether a specific stored document matches a topic rule.
+      operationId: evaluateTopicDocById
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicEvaluateDocByIdRequest'
+            examples:
+              evaluateDocByIdBasic:
+                value:
+                  topicId: topic-1
+                  docId: doc-123
+                  dataset: gl_demo
+      responses:
+        "200":
+          description: Evaluation success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicDocEvaluationResponse'
+        "400":
+          description: Invalid request / topic runtime not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search:
+    post:
+      tags: [search]
+      summary: Unified search
+      description: |
+        Main search entry.
+
+        Notes:
+        - `topicId` is optional. When provided, current phase only supports `mode=LEXICAL`.
+        - `topicId` is applied as topic filter (`fq={!geelink}<compiledGql>`).
+      operationId: search
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+            examples:
+              lexicalBasic:
+                summary: Basic lexical search
+                value:
+                  query: äººæ‰è¡¥è´´
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+              lexicalWithTopic:
+                summary: Lexical search with manual topic filter
+                value:
+                  query: äººæ‰è¡¥è´´
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+                  topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+              lexicalWithRankingExperiment:
+                summary: Lexical search with ranking experiment override
+                value:
+                  query: ranking test
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+                  rankingExperimentId: linear-rank-no-topic
+              lexicalWithTopicRankingOverride:
+                summary: Lexical search with explicit topic ranking controls
+                value:
+                  query: 人才补贴
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+                  topicRankingEnabled: true
+                  topicMatchWeightOverride: 0.15
+                  topicWeightWeightOverride: 0.05
+      responses:
+        "200":
+          description: Search success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              examples:
+                withTopicDebug:
+                  summary: Search response with topic/query pipeline debug
+                  value:
+                    totalHits: 12
+                    page: 1
+                    size: 10
+                    hits:
+                      - id: doc-1
+                        title: äººæ‰è¡¥è´´ç”³è¯·æŒ‡å—
+                        summary: é€‚ç”¨äºŽä¼ä¸šäººæ‰è¡¥è´´ç”³æŠ¥...
+                        score: 2.31
+                        lexicalScore: 2.31
+                        vectorScore: 0
+                        scoreBreakdown:
+                          fusionStrategy: WEIGHTED_RRF
+                          lexicalContribution: 0.0098
+                          vectorContribution: 0
+                          topicContribution: 0.1
+                          recencyContribution: 0
+                          docTypeContribution: 0
+                          recommendContribution: 0
+                          finalScore: 2.31
+                          featureContributions:
+                            LEXICAL_RANK: 0.0098
+                            TOPIC_MATCH: 0.1
+                        topicSignals:
+                          - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                            topicName: testHeader
+                            namespace: policy
+                            dataset: gl_demo
+                            matched: true
+                            appliedModes: [FILTER, SIGNAL]
+                            scoreContribution: 0.1
+                            matchedTerms: []
+                        fields:
+                          source: policy
+                          doc_type: document
+                    facets: {}
+                    quality:
+                      hybridEnabled: false
+                      lexicalWeight: 1
+                      vectorWeight: 0
+                      rerankApplied: false
+                      rankingLatencyMs: 18
+                    debug:
+                      topic:
+                        requested: true
+                        applied: true
+                        topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        dataset: gl_demo
+                        mode: FILTER
+                        solrTarget: fq
+                        solrInjected: "{!geelink}åŒºçº§äººåŠ›ç¤¾ä¿éƒ¨é—¨"
+                        reason: APPLIED
+                        deployModes: [FILTER, BOOST, LABEL, MAP, SIGNAL]
+                      queryPipeline:
+                        topicFilter:
+                          requested: true
+                          applied: true
+                          topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                          mode: FILTER
+                          solrTarget: fq
+                          solrInjected: "{!geelink}åŒºçº§äººåŠ›ç¤¾ä¿éƒ¨é—¨"
+                          reason: APPLIED
+                    query:
+                      intents: []
+        "400":
+          description: Invalid request (e.g. blank query, topicId with non-LEXICAL mode)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/topic/{topicId}:
+    post:
+      tags: [search]
+      summary: Topic entry search
+      description: |
+        Topic entry endpoint. Topic is applied as primary query (`q={!geelink}<compiledGql>`).
+
+        Notes:
+        - `topicId` comes from path parameter.
+        - Request body is optional.
+        - Current phase is intended for lexical search behavior.
+      operationId: searchByTopic
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Topic runtime ID
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicEntrySearchRequest'
+            examples:
+              topicEntryDefault:
+                summary: Body omitted or minimal body
+                value:
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+              topicEntryWithFilters:
+                summary: Topic entry with additional business filters
+                value:
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+                  filters:
+                    - field: source
+                      values: [policy]
+      responses:
+        "200":
+          description: Topic entry search success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+              examples:
+                topicEntryDebug:
+                  summary: Topic entry response with debug
+                  value:
+                    totalHits: 5
+                    page: 1
+                    size: 10
+                    hits: []
+                    facets: {}
+                    quality:
+                      hybridEnabled: false
+                      lexicalWeight: 1
+                      vectorWeight: 0
+                      rerankApplied: false
+                      rankingLatencyMs: 12
+                    debug:
+                      topic:
+                        requested: true
+                        applied: true
+                        topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        dataset: gl_demo
+                        mode: ENTRY
+                        solrTarget: q
+                        solrInjected: "{!geelink}åŒºçº§äººåŠ›ç¤¾ä¿éƒ¨é—¨"
+                        reason: APPLIED
+                      queryPipeline:
+                        topicEntry:
+                          requested: true
+                          applied: true
+                          topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                          mode: ENTRY
+                          solrTarget: q
+                          solrInjected: "{!geelink}åŒºçº§äººåŠ›ç¤¾ä¿éƒ¨é—¨"
+                          reason: APPLIED
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/topic-stats:
+    post:
+      tags: [search]
+      summary: Topic distribution statistics under current search context
+      description: |
+        Returns per-topic matched document counts and percentages under the same search query/filter context.
+        Current implementation prefers Solr JSON Facet batch counting, and falls back to multi-query counting on errors.
+      operationId: topicStats
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicStatsRequest'
+            examples:
+              topicStatsBasic:
+                summary: Count topic distribution for a lexical query
+                value:
+                  datasetName: gl_demo
+                  search:
+                    query: åšå£«æ”¿ç­–
+                    page: 1
+                    size: 10
+                    mode: LEXICAL
+                  topicIds:
+                    - topic-1
+                    - topic-2
+      responses:
+        "200":
+          description: Topic stats success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicStatsResponse'
+              examples:
+                jsonFacetStats:
+                  value:
+                    totalDocs: 100
+                    topics:
+                      - topicId: topic-1
+                        topicName: åšå£«å­¦åŽ†
+                        namespace: policy
+                        matchedDocs: 28
+                        totalDocs: 100
+                        percentage: 0.28
+                    debug:
+                      strategy: JSON_FACET
+                      topicCount: 1
+                      datasetName: gl_demo
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/topic-insights:
+    post:
+      tags: [search]
+      summary: Topic heat and trend insights
+      description: |
+        Returns topic heat/trend metrics from in-memory search-derived topic events.
+        Heat is aggregated from:
+        - result-set grouping hitCount
+        - primary topic intent occurrences
+      operationId: topicInsights
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicInsightRequest'
+            examples:
+              defaultWindow:
+                value:
+                  windowMinutes: 1440
+                  topN: 10
+                  bucketMode: HOUR
+                  pointCount: 24
+                  growthTopN: 5
+                  declineTopN: 5
+                  includeSeries: true
+                  includeDatasetBreakdown: true
+                  includeNamespaceBreakdown: true
+                  datasetName: gl_demo
+      responses:
+        "200":
+          description: Topic insight success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicInsightResponse'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/dashboard:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Topic signal dashboard view
+      description: |
+        Returns topic identity/meta and optional result-set statistics for governance/dashboard UI.
+        Statistics are resolved via TopicStats service when `includeStatistics=true` and `search` is provided.
+        This endpoint is INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION within the search service and is intended for dev/single-service deployments.
+        In production governance architectures, historical storage/analysis should be handled by an external log/governance service.
+      operationId: topicSignalDashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalDashboardRequest'
+            examples:
+              dashboardBasic:
+                value:
+                  datasetName: gl_demo
+                  topicIds: [topic-1, topic-2]
+                  includeStatistics: true
+                  includeCompiledGql: false
+                  includeRuntime: true
+                  includeAiContext: true
+                  includeStructureStats: true
+                  scene: RAG
+                  activeTopicIds: [topic-1]
+                  search:
+                    query: åšå£«æ”¿ç­–
+                    page: 1
+                    size: 10
+                    mode: LEXICAL
+      responses:
+        "200":
+          description: Topic signal dashboard success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalDashboardResponse'
+              examples:
+                dashboardResponse:
+                  value:
+                    topics:
+                      - topicId: topic-1
+                        topicName: åšå£«å­¦åŽ†
+                        namespace: policy
+                        dataset: gl_demo
+                        weight: 10
+                        deployModes: [FILTER, SIGNAL]
+                        runtime:
+                          topicId: topic-1
+                          topicName: åšå£«å­¦åŽ†
+                          namespace: policy
+                          dataset: gl_demo
+                          matched: true
+                          appliedModes: [FILTER, SIGNAL]
+                          matchedTerms: []
+                          matchedNodeIds: []
+                        statistics:
+                          topicId: topic-1
+                          topicName: åšå£«å­¦åŽ†
+                          namespace: policy
+                          dataset: gl_demo
+                          matchedDocs: 28
+                          totalDocs: 100
+                          percentage: 0.28
+                        structureImpact: []
+                        aiContext:
+                          restrictRetrieval: true
+                          promptModified: true
+                          reasoningBias: TOPIC_CONTEXT
+                        meta:
+                          evaluatedAt: "2026-02-25T07:00:00Z"
+                    debug:
+                      topicRuntimeVersion: 2
+                      includeStatistics: true
+                      includeRuntime: true
+                      includeAiContext: true
+                      includeStructureStats: true
+                      structureStatsStrategy: SEARCH_SERVICE_NODE_MULTI_QUERY
+                      scene: RAG
+                      topicCount: 1
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/snapshots:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Capture topic signal snapshot
+      description: |
+        Captures a governance snapshot from dashboard/topic stats for later version/timeline diff.
+        INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION endpoint; production deployments should externalize persistence/analysis to a log/governance service.
+      operationId: captureTopicSignalSnapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalSnapshotCreateRequest'
+      responses:
+        "200":
+          description: Snapshot captured
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalSnapshotView'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/version-diff:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Diff two topic signal snapshots
+      description: |
+        Compares two captured snapshots and returns topic-level matchedDocs/percentage deltas.
+        INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION endpoint for governance prototyping and local operation.
+      operationId: topicSignalVersionDiff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalVersionDiffRequest'
+      responses:
+        "200":
+          description: Version diff success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalVersionDiffResponse'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/timeline:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Query topic signal timeline
+      description: |
+        Returns historical snapshot points for a topicId (matchedDocs/percentage/topicVersion over time).
+        INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION endpoint; long-term historical storage is expected to be externalized.
+      operationId: topicSignalTimeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalTimelineRequest'
+            examples:
+              timelineBasic:
+                value:
+                  topicId: topic-1
+                  dataset: gl_demo
+                  limit: 30
+      responses:
+        "200":
+          description: Timeline success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalTimelineResponse'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/optimization-suggestions:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Generate topic rule optimization suggestions
+      description: |
+        Builds heuristic optimization suggestions from two snapshots using structure node diffs and hit ratio changes.
+        INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION endpoint; production recommendation/governance workflows should be backed by external persisted governance events.
+      operationId: topicSignalOptimizationSuggestions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalOptimizationSuggestionRequest'
+      responses:
+        "200":
+          description: Optimization suggestions success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalOptimizationSuggestionResponse'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/optimization-suggestions/decisions:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Upsert optimization suggestion decision
+      description: |
+        Marks a suggestion as OPEN / ACKNOWLEDGED / IGNORED with optional note.
+        INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION endpoint for governance workflow prototyping.
+      operationId: upsertTopicSignalSuggestionDecision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalSuggestionDecisionUpsertRequest'
+      responses:
+        "200":
+          description: Decision upserted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalSuggestionDecisionView'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/topic-signals/optimization-suggestions/decisions/query:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: List optimization suggestion decisions
+      description: |
+        Lists saved suggestion decisions for a snapshot pair (optionally filtered by topicId).
+        INTERNAL / EMBEDDED REFERENCE / NON-PRODUCTION endpoint. External governance service should own durable workflow history in production.
+      operationId: listTopicSignalSuggestionDecisions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSignalSuggestionDecisionQueryRequest'
+      responses:
+        "200":
+          description: Decision list success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicSignalSuggestionDecisionListResponse'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/governance/coverage/overview:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Topic coverage overview
+      description: Runtime topic governance coverage KPI based on compiledGql execution.
+      operationId: topicCoverageOverview
+      responses:
+        "200":
+          description: Coverage overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageOverviewResponse'
+
+  /api/governance/coverage/topics:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Per-topic coverage statistics
+      operationId: topicCoverageTopics
+      responses:
+        "200":
+          description: Topic coverage list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageTopicsResponse'
+
+  /api/governance/coverage/distribution:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Document hit distribution across topics
+      operationId: topicCoverageDistribution
+      responses:
+        "200":
+          description: Coverage distribution
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageDistributionResponse'
+
+  /api/governance/coverage/blindspots:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: List uncovered documents
+      operationId: topicCoverageBlindspots
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+          description: Maximum number of uncovered docs to return.
+      responses:
+        "200":
+          description: Coverage blindspots
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageBlindspotsResponse'
+
+  /api/governance/coverage/control:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Coverage grouped by deploy mode
+      operationId: topicCoverageControl
+      responses:
+        "200":
+          description: Deploy-mode coverage
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageControlResponse'
+
+  /api/governance/coverage/recompute:
+    post:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Force recompute coverage snapshot
+      operationId: topicCoverageRecompute
+      responses:
+        "200":
+          description: Recompute completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageRecomputeResponse'
+
+  /api/governance/topic/{topicId}/docs:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: List governance docs matched by topic
+      operationId: governanceTopicDocs
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runtimeVersion
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [WEIGHT, TIME, MULTI_HIT]
+            default: WEIGHT
+        - name: sortOrder
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ASC, DESC]
+            default: DESC
+        - name: hitMode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [ALL, SINGLE, MULTI]
+            default: ALL
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic docs listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeGovernanceTopicDocs'
+
+  /api/governance/topic/{topicId}/doc/{docId}/explain:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Explain one topic-doc match
+      operationId: governanceTopicDocExplain
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runtimeVersion
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic doc explain
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeGovernanceTopicDocExplain'
+
+  /api/governance/topic/{topicId}/versions:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: List topic runtime versions
+      operationId: governanceTopicVersions
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Topic versions listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeGovernanceTopicVersions'
+
+  /api/governance/topic/{topicId}/diff:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Topic diff between two runtime versions
+      operationId: governanceTopicDiff
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fromVersion
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: toVersion
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Topic diff listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeGovernanceTopicDiff'
+
+  /api/governance/topic/{topicId}/cooccurrence:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Topic co-occurrence top list
+      operationId: governanceTopicCooccurrence
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 5
+        - name: runtimeVersion
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic cooccurrence listed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeGovernanceTopicCooccurrence'
+
+  /api/suggest:
+    get:
+      tags: [suggest]
+      summary: Suggest keywords by pinyin/text
+      operationId: suggest
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: User input query for suggestion
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 10
+            minimum: 1
+          description: Max suggestion items
+      responses:
+        "200":
+          description: Suggest success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestResponse'
+              examples:
+                basic:
+                  value:
+                    query: rencai
+                    normalizedQuery: rencai
+                    items:
+                      - text: äººæ‰è¡¥è´´
+                        score: 0.91
+                      - text: äººæ‰æ”¿ç­–
+                        score: 0.83
+
+  /api/retrieval/search:
+    post:
+      tags: [retrieval]
+      summary: RAG chunk retrieval search
+      operationId: retrievalSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetrievalRequest'
+            examples:
+              lexicalRag:
+                value:
+                  query: åšå£«åŽè¡¥è´´ç”³è¯·æ¡ä»¶
+                  topK: 10
+                  rag:
+                    mode: GLOBAL
+      responses:
+        "200":
+          description: Retrieval success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetrievalResponse'
+        "400":
+          description: Invalid retrieval request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/docview/{docId}:
+    post:
+      tags: [docview]
+      summary: Get aggregated document view
+      operationId: getDocView
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DocViewRequest'
+      responses:
+        "200":
+          description: Aggregated document view
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocViewModel'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/document/{id}:
+    get:
+      tags: [search]
+      summary: Get single document by id
+      operationId: getSearchDocument
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchHit'
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/documents:
+    post:
+      tags: [search]
+      summary: Batch get documents by ids
+      operationId: batchGetSearchDocuments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                type: string
+            examples:
+              ids:
+                value: [doc-1, doc-2]
+      responses:
+        "200":
+          description: Batch documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchHit'
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/search/semantic-overview:
+    post:
+      tags: [search]
+      summary: UI semantic overview aggregator
+      description: |
+        Aggregation endpoint for UI pages that need runtime search results plus topic-related overview.
+
+        It orchestrates existing capabilities:
+        - search result (`/api/search`)
+        - topic stats (`/api/search/topic-stats`) if topicIds are available
+        - embedded semantic dashboard (`/api/governance/topic-signals/dashboard`) optionally
+
+        This endpoint is an orchestrator only and does not add new core search/ranking logic.
+      operationId: semanticOverview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchSemanticOverviewRequest'
+            examples:
+              searchPlusStats:
+                summary: Search + topic stats
+                value:
+                  search:
+                    query: äººæ‰è¡¥è´´
+                    page: 1
+                    size: 10
+                    mode: LEXICAL
+                    topicId: topic-1
+                  includeTopicStats: true
+                  includeSemanticOverview: false
+              searchPlusStatsAndDashboard:
+                summary: Search + topic stats + semantic dashboard (embedded)
+                value:
+                  search:
+                    query: åšå£«åŽè¡¥è´´
+                    page: 1
+                    size: 10
+                    mode: LEXICAL
+                  topicIds: [topic-1, topic-2]
+                  datasetName: gl_demo
+                  includeTopicStats: true
+                  includeSemanticOverview: true
+                  scene: SEARCH
+                  includeAiContext: false
+                  includeStructureStats: false
+      responses:
+        "200":
+          description: Aggregated semantic overview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchSemanticOverviewResponse'
+              examples:
+                semanticOverview:
+                  value:
+                    searchResult:
+                      totalHits: 12
+                      page: 1
+                      size: 10
+                      hits:
+                        - id: doc-1
+                          title: äººæ‰è¡¥è´´ç”³è¯·æŒ‡å—
+                          summary: é€‚ç”¨äºŽä¼ä¸šäººæ‰è¡¥è´´ç”³æŠ¥...
+                          score: 2.31
+                          scoreBreakdown:
+                            fusionStrategy: WEIGHTED_RRF
+                            finalScore: 2.31
+                          topicSignals:
+                            - topicId: topic-1
+                              topicName: äººæ‰è¡¥è´´ä¸“é¢˜
+                              matched: true
+                              appliedModes: [FILTER, SIGNAL]
+                              scoreContribution: 0.1
+                      facets: {}
+                      quality:
+                        hybridEnabled: false
+                        lexicalWeight: 1
+                        vectorWeight: 0
+                        rerankApplied: false
+                        rankingLatencyMs: 18
+                      debug: {}
+                      query:
+                        intents: []
+                    topicStats:
+                      totalDocs: 12
+                      topics:
+                        - topicId: topic-1
+                          topicName: äººæ‰è¡¥è´´ä¸“é¢˜
+                          namespace: policy
+                          dataset: gl_demo
+                          matchedDocs: 8
+                          totalDocs: 12
+                          percentage: 0.6667
+                      debug:
+                        strategy: TOPIC_EVALUATION_BATCH
+                    semanticOverview:
+                      topics:
+                        - topicId: topic-1
+                          topicName: äººæ‰è¡¥è´´ä¸“é¢˜
+                          namespace: policy
+                          dataset: gl_demo
+                          runtime:
+                            topicId: topic-1
+                            topicName: äººæ‰è¡¥è´´ä¸“é¢˜
+                            matched: true
+                            appliedModes: [FILTER, SIGNAL]
+                            scoreContribution: 0.1
+                          statistics:
+                            topicId: topic-1
+                            topicName: äººæ‰è¡¥è´´ä¸“é¢˜
+                            matchedDocs: 8
+                            totalDocs: 12
+                            percentage: 0.6667
+                          structureImpact: []
+                          meta:
+                            profileName: search-default
+                      debug:
+                        embedded: true
+                    debug:
+                      resolvedTopicIds: [topic-1]
+                      includeTopicStats: true
+                      includeSemanticOverview: true
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/analytics/overview:
+    get:
+      tags: [search]
+      summary: Analytics overview KPI
+      operationId: analyticsOverview
+      deprecated: true
+      description: "Deprecated for external governance use. Prefer Matrix 3.0 governance endpoints."
+      responses:
+        "200":
+          description: Overview success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeOverview'
+
+  /api/analytics/coverage:
+    get:
+      tags: [search]
+      summary: Analytics coverage by dimension
+      operationId: analyticsCoverage
+      deprecated: true
+      description: "Deprecated for external governance use. Prefer /api/analytics/topic-stats."
+      responses:
+        "200":
+          description: Coverage success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeCoverage'
+
+  /api/analytics/trend:
+    get:
+      tags: [search]
+      summary: Topic trend by tagged date histogram
+      operationId: analyticsTrend
+      deprecated: true
+      description: "Deprecated for external governance use."
+      parameters:
+        - name: topicId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            default: 30d
+      responses:
+        "200":
+          description: Trend success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTrend'
+
+  /api/analytics/drift:
+    get:
+      tags: [search]
+      summary: Topic drift between runtime versions
+      operationId: analyticsDrift
+      deprecated: true
+      description: "Deprecated for external governance use. Prefer /api/analytics/matrix/diff."
+      parameters:
+        - name: topicId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Drift success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeDrift'
+
+  /api/analytics/matrix:
+    get:
+      tags: [search]
+      summary: Matrix dataset for doc-topic heatmap
+      operationId: analyticsMatrix
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*:*"
+        - name: topicLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+          description: Optional cap for returned topic columns, sorted by doc frequency desc
+        - name: dimension
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional dimension filter (e.g. d_talent)
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+            example: v5
+          description: Optional runtime version filter
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+          description: Optional tagged-time range filter in '<days>d'
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            default: HEATMAP
+            enum: [HEATMAP, CORRELATION, DRIFT]
+          description: Matrix mode hint for UI/engine
+      responses:
+        "200":
+          description: Matrix success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeMatrix'
+              examples:
+                matrixV21:
+                  summary: Matrix display model with row/column totals
+                  value:
+                    success: true
+                    data:
+                      meta:
+                        dataset: gl_demo
+                        runtimeVersion: v5
+                        timeRange: 30d
+                        mode: HEATMAP
+                        generatedAt: "2026-03-01T10:12:00Z"
+                        docCount: 2
+                        topicCount: 2
+                      dimensions:
+                        - dimensionId: "d_talent"
+                          dimensionName: "人才类别"
+                      docs:
+                        - docId: "028e4a7a-cfa7-597f-af58-dc8e210e2cb2"
+                          title: "关于博士后补贴政策的通知"
+                          score: 1.23
+                        - docId: "13be44aa-2166-4b3f-b8d4-1104f85f21af"
+                          title: "海外人才引进支持政策解读"
+                          score: 1.05
+                      topics:
+                        - topicId: "fd4d0fa6-9762-46b6-9e64-d1213c7f7b4c"
+                          topicName: "博士学历"
+                          dimensionId: "d_talent"
+                          dimensionName: "人才类别"
+                        - topicId: "45c09288-bcfc-406d-8c5b-4668f86e76b2"
+                          topicName: "海外人才"
+                          dimensionId: "d_talent"
+                          dimensionName: "人才类别"
+                      cells:
+                        - docId: "028e4a7a-cfa7-597f-af58-dc8e210e2cb2"
+                          topicId: "fd4d0fa6-9762-46b6-9e64-d1213c7f7b4c"
+                          weight: 1.0
+                          hitCount: 1
+                          confidence: 1.0
+                          runtimeVersion: v5
+                        - docId: "13be44aa-2166-4b3f-b8d4-1104f85f21af"
+                          topicId: "45c09288-bcfc-406d-8c5b-4668f86e76b2"
+                          weight: 0.87
+                          hitCount: 1
+                          confidence: 0.87
+                          runtimeVersion: v5
+                      aggregates:
+                        rowTotals:
+                          - docId: "028e4a7a-cfa7-597f-af58-dc8e210e2cb2"
+                            topicCount: 1
+                            avgWeight: 1.0
+                          - docId: "13be44aa-2166-4b3f-b8d4-1104f85f21af"
+                            topicCount: 1
+                            avgWeight: 0.87
+                        columnTotals:
+                          - topicId: "fd4d0fa6-9762-46b6-9e64-d1213c7f7b4c"
+                            docCount: 1
+                            avgWeight: 1.0
+                          - topicId: "45c09288-bcfc-406d-8c5b-4668f86e76b2"
+                            docCount: 1
+                            avgWeight: 0.87
+                      rowTotals:
+                        - docId: "028e4a7a-cfa7-597f-af58-dc8e210e2cb2"
+                          topicCount: 1
+                        - docId: "13be44aa-2166-4b3f-b8d4-1104f85f21af"
+                          topicCount: 1
+                      columnTotals:
+                        - topicId: "fd4d0fa6-9762-46b6-9e64-d1213c7f7b4c"
+                          docCount: 1
+                        - topicId: "45c09288-bcfc-406d-8c5b-4668f86e76b2"
+                          docCount: 1
+                    error: null
+
+  /api/analytics/matrix/explain:
+    get:
+      tags: [search]
+      summary: Explain matrix cell by docId and topicId
+      operationId: analyticsMatrixExplain
+      deprecated: true
+      description: "Deprecated in Matrix 3.0 product surface."
+      parameters:
+        - name: docId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: topicId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matrix explain success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeMatrixExplain'
+              examples:
+                explainMatchedCell:
+                  summary: Explain one matrix cell
+                  value:
+                    success: true
+                    data:
+                      docId: "028e4a7a-cfa7-597f-af58-dc8e210e2cb2"
+                      topicId: "fd4d0fa6-9762-46b6-9e64-d1213c7f7b4c"
+                      weight: 1.0
+                      hitCount: 1
+                      explain:
+                        - "matched in _gl_ann_topic_ids"
+                        - "topicName: 博士学历"
+                        - "taxonomyPath: policy/博士学历"
+                    error: null
+
+  /api/analytics/matrix/correlation:
+    get:
+      tags: [search]
+      summary: Topic co-occurrence correlation matrix
+      operationId: analyticsMatrixCorrelation
+      deprecated: true
+      description: "Deprecated alias. Prefer /api/analytics/topic-correlation."
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 200
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*:*"
+        - name: topicLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: dimension
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+            example: v5
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+      responses:
+        "200":
+          description: Correlation success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeMatrixCorrelation'
+              examples:
+                correlationBasic:
+                  value:
+                    success: true
+                    data:
+                      meta:
+                        dataset: gl_demo
+                        runtimeVersion: v5
+                        timeRange: 30d
+                        mode: CORRELATION
+                        generatedAt: "2026-03-01T10:12:00Z"
+                        docCount: 200
+                        topicCount: 3
+                      topics:
+                        - topicId: "t1"
+                          topicName: "博士学历"
+                          dimensionId: "d_talent"
+                          dimensionName: "人才类别"
+                        - topicId: "t2"
+                          topicName: "海外人才"
+                          dimensionId: "d_talent"
+                          dimensionName: "人才类别"
+                        - topicId: "t3"
+                          topicName: "未分类"
+                          dimensionId: "d_talent"
+                          dimensionName: "人才类别"
+                      correlation:
+                        - topicA: "t1"
+                          topicB: "t2"
+                          score: 0.72
+                          cooccurDocs: 48
+                        - topicA: "t1"
+                          topicB: "t3"
+                          score: 0.41
+                          cooccurDocs: 27
+                    error: null
+
+  /api/analytics/topic-correlation:
+    get:
+      tags: [search]
+      summary: Topic co-occurrence correlation (governance view)
+      operationId: analyticsTopicCorrelation
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 200
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*:*"
+        - name: topicLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: dimension
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+            example: v5
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+      responses:
+        "200":
+          description: Topic correlation success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeMatrixCorrelation'
+
+  /api/analytics/topic-stats:
+    get:
+      tags: [search]
+      summary: Topic quality statistics
+      operationId: analyticsTopicStats
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 200
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*:*"
+        - name: topicLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: dimension
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+            example: v5
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+      responses:
+        "200":
+          description: Topic stats success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicStats'
+
+  /api/analytics/doc-stats:
+    get:
+      tags: [search]
+      summary: Document semantic density statistics
+      operationId: analyticsDocStats
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 200
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*:*"
+        - name: dimension
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: runtime
+          in: query
+          required: false
+          schema:
+            type: string
+            example: v5
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+      responses:
+        "200":
+          description: Doc stats success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeDocStats'
+
+  /api/analytics/matrix/diff:
+    get:
+      tags: [search]
+      summary: Diff changed doc-topic cells between two runtime versions
+      operationId: analyticsMatrixDiff
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v4
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v5
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 500
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            default: ALL
+            enum: [ALL, ADDED, REMOVED]
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            default: "*:*"
+        - name: topicLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: dimension
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+      responses:
+        "200":
+          description: Diff success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeMatrixDiff'
+              examples:
+                diffBasic:
+                  value:
+                    success: true
+                    data:
+                      meta:
+                        dataset: gl_demo
+                        runtimeVersion: v5
+                        timeRange: 30d
+                        mode: DRIFT
+                        generatedAt: "2026-03-01T10:12:00Z"
+                        docCount: 2
+                        topicCount: 2
+                      fromVersion: v4
+                      toVersion: v5
+                      offset: 0
+                      limit: 500
+                      status: ALL
+                      totalChanged: 2
+                      addedCount: 1
+                      removedCount: 1
+                      changeRate: 50.0
+                      changedCells:
+                        - docId: doc1
+                          topicId: t3
+                          status: ADDED
+                          fromWeight: null
+                          toWeight: 0.7
+                        - docId: doc1
+                          topicId: t2
+                          status: REMOVED
+                          fromWeight: 0.6
+                          toWeight: null
+                    error: null
+
+  /api/search/facets:
+    get:
+      tags: [search]
+      summary: Grouped search facets by taxonomy dimension/topic
+      operationId: searchFacetsGrouped
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: fq
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+          description: Only supports `_gl_ann_topic_ids:<topicId>` filters
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Facets success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeSearchFacets'
+
+components:
+  schemas:
+    SearchMode:
+      type: string
+      enum: [LEXICAL, VECTOR, HYBRID]
+      description: Search mode
+
+    SearchRequest:
+      type: object
+      required: [query, mode]
+      properties:
+        query:
+          type: string
+          description: User query text
+          example: äººæ‰è¡¥è´´
+        page:
+          type: integer
+          minimum: 1
+          default: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+        mode:
+          $ref: '#/components/schemas/SearchMode'
+        filters:
+          type: array
+          description: Business filters (structure follows backend DSL)
+          items:
+            type: object
+            additionalProperties: true
+        sorts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        returnFields:
+          type: array
+          items:
+            type: string
+        highlight:
+          type: object
+          additionalProperties: true
+        facets:
+          type: object
+          additionalProperties: true
+        hybrid:
+          type: object
+          additionalProperties: true
+        topicId:
+          type: string
+          nullable: true
+          description: |
+            Optional topic runtime ID (manual topic filter mode).
+            Current phase only supports `mode=LEXICAL` when this field is present.
+        activeTopicIds:
+          type: array
+          nullable: true
+          description: Optional active topics for doc-level topic signal evaluation (LEXICAL/HYBRID).
+          items:
+            type: string
+        rankingExperimentId:
+          type: string
+          nullable: true
+          description: |
+            Optional ranking experiment override ID.
+            Used to switch ranking feature set / fusion strategy for online gray release and A/B validation.
+          example: linear-rank-no-topic
+        topicRankingEnabled:
+          type: boolean
+          nullable: true
+          description: Optional toggle for topic-related ranking features and topic boost.
+        topicMatchWeightOverride:
+          type: number
+          format: double
+          nullable: true
+          description: Optional request-level override for topic match weight.
+        topicWeightWeightOverride:
+          type: number
+          format: double
+          nullable: true
+          description: Optional request-level override for topic weight feature weight.
+
+    TopicEntrySearchRequest:
+      type: object
+      description: |
+        Request body for topic entry endpoint. `query` is optional because topic itself becomes primary query.
+      properties:
+        query:
+          type: string
+          nullable: true
+          description: Optional user query text. Topic entry can work without it.
+        page:
+          type: integer
+          minimum: 1
+          default: 1
+        size:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 10
+        mode:
+          $ref: '#/components/schemas/SearchMode'
+        filters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        sorts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        returnFields:
+          type: array
+          items:
+            type: string
+        highlight:
+          type: object
+          additionalProperties: true
+        facets:
+          type: object
+          additionalProperties: true
+        hybrid:
+          type: object
+          additionalProperties: true
+
+    TopicEvaluateDocRequest:
+      type: object
+      required: [topicId]
+      properties:
+        topicId:
+          type: string
+          description: Topic runtime ID
+        dataset:
+          type: string
+          nullable: true
+          description: Optional dataset hint used to resolve topic runtime binding
+        title:
+          type: string
+          nullable: true
+        content:
+          type: string
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+        fields:
+          type: object
+          nullable: true
+          additionalProperties: true
+        includeStructure:
+          type: boolean
+          default: true
+        includeExplain:
+          type: boolean
+          default: false
+
+    TopicEvaluateDocByIdRequest:
+      type: object
+      required: [topicId, docId]
+      properties:
+        topicId:
+          type: string
+          description: Topic runtime ID
+        docId:
+          type: string
+          description: Document ID
+        dataset:
+          type: string
+          nullable: true
+          description: Optional dataset hint used to resolve topic runtime binding
+        includeStructure:
+          type: boolean
+          default: true
+        includeExplain:
+          type: boolean
+          default: false
+
+    TopicDocEvaluationExplainNode:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        matched:
+          type: boolean
+
+    TopicDocEvaluationResponse:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        docId:
+          type: string
+          nullable: true
+        matched:
+          type: boolean
+        matchedNodeIds:
+          type: array
+          items:
+            type: string
+        matchedTerms:
+          type: array
+          items:
+            type: string
+        evaluationSources:
+          type: array
+          items:
+            type: string
+        appliedModes:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          nullable: true
+        explain:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/TopicDocEvaluationExplainNode'
+
+    SearchResponse:
+      type: object
+      properties:
+        totalHits:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        size:
+          type: integer
+        hits:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+        facets:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+        quality:
+          $ref: '#/components/schemas/SearchQuality'
+        debug:
+          type: object
+          description: |
+            Debug/observability fields. Keys are dynamic.
+            May include:
+            - `topic`
+            - `queryPipeline`
+            - `rewrite` (only when `search.rewrite.debug.enabled=true`)
+            - `queryAttributes`
+            - `rankingConfig`
+            - `rankingResolved`
+            - `topicIntent`
+            - `topicGrouping`
+          additionalProperties: true
+        query:
+          type: object
+          description: Query intelligence attributes (dynamic object)
+          additionalProperties: true
+
+    SearchHit:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        fields:
+          type: object
+          additionalProperties: true
+        highlights:
+          type: object
+          additionalProperties:
+            type: string
+        score:
+          type: number
+          format: float
+        lexicalScore:
+          type: number
+          format: float
+        vectorScore:
+          type: number
+          format: float
+        rankExplain:
+          type: object
+          additionalProperties: true
+        scoreBreakdown:
+          $ref: '#/components/schemas/ScoreBreakdownView'
+        topicSignals:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalRuntimeView'
+        topicLabels:
+          type: array
+          description: Topic labels derived from matched topic signals for display grouping/tagging.
+          items:
+            type: string
+        aiSummary:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    SearchQuality:
+      type: object
+      description: Search quality/debug scoring metadata
+      properties:
+        hybridEnabled:
+          type: boolean
+        lexicalWeight:
+          type: number
+          format: double
+        vectorWeight:
+          type: number
+          format: double
+        dynamicWeightApplied:
+          deprecated: true
+          type: boolean
+          description: Deprecated placeholder; actual runtime schema currently uses `rerankApplied`.
+        rerankApplied:
+          type: boolean
+        rankingLatencyMs:
+          type: integer
+          format: int64
+      additionalProperties: true
+
+    ErrorResponse:
+      type: object
+      description: Generic Spring error response (simplified)
+      additionalProperties: true
+
+    TopicRuntimeApiResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicRuntimeApiItem'
+
+    TopicRuntimeApiItem:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        compiledGql:
+          type: string
+        datasetName:
+          type: string
+          nullable: true
+        deployMode:
+          type: array
+          items:
+            type: string
+        weight:
+          type: integer
+          format: int32
+        namespace:
+          type: string
+
+    TopicStatsRequest:
+      type: object
+      required: [search, topicIds]
+      properties:
+        datasetName:
+          type: string
+          nullable: true
+          description: Optional dataset name used to resolve topic runtime binding and metadata (takes precedence over best-effort inference from search filters)
+        statsMode:
+          $ref: '#/components/schemas/TopicStatsMode'
+        search:
+          $ref: '#/components/schemas/SearchRequest'
+        topicIds:
+          type: array
+          minItems: 1
+          items:
+            type: string
+
+    TopicStatsMode:
+      type: string
+      enum: [LEXICAL_BASE, HYBRID_WINDOW]
+      description: |
+        Topic statistics counting mode.
+        LEXICAL_BASE: stable lexical full-set counting.
+        HYBRID_WINDOW: hybrid candidate-window counting (doc-eval based).
+
+    TopicStatsResponse:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalStatsView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicCoverageOverviewResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        topics:
+          type: integer
+          format: int32
+        overallCoverageRate:
+          type: number
+          format: double
+          description: 0-1 ratio
+        coveredDocs:
+          type: integer
+          format: int64
+        uncoveredDocs:
+          type: integer
+          format: int64
+        multiHitDocs:
+          type: integer
+          format: int64
+        averageTopicsPerDoc:
+          type: number
+          format: double
+        runtimeVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+
+    TopicCoverageTopicsResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        runtimeVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicCoverageTopicItem'
+
+    TopicCoverageTopicItem:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        deployModes:
+          type: array
+          items:
+            type: string
+        hitDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+          description: 0-1 ratio
+        namespace:
+          type: string
+          nullable: true
+
+    TopicCoverageDistributionResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        runtimeVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+        distribution:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicCoverageDistributionBucket'
+
+    TopicCoverageDistributionBucket:
+      type: object
+      properties:
+        hitCount:
+          type: string
+          description: "0 | 1 | 2 | 3 | 4+"
+        docCount:
+          type: integer
+          format: int64
+
+    TopicCoverageBlindspotsResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        uncoveredDocs:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int32
+        runtimeVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+        docs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicCoverageBlindspotDoc'
+
+    TopicCoverageBlindspotDoc:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+
+    TopicCoverageControlResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        runtimeVersion:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+        modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicCoverageControlModeItem'
+
+    TopicCoverageControlModeItem:
+      type: object
+      properties:
+        mode:
+          type: string
+        topics:
+          type: integer
+          format: int32
+        coveredDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+          description: 0-1 ratio
+
+    TopicCoverageRecomputeResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        runtimeVersion:
+          type: string
+        recomputedAt:
+          type: string
+          format: date-time
+        truncated:
+          type: boolean
+
+    GovernanceTopicDocs:
+      type: object
+      properties:
+        topic:
+          $ref: '#/components/schemas/GovernanceTopicIdentity'
+        summary:
+          $ref: '#/components/schemas/GovernanceTopicDocsSummary'
+        page:
+          type: integer
+        size:
+          type: integer
+        total:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceTopicDocItem'
+
+    GovernanceTopicIdentity:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        dimensionId:
+          type: string
+        dimensionName:
+          type: string
+        runtimeVersion:
+          type: string
+
+    GovernanceTopicDocsSummary:
+      type: object
+      properties:
+        matchedDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+        multiHitRate:
+          type: number
+          format: double
+        blindspotCount:
+          type: integer
+          format: int64
+        avgWeight:
+          type: number
+          format: double
+
+    GovernanceTopicDocItem:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        weight:
+          type: number
+          format: double
+        hitTopicCount:
+          type: integer
+          format: int32
+        multiHit:
+          type: boolean
+        snippet:
+          type: string
+          nullable: true
+
+    GovernanceTopicDocExplain:
+      type: object
+      properties:
+        topicId:
+          type: string
+        docId:
+          type: string
+        matched:
+          type: boolean
+        score:
+          type: number
+          format: double
+        rules:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceExplainRule'
+        finalExplain:
+          type: string
+
+    GovernanceExplainRule:
+      type: object
+      properties:
+        ruleId:
+          type: string
+          nullable: true
+        ruleName:
+          type: string
+          nullable: true
+        matched:
+          type: boolean
+        weightContribution:
+          type: number
+          format: double
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceExplainEvidence'
+
+    GovernanceExplainEvidence:
+      type: object
+      properties:
+        field:
+          type: string
+          nullable: true
+        text:
+          type: string
+          nullable: true
+        start:
+          type: integer
+          format: int32
+          nullable: true
+        end:
+          type: integer
+          format: int32
+          nullable: true
+
+    GovernanceTopicVersions:
+      type: object
+      properties:
+        current:
+          type: string
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceVersionItem'
+
+    GovernanceVersionItem:
+      type: object
+      properties:
+        version:
+          type: string
+        capturedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    GovernanceTopicDiff:
+      type: object
+      properties:
+        topicId:
+          type: string
+        fromVersion:
+          type: string
+        toVersion:
+          type: string
+        summary:
+          $ref: '#/components/schemas/GovernanceTopicDiffSummary'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceTopicDiffItem'
+
+    GovernanceTopicDiffSummary:
+      type: object
+      properties:
+        added:
+          type: integer
+          format: int32
+        removed:
+          type: integer
+          format: int32
+        changeRate:
+          type: number
+          format: double
+
+    GovernanceTopicDiffItem:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [ADDED, REMOVED, UPDATED]
+        fromWeight:
+          type: number
+          format: double
+          nullable: true
+        toWeight:
+          type: number
+          format: double
+          nullable: true
+
+    GovernanceTopicCooccurrence:
+      type: object
+      properties:
+        topicId:
+          type: string
+        runtimeVersion:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GovernanceTopicCooccurrenceItem'
+
+    GovernanceTopicCooccurrenceItem:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        cooccurDocs:
+          type: integer
+          format: int64
+        cooccurRate:
+          type: number
+          format: double
+
+    TopicInsightRequest:
+      type: object
+      properties:
+        windowMinutes:
+          type: integer
+          format: int32
+          default: 1440
+          minimum: 1
+        topN:
+          type: integer
+          format: int32
+          default: 10
+          minimum: 1
+        bucketMode:
+          type: string
+          default: HOUR
+          enum: [MINUTE, HOUR, DAY]
+        bucketMinutes:
+          type: integer
+          format: int32
+          default: 60
+          minimum: 1
+          description: Effective only when `bucketMode=MINUTE`.
+        pointCount:
+          type: integer
+          format: int32
+          minimum: 1
+          description: Optional fixed number of points in `series`. Overrides window-derived bucket count.
+        growthTopN:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 5
+        declineTopN:
+          type: integer
+          format: int32
+          minimum: 1
+          default: 5
+        includeSeries:
+          type: boolean
+          default: true
+        includeDatasetBreakdown:
+          type: boolean
+          default: true
+        includeNamespaceBreakdown:
+          type: boolean
+          default: true
+        datasetName:
+          type: string
+          nullable: true
+
+    TopicInsightResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightItem'
+        growthTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightItem'
+        declineTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightItem'
+        topicDatasetBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightDatasetBreakdown'
+        topicNamespaceBreakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightNamespaceBreakdown'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicInsightItem:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        currentHeat:
+          type: integer
+          format: int64
+        previousHeat:
+          type: integer
+          format: int64
+        trendRatio:
+          type: number
+          format: double
+          nullable: true
+        trendDirection:
+          type: string
+          enum: [NEW, UP, DOWN, FLAT]
+        intentQueries:
+          type: integer
+          format: int64
+        matchedHits:
+          type: integer
+          format: int64
+        currentSeries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightPoint'
+        previousSeries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightPoint'
+        series:
+          type: array
+          description: Backward-compatible alias of `currentSeries`.
+          items:
+            $ref: '#/components/schemas/TopicInsightPoint'
+
+    TopicInsightPoint:
+      type: object
+      properties:
+        bucketStartEpochMs:
+          type: integer
+          format: int64
+        heat:
+          type: integer
+          format: int64
+
+    TopicInsightDatasetBreakdown:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        totalCurrentHeat:
+          type: integer
+          format: int64
+        totalPreviousHeat:
+          type: integer
+          format: int64
+        datasets:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightDatasetBucket'
+
+    TopicInsightDatasetBucket:
+      type: object
+      properties:
+        dataset:
+          type: string
+          nullable: true
+        currentHeat:
+          type: integer
+          format: int64
+        previousHeat:
+          type: integer
+          format: int64
+        trendRatio:
+          type: number
+          format: double
+          nullable: true
+        trendDirection:
+          type: string
+          enum: [NEW, UP, DOWN, FLAT]
+
+    TopicInsightNamespaceBreakdown:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        totalCurrentHeat:
+          type: integer
+          format: int64
+        totalPreviousHeat:
+          type: integer
+          format: int64
+        namespaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicInsightNamespaceBucket'
+
+    TopicInsightNamespaceBucket:
+      type: object
+      properties:
+        namespace:
+          type: string
+          nullable: true
+        currentHeat:
+          type: integer
+          format: int64
+        previousHeat:
+          type: integer
+          format: int64
+        trendRatio:
+          type: number
+          format: double
+          nullable: true
+        trendDirection:
+          type: string
+          enum: [NEW, UP, DOWN, FLAT]
+
+    TopicSignalDashboardRequest:
+      type: object
+      properties:
+        topicIds:
+          type: array
+          items:
+            type: string
+        datasetName:
+          type: string
+          nullable: true
+        search:
+          $ref: '#/components/schemas/SearchRequest'
+        includeStatistics:
+          type: boolean
+          default: true
+        includeCompiledGql:
+          type: boolean
+          default: false
+        includeRuntime:
+          type: boolean
+          default: true
+        includeAiContext:
+          type: boolean
+          default: false
+        includeStructureStats:
+          type: boolean
+          default: false
+          description: |
+            Whether to compute `structureImpact.hitCount/hitRatio` using node-level counting under current search context.
+            Current implementation uses SearchService multi-query (one query per node), suitable for governance/debug but potentially expensive.
+        scene:
+          type: string
+          nullable: true
+          description: Optional scene hint for runtime/AI context projection (SEARCH / RAG / AI / RECOMMEND)
+        activeTopicIds:
+          type: array
+          description: Optional active topics used for runtime matched projection; defaults to topicIds
+          items:
+            type: string
+        statsMode:
+          $ref: '#/components/schemas/TopicStatsMode'
+
+    TopicSignalDashboardResponse:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalFullView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicSignalSnapshotCreateRequest:
+      type: object
+      properties:
+        label:
+          type: string
+          nullable: true
+        dashboard:
+          $ref: '#/components/schemas/TopicSignalDashboardRequest'
+
+    TopicSignalVersionDiffRequest:
+      type: object
+      required: [baselineSnapshotId, currentSnapshotId]
+      properties:
+        baselineSnapshotId:
+          type: string
+        currentSnapshotId:
+          type: string
+
+    TopicSignalTimelineRequest:
+      type: object
+      required: [topicId]
+      properties:
+        topicId:
+          type: string
+        dataset:
+          type: string
+          nullable: true
+        limit:
+          type: integer
+          nullable: true
+          default: 50
+
+    TopicSignalOptimizationSuggestionRequest:
+      type: object
+      required: [baselineSnapshotId, currentSnapshotId]
+      properties:
+        baselineSnapshotId:
+          type: string
+        currentSnapshotId:
+          type: string
+        lowContributionRatioThreshold:
+          type: number
+          format: double
+          nullable: true
+          default: 0.05
+        highVolatilityRatioDeltaThreshold:
+          type: number
+          format: double
+          nullable: true
+          default: 0.20
+        removedHighImpactRatioThreshold:
+          type: number
+          format: double
+          nullable: true
+          default: 0.10
+
+    TopicSignalSuggestionDecisionUpsertRequest:
+      type: object
+      required: [baselineSnapshotId, currentSnapshotId, topicId, nodeId, suggestionType, status]
+      properties:
+        baselineSnapshotId:
+          type: string
+        currentSnapshotId:
+          type: string
+        topicId:
+          type: string
+        nodeId:
+          type: string
+        suggestionType:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, ACKNOWLEDGED, IGNORED]
+        note:
+          type: string
+          nullable: true
+
+    TopicSignalSuggestionDecisionQueryRequest:
+      type: object
+      required: [baselineSnapshotId, currentSnapshotId]
+      properties:
+        baselineSnapshotId:
+          type: string
+        currentSnapshotId:
+          type: string
+        topicId:
+          type: string
+          nullable: true
+
+    TopicSignalSnapshotView:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+        label:
+          type: string
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+        topicRuntimeVersion:
+          type: integer
+          nullable: true
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalSnapshotTopicView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicSignalSnapshotTopicView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        topicVersion:
+          type: integer
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        matchedDocs:
+          type: integer
+          format: int64
+        totalDocs:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+        structureNodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalSnapshotStructureNodeView'
+
+    TopicSignalSnapshotStructureNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        hitCount:
+          type: integer
+          format: int64
+          nullable: true
+        hitRatio:
+          type: number
+          format: double
+          nullable: true
+
+    TopicSignalVersionDiffResponse:
+      type: object
+      properties:
+        baseline:
+          $ref: '#/components/schemas/TopicSignalSnapshotView'
+        current:
+          $ref: '#/components/schemas/TopicSignalSnapshotView'
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalVersionDiffItemView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicSignalTimelineResponse:
+      type: object
+      properties:
+        topicId:
+          type: string
+        dataset:
+          type: string
+          nullable: true
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalTimelinePointView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicSignalOptimizationSuggestionResponse:
+      type: object
+      properties:
+        baseline:
+          $ref: '#/components/schemas/TopicSignalSnapshotView'
+        current:
+          $ref: '#/components/schemas/TopicSignalSnapshotView'
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalOptimizationSuggestionItemView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicSignalSuggestionDecisionListResponse:
+      type: object
+      properties:
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalSuggestionDecisionView'
+        summary:
+          $ref: '#/components/schemas/TopicSignalSuggestionDecisionSummaryView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    TopicSignalSuggestionDecisionSummaryView:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int32
+        openCount:
+          type: integer
+          format: int32
+        acknowledgedCount:
+          type: integer
+          format: int32
+        ignoredCount:
+          type: integer
+          format: int32
+        acknowledgedRate:
+          type: number
+          format: double
+        ignoredRate:
+          type: number
+          format: double
+        statusCounts:
+          type: object
+          additionalProperties:
+            type: integer
+            format: int32
+
+    TopicSignalSuggestionDecisionView:
+      type: object
+      properties:
+        baselineSnapshotId:
+          type: string
+        currentSnapshotId:
+          type: string
+        topicId:
+          type: string
+        nodeId:
+          type: string
+        suggestionType:
+          type: string
+        status:
+          type: string
+          enum: [OPEN, ACKNOWLEDGED, IGNORED]
+        note:
+          type: string
+          nullable: true
+        actor:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TopicSignalOptimizationSuggestionItemView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        baselineTopicVersion:
+          type: integer
+          nullable: true
+        currentTopicVersion:
+          type: integer
+          nullable: true
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalOptimizationSuggestionNodeView'
+
+    TopicSignalOptimizationSuggestionNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        type:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          nullable: true
+          enum: [HIGH, MEDIUM, LOW]
+        message:
+          type: string
+          nullable: true
+        baselineHitRatio:
+          type: number
+          format: double
+          nullable: true
+        currentHitRatio:
+          type: number
+          format: double
+          nullable: true
+        hitRatioDelta:
+          type: number
+          format: double
+          nullable: true
+        baselineHitCount:
+          type: integer
+          format: int64
+          nullable: true
+        currentHitCount:
+          type: integer
+          format: int64
+          nullable: true
+        decisionStatus:
+          type: string
+          nullable: true
+          enum: [OPEN, ACKNOWLEDGED, IGNORED]
+        decisionNote:
+          type: string
+          nullable: true
+        decisionActor:
+          type: string
+          nullable: true
+        decisionAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TopicSignalTimelinePointView:
+      type: object
+      properties:
+        snapshotId:
+          type: string
+        label:
+          type: string
+          nullable: true
+        capturedAt:
+          type: string
+          format: date-time
+        topicRuntimeVersion:
+          type: integer
+          nullable: true
+        topicVersion:
+          type: integer
+          nullable: true
+        matchedDocs:
+          type: integer
+          format: int64
+        totalDocs:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+
+    TopicSignalVersionDiffItemView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        baselineTopicVersion:
+          type: integer
+          nullable: true
+        currentTopicVersion:
+          type: integer
+          nullable: true
+        baselineMatchedDocs:
+          type: integer
+          format: int64
+        currentMatchedDocs:
+          type: integer
+          format: int64
+        matchedDocsDelta:
+          type: integer
+          format: int64
+        baselinePercentage:
+          type: number
+          format: double
+        currentPercentage:
+          type: number
+          format: double
+        percentageDelta:
+          type: number
+          format: double
+        baselineNodeCount:
+          type: integer
+        currentNodeCount:
+          type: integer
+        addedNodeCount:
+          type: integer
+        removedNodeCount:
+          type: integer
+        addedNodeIds:
+          type: array
+          items:
+            type: string
+        removedNodeIds:
+          type: array
+          items:
+            type: string
+        structureNodeDiffs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalVersionDiffStructureNodeView'
+
+    TopicSignalVersionDiffStructureNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        baselineHitCount:
+          type: integer
+          format: int64
+          nullable: true
+        currentHitCount:
+          type: integer
+          format: int64
+          nullable: true
+        hitCountDelta:
+          type: integer
+          format: int64
+          nullable: true
+        baselineHitRatio:
+          type: number
+          format: double
+          nullable: true
+        currentHitRatio:
+          type: number
+          format: double
+          nullable: true
+        hitRatioDelta:
+          type: number
+          format: double
+          nullable: true
+        changeType:
+          type: string
+          nullable: true
+          enum: [ADDED, REMOVED, UNCHANGED]
+
+    TopicSignalFullView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        topicVersion:
+          type: integer
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        weight:
+          type: integer
+          nullable: true
+        deployModes:
+          type: array
+          items:
+            type: string
+        runtime:
+          $ref: '#/components/schemas/TopicSignalRuntimeView'
+        statistics:
+          $ref: '#/components/schemas/TopicSignalStatsView'
+        structureImpact:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalStructureImpactView'
+        aiContext:
+          $ref: '#/components/schemas/TopicSignalAiContextView'
+        meta:
+          $ref: '#/components/schemas/TopicSignalMetaView'
+
+    TopicSignalMetaView:
+      type: object
+      properties:
+        compiledGql:
+          type: string
+          nullable: true
+        profileName:
+          type: string
+          nullable: true
+        profileVersion:
+          type: string
+          nullable: true
+        experimentId:
+          type: string
+          nullable: true
+        evaluatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        compiledAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    TopicSignalStatsView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        matchedDocs:
+          type: integer
+          format: int64
+        totalDocs:
+          type: integer
+          format: int64
+        percentage:
+          type: number
+          format: double
+
+    TopicSignalAiContextView:
+      type: object
+      properties:
+        restrictRetrieval:
+          type: boolean
+          nullable: true
+        promptModified:
+          type: boolean
+          nullable: true
+        reasoningBias:
+          type: string
+          nullable: true
+
+    TopicSignalStructureImpactView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          nullable: true
+        label:
+          type: string
+          nullable: true
+        hitCount:
+          type: integer
+          format: int64
+          nullable: true
+        hitRatio:
+          type: number
+          format: double
+          nullable: true
+
+    TopicSignalRuntimeView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        matched:
+          type: boolean
+        matchedSource:
+          type: string
+          nullable: true
+          description: Source of matched decision.
+          enum: [DOC_EVAL, QUERY_FILTER, NONE]
+        appliedModes:
+          type: array
+          items:
+            type: string
+            enum: [QUERY, FILTER, SIGNAL, BOOST]
+        scoreContribution:
+          type: number
+          format: double
+          nullable: true
+        matchedTerms:
+          type: array
+          items:
+            type: string
+          nullable: true
+        matchedNodeIds:
+          type: array
+          items:
+            type: string
+          nullable: true
+
+    ScoreBreakdownView:
+      type: object
+      properties:
+        fusionStrategy:
+          type: string
+        lexicalContribution:
+          type: number
+          format: double
+          nullable: true
+        vectorContribution:
+          type: number
+          format: double
+          nullable: true
+        topicContribution:
+          type: number
+          format: double
+          nullable: true
+        recencyContribution:
+          type: number
+          format: double
+          nullable: true
+        docTypeContribution:
+          type: number
+          format: double
+          nullable: true
+        recommendContribution:
+          type: number
+          format: double
+          nullable: true
+        finalScore:
+          type: number
+          format: double
+        featureContributions:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+
+    SuggestResponse:
+      type: object
+      properties:
+        query:
+          type: string
+          nullable: true
+        normalizedQuery:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuggestItem'
+
+    SuggestItem:
+      type: object
+      description: Suggestion item (implementation may return extra fields)
+      properties:
+        text:
+          type: string
+          nullable: true
+        score:
+          type: number
+          format: double
+          nullable: true
+      additionalProperties: true
+
+    RetrievalRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          nullable: true
+        topK:
+          type: integer
+          format: int32
+          default: 20
+        embedding:
+          type: object
+          nullable: true
+          additionalProperties: true
+        rag:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    RetrievalResponse:
+      type: object
+      properties:
+        chunks:
+          type: array
+          items:
+            $ref: '#/components/schemas/RetrievalChunk'
+        confidence:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+
+    RetrievalChunk:
+      type: object
+      description: Chunk-level retrieval result (fields may vary by mode)
+      properties:
+        chunkId:
+          type: string
+          nullable: true
+        docId:
+          type: string
+          nullable: true
+        content:
+          type: string
+          nullable: true
+        score:
+          type: number
+          format: double
+          nullable: true
+        scoreBreakdown:
+          $ref: '#/components/schemas/ScoreBreakdownView'
+        topicSignals:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSignalRuntimeView'
+      additionalProperties: true
+
+    DocViewRequest:
+      type: object
+      properties:
+        includeOutline:
+          type: boolean
+        includeRawContent:
+          type: boolean
+        includeMetadata:
+          type: boolean
+        includeChunks:
+          type: boolean
+        rag:
+          type: object
+          nullable: true
+          additionalProperties: true
+
+    DocViewModel:
+      type: object
+      description: Aggregated document view model (nested structures are implementation-specific)
+      properties:
+        header:
+          type: object
+          nullable: true
+          additionalProperties: true
+        content:
+          type: object
+          nullable: true
+          additionalProperties: true
+        outline:
+          type: array
+          nullable: true
+          items:
+            type: object
+            additionalProperties: true
+        rag:
+          type: object
+          nullable: true
+          additionalProperties: true
+        metadata:
+          type: array
+          nullable: true
+          items:
+            type: object
+            additionalProperties: true
+
+    SearchSemanticOverviewRequest:
+      type: object
+      required: [search]
+      properties:
+        search:
+          $ref: '#/components/schemas/SearchRequest'
+        topicIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+        datasetName:
+          type: string
+          nullable: true
+        includeTopicStats:
+          type: boolean
+          default: true
+        includeSemanticOverview:
+          type: boolean
+          default: false
+        scene:
+          type: string
+          nullable: true
+        includeAiContext:
+          type: boolean
+          default: false
+        includeStructureStats:
+          type: boolean
+          default: false
+        statsMode:
+          $ref: '#/components/schemas/TopicStatsMode'
+
+    SearchSemanticOverviewResponse:
+      type: object
+      properties:
+        searchResult:
+          $ref: '#/components/schemas/SearchResponse'
+        topicStats:
+          $ref: '#/components/schemas/TopicStatsResponse'
+        semanticOverview:
+          $ref: '#/components/schemas/TopicSignalDashboardResponse'
+        debug:
+          type: object
+          additionalProperties: true
+
+    ApiEnvelopeOverview:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsOverview'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeCoverage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsCoverage'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTrend:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsTrend'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeDrift:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsDrift'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeMatrix:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsMatrix'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeMatrixExplain:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsMatrixExplain'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeMatrixCorrelation:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsMatrixCorrelation'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeMatrixDiff:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsMatrixDiff'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicStats:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsTopicStats'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeDocStats:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsDocStats'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeSearchFacets:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsSearchFacets'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeGovernanceTopicDocs:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/GovernanceTopicDocs'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeGovernanceTopicDocExplain:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/GovernanceTopicDocExplain'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeGovernanceTopicVersions:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/GovernanceTopicVersions'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeGovernanceTopicDiff:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/GovernanceTopicDiff'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeGovernanceTopicCooccurrence:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/GovernanceTopicCooccurrence'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    AnalyticsOverview:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        totalTopics:
+          type: integer
+          format: int64
+        runtimeVersion:
+          type: string
+        taggedDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+          description: 0-100 percentage
+        lastRetagTime:
+          type: string
+          nullable: true
+          format: date-time
+
+    AnalyticsCoverage:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsCoverageDimension'
+
+    AnalyticsCoverageDimension:
+      type: object
+      properties:
+        dimensionId:
+          type: string
+        dimensionName:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        coveredDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+          description: 0-100 percentage
+
+    AnalyticsTrend:
+      type: object
+      properties:
+        topicId:
+          type: string
+        range:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsTrendPoint'
+
+    AnalyticsTrendPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          example: "2026-03-01"
+        count:
+          type: integer
+          format: int64
+
+    AnalyticsDrift:
+      type: object
+      properties:
+        topicId:
+          type: string
+        from:
+          type: string
+          example: v4
+        to:
+          type: string
+          example: v5
+        added:
+          type: integer
+          format: int64
+        removed:
+          type: integer
+          format: int64
+
+    AnalyticsMatrix:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/AnalyticsMatrixMeta'
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixDimension'
+        docs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixDoc'
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixTopic'
+        cells:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixCell'
+        aggregates:
+          $ref: '#/components/schemas/AnalyticsMatrixAggregates'
+        rowTotals:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixRowTotal'
+        columnTotals:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixColumnTotal'
+
+    AnalyticsMatrixMeta:
+      type: object
+      properties:
+        dataset:
+          type: string
+        runtimeVersion:
+          type: string
+        timeRange:
+          type: string
+        mode:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        docCount:
+          type: integer
+        topicCount:
+          type: integer
+
+    AnalyticsMatrixDimension:
+      type: object
+      properties:
+        dimensionId:
+          type: string
+        dimensionName:
+          type: string
+
+    AnalyticsMatrixDoc:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        score:
+          type: number
+          format: double
+          nullable: true
+
+    AnalyticsMatrixTopic:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        dimensionId:
+          type: string
+          nullable: true
+        dimensionName:
+          type: string
+          nullable: true
+
+    AnalyticsMatrixCell:
+      type: object
+      properties:
+        docId:
+          type: string
+        topicId:
+          type: string
+        weight:
+          type: number
+          format: double
+        hitCount:
+          type: integer
+        confidence:
+          type: number
+          format: double
+        runtimeVersion:
+          type: string
+
+    AnalyticsMatrixAggregates:
+      type: object
+      properties:
+        rowTotals:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixRowTotal'
+        columnTotals:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixColumnTotal'
+
+    AnalyticsMatrixRowTotal:
+      type: object
+      properties:
+        docId:
+          type: string
+        topicCount:
+          type: integer
+        avgWeight:
+          type: number
+          format: double
+
+    AnalyticsMatrixColumnTotal:
+      type: object
+      properties:
+        topicId:
+          type: string
+        docCount:
+          type: integer
+        avgWeight:
+          type: number
+          format: double
+
+    AnalyticsMatrixExplain:
+      type: object
+      properties:
+        docId:
+          type: string
+        topicId:
+          type: string
+        weight:
+          type: number
+          format: double
+        hitCount:
+          type: integer
+        explain:
+          type: array
+          items:
+            type: string
+
+    AnalyticsMatrixCorrelation:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/AnalyticsMatrixMeta'
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixTopic'
+        correlation:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsTopicCorrelation'
+
+    AnalyticsTopicCorrelation:
+      type: object
+      properties:
+        topicA:
+          type: string
+        topicB:
+          type: string
+        score:
+          type: number
+          format: double
+        cooccurDocs:
+          type: integer
+
+    AnalyticsMatrixDiff:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/AnalyticsMatrixMeta'
+        fromVersion:
+          type: string
+        toVersion:
+          type: string
+        offset:
+          type: integer
+        limit:
+          type: integer
+        status:
+          type: string
+          enum: [ALL, ADDED, REMOVED]
+        totalChanged:
+          type: integer
+        addedCount:
+          type: integer
+        removedCount:
+          type: integer
+        changeRate:
+          type: number
+          format: double
+        changedCells:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixDiffCell'
+
+    AnalyticsMatrixDiffCell:
+      type: object
+      properties:
+        docId:
+          type: string
+        topicId:
+          type: string
+        status:
+          type: string
+          enum: [ADDED, REMOVED]
+        fromWeight:
+          type: number
+          format: double
+          nullable: true
+        toWeight:
+          type: number
+          format: double
+          nullable: true
+
+    AnalyticsTopicStats:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/AnalyticsMatrixMeta'
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsTopicStatItem'
+
+    AnalyticsTopicStatItem:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        dimensionId:
+          type: string
+          nullable: true
+        dimensionName:
+          type: string
+          nullable: true
+        docCount:
+          type: integer
+        avgWeight:
+          type: number
+          format: double
+        coverageRate:
+          type: number
+          format: double
+
+    AnalyticsDocStats:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/AnalyticsMatrixMeta'
+        docs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsDocStatItem'
+
+    AnalyticsDocStatItem:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        topicCount:
+          type: integer
+        avgWeight:
+          type: number
+          format: double
+
+    AnalyticsSearchFacets:
+      type: object
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsFacetGroup'
+
+    AnalyticsFacetGroup:
+      type: object
+      properties:
+        dimensionId:
+          type: string
+        dimensionName:
+          type: string
+        total:
+          type: integer
+          format: int64
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsFacetBucket'
+
+    AnalyticsFacetBucket:
+      type: object
+      properties:
+        dimensionId:
+          type: string
+        topicId:
+          type: string
+        topicName:
+          type: string
+        count:
+          type: integer
+          format: int64
+        fq:
+          type: string

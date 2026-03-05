@@ -28,6 +28,10 @@ tags:
     description: Rule preview and preview document detail
   - name: RuleGovernance
     description: Rule analysis and version governance APIs
+  - name: Tagging
+    description: Topic tagging job management APIs
+  - name: Analytics
+    description: Semantic analytics APIs
 
 paths:
   /api/runtime/active:
@@ -89,7 +93,7 @@ paths:
               environmentId: 3
               activate: true
               operator: admin
-              deployMode: FILTER
+              deployMode: [FILTER, BOOST, LABEL]
               weight: 10
               namespace: policy
       responses:
@@ -1237,6 +1241,467 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
 
+  /api/tagging/jobs:
+    get:
+      tags: [Tagging]
+      summary: List tagging jobs
+      operationId: listTaggingJobs
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [PENDING, RUNNING, SUCCESS, FAILED]
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [FULL, TOPIC_ONLY]
+        - name: topicId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 200
+            default: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingJobPageResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/coverage:
+    get:
+      tags: [Tagging]
+      summary: Get tagging coverage by dimension
+      operationId: getTaggingCoverage
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingCoverageView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/topic/{topicId}:
+    post:
+      tags: [Tagging]
+      summary: Create tagging job for one topic
+      operationId: createTopicTaggingJob
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseJobIdMap'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/full:
+    post:
+      tags: [Tagging]
+      summary: Create full re-tagging job
+      operationId: createFullTaggingJob
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseJobIdMap'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/jobs/{jobId}:
+    get:
+      tags: [Tagging]
+      summary: Get tagging job detail
+      operationId: getTaggingJob
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingJobView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/job/{jobId}:
+    get:
+      tags: [Tagging]
+      summary: Get tagging job detail (alias)
+      operationId: getTaggingJobAlias
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingJobView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/jobs/{jobId}/topics:
+    get:
+      tags: [Tagging]
+      summary: List topic-level results of a tagging job
+      operationId: listTaggingJobTopicResults
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingTopicResultList'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/jobs/{jobId}/logs:
+    get:
+      tags: [Tagging]
+      summary: Get aggregated troubleshooting logs of a tagging job
+      operationId: getTaggingJobLogs
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: includeSuccess
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingJobLogsView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/topic/{topicId}/count:
+    get:
+      tags: [Tagging]
+      summary: Get hit count of one topic in active runtime dataset
+      operationId: getTaggingTopicCount
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingTopicCountView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/jobs/{jobId}/retry:
+    post:
+      tags: [Tagging]
+      summary: Retry a failed tagging job
+      operationId: retryTaggingJob
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseJobIdMap'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/tagging/runtime-status:
+    get:
+      tags: [Tagging]
+      summary: Get tagging runtime control status
+      operationId: getTaggingRuntimeStatus
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsRuntimeStatusView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/analytics/coverage:
+    get:
+      tags: [Analytics]
+      summary: Get coverage by topic dimension
+      operationId: getAnalyticsCoverage
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsCoverageView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: Get analytics overview KPI
+      operationId: getAnalyticsOverview
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsOverviewView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/analytics/trend:
+    get:
+      tags: [Analytics]
+      summary: Get topic trend by day from tagging history
+      operationId: getAnalyticsTrend
+      parameters:
+        - name: topicId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 30d
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsTrendView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/analytics/drift:
+    get:
+      tags: [Analytics]
+      summary: Get drift between two runtime versions of one topic
+      operationId: getAnalyticsDrift
+      parameters:
+        - name: topicId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: versionA
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: versionB
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsDriftView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/analytics/runtime-status:
+    get:
+      tags: [Analytics]
+      deprecated: true
+      description: Deprecated. Use GET /api/tagging/runtime-status.
+      summary: Get runtime tagging status
+      operationId: getAnalyticsRuntimeStatus
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsRuntimeStatusView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/analytics/matrix:
+    get:
+      tags: [Analytics]
+      summary: Get doc-topic matrix
+      operationId: getAnalyticsMatrix
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 50
+        - name: datasetName
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAnalyticsMatrixView'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
 components:
   schemas:
     RuntimeActiveItem:
@@ -1738,6 +2203,380 @@ components:
             $ref: '#/components/schemas/RuleDiffModifiedNode'
       required: [addedNodes, removedNodes, modifiedNodes]
 
+    JobIdMap:
+      type: object
+      properties:
+        jobId:
+          type: string
+      required: [jobId]
+
+    TopicTaggingJobView:
+      type: object
+      properties:
+        jobId:
+          type: string
+        topicId:
+          type: string
+          nullable: true
+        topicVersion:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          enum: [FULL, TOPIC_ONLY]
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, RUNNING, SUCCESS, FAILED]
+          nullable: true
+        totalDocs:
+          type: integer
+          format: int64
+        taggedDocs:
+          type: integer
+          format: int64
+        retryCount:
+          type: integer
+          format: int32
+        maxRetries:
+          type: integer
+          format: int32
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [jobId, totalDocs, taggedDocs, retryCount, maxRetries, createdAt]
+
+    TopicTaggingTopicResultView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicVersion:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [SUCCESS, FAILED]
+          nullable: true
+        totalDocs:
+          type: integer
+          format: int64
+        taggedDocs:
+          type: integer
+          format: int64
+        errorMessage:
+          type: string
+          nullable: true
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [topicId, totalDocs, taggedDocs]
+
+    TopicTaggingLogEntryView:
+      type: object
+      properties:
+        level:
+          type: string
+          enum: [INFO, WARN, ERROR]
+        scope:
+          type: string
+          enum: [JOB, TOPIC]
+        topicId:
+          type: string
+          nullable: true
+        topicVersion:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        totalDocs:
+          type: integer
+          format: int64
+        taggedDocs:
+          type: integer
+          format: int64
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [level, scope, totalDocs, taggedDocs]
+
+    TopicTaggingJobLogsView:
+      type: object
+      properties:
+        jobId:
+          type: string
+        topicId:
+          type: string
+          nullable: true
+        topicVersion:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          enum: [FULL, TOPIC_ONLY]
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, RUNNING, SUCCESS, FAILED]
+          nullable: true
+        totalDocs:
+          type: integer
+          format: int64
+        taggedDocs:
+          type: integer
+          format: int64
+        retryCount:
+          type: integer
+          format: int32
+        maxRetries:
+          type: integer
+          format: int32
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        totalTopics:
+          type: integer
+          format: int64
+        successTopics:
+          type: integer
+          format: int64
+        failedTopics:
+          type: integer
+          format: int64
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicTaggingLogEntryView'
+      required: [jobId, totalDocs, taggedDocs, retryCount, maxRetries, createdAt, totalTopics, successTopics, failedTopics, entries]
+
+    TopicTaggingJobPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicTaggingJobView'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+      required: [items, page, size, total]
+
+    TopicDimensionCoverageView:
+      type: object
+      properties:
+        dimensionId:
+          type: string
+        coveredDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+      required: [dimensionId, coveredDocs, coverageRate]
+
+    TopicTaggingCoverageView:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicDimensionCoverageView'
+      required: [totalDocs, dimensions]
+
+    TopicTaggingTopicCountView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicVersion:
+          type: string
+          nullable: true
+        datasetName:
+          type: string
+          nullable: true
+        count:
+          type: integer
+          format: int64
+      required: [topicId, count]
+
+    AnalyticsCoverageDimensionView:
+      type: object
+      properties:
+        dimensionId:
+          type: string
+        totalDocs:
+          type: integer
+          format: int64
+        coveredDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+      required: [dimensionId, totalDocs, coveredDocs, coverageRate]
+
+    AnalyticsCoverageView:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsCoverageDimensionView'
+      required: [totalDocs, dimensions]
+
+    AnalyticsTrendPointView:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+          format: int64
+      required: [date, count]
+
+    AnalyticsTrendView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        range:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsTrendPointView'
+      required: [topicId, range, points]
+
+    AnalyticsDriftView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        added:
+          type: integer
+          format: int64
+        removed:
+          type: integer
+          format: int64
+      required: [topicId, from, to, added, removed]
+
+    AnalyticsOverviewView:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        totalTopics:
+          type: integer
+          format: int64
+        runtimeVersion:
+          type: string
+          nullable: true
+        taggedDocs:
+          type: integer
+          format: int64
+        coverageRate:
+          type: number
+          format: double
+        lastRetagTime:
+          type: string
+          format: date-time
+          nullable: true
+      required: [totalDocs, totalTopics, taggedDocs, coverageRate]
+
+    AnalyticsMatrixDocView:
+      type: object
+      properties:
+        docId:
+          type: string
+        topics:
+          type: array
+          items:
+            type: string
+      required: [docId, topics]
+
+    AnalyticsMatrixView:
+      type: object
+      properties:
+        datasetName:
+          type: string
+          nullable: true
+        docs:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsMatrixDocView'
+      required: [docs]
+
+    AnalyticsRuntimeStatusView:
+      type: object
+      properties:
+        runtimeVersion:
+          type: string
+          nullable: true
+        jobsRunning:
+          type: integer
+          format: int64
+        incrementalEnabled:
+          type: boolean
+        lastIncrementalTagTime:
+          type: string
+          format: date-time
+          nullable: true
+      required: [jobsRunning, incrementalEnabled]
+
     ApiError:
       type: object
       properties:
@@ -1801,6 +2640,151 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/RuleDiffResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseJobIdMap:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/JobIdMap'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicTaggingJobView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicTaggingJobView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicTaggingJobPageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicTaggingJobPageResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicTaggingTopicResultList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicTaggingTopicResultView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicTaggingJobLogsView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicTaggingJobLogsView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicTaggingCoverageView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicTaggingCoverageView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicTaggingTopicCountView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicTaggingTopicCountView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAnalyticsCoverageView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsCoverageView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAnalyticsTrendView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsTrendView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAnalyticsDriftView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsDriftView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAnalyticsOverviewView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsOverviewView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAnalyticsMatrixView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsMatrixView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAnalyticsRuntimeStatusView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AnalyticsRuntimeStatusView'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
@@ -2666,12 +3650,19 @@ components:
           type: string
           nullable: true
         deployMode:
-          type: string
+          oneOf:
+            - type: string
+              enum: [FILTER, BOOST, LABEL, MAP, SIGNAL]
+            - type: array
+              items:
+                type: string
+                enum: [FILTER, BOOST, LABEL, MAP, SIGNAL]
+              minItems: 1
+              uniqueItems: true
           nullable: true
           description: |
             Topic usage mode for deployment. Set only at deploy time.
-            Current backend supports `FILTER` as stable mode.
-          enum: [FILTER]
+            Supports string (legacy) or array (recommended).
         weight:
           type: integer
           format: int32

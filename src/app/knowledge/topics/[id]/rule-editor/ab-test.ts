@@ -1,4 +1,5 @@
 import type { RuntimeExecuteFullResponse } from "@/lib/api/ruleRuntime";
+import { t } from "@/i18n";
 
 export type RuleAbTestResult = {
   generatedAt: string;
@@ -33,12 +34,12 @@ export function buildRuleAbTestResult(
   return {
     generatedAt: new Date().toLocaleString(),
     ruleA: {
-      label: "A (当前规则)",
+      label: t("topicDetail.ab.labelA"),
       total: fullA.total,
       took: fullA.took,
     },
     ruleB: {
-      label: "B (自动整理后)",
+      label: t("topicDetail.ab.labelB"),
       total: fullB.total,
       took: fullB.took,
     },
@@ -57,3 +58,4 @@ function computeOverlapRate(fullA: RuntimeExecuteFullResponse, fullB: RuntimeExe
   const union = new Set([...a, ...b]).size;
   return union > 0 ? intersection / union : 0;
 }
+
