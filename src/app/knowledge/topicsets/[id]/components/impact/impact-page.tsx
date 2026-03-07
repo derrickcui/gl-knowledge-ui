@@ -20,6 +20,8 @@ function sanitizeHighlightHtml(raw?: string | null): string {
 
 export function ImpactPage({
   selectedNode,
+  displayPath,
+  selectedTopics,
   loading,
   error,
   docs,
@@ -30,8 +32,11 @@ export function ImpactPage({
   onPageChange,
   onSizeChange,
   onSortChange,
+  onOpenTopicDocs,
 }: {
   selectedNode: TopicSetNode | null;
+  displayPath?: string | null;
+  selectedTopics: Array<{ topicId: string; topicName?: string | null; hitDocs?: number }>;
   loading: boolean;
   error: string | null;
   docs: Array<{ docId: string; title: string; summary?: string | null }>;
@@ -42,6 +47,7 @@ export function ImpactPage({
   onPageChange: (page: number) => void;
   onSizeChange: (size: number) => void;
   onSortChange: (sort: "score" | "updatedAt" | "publishedAt") => void;
+  onOpenTopicDocs: (topicId: string, topicName?: string | null) => void;
 }) {
   const totalPages = Math.max(1, Math.ceil(total / Math.max(size, 1)));
   return (
@@ -49,6 +55,26 @@ export function ImpactPage({
       <h2 className="text-sm font-semibold">{t("topicSet.impact.title")}</h2>
       <div className="mt-3 text-sm text-muted-foreground">
         {t("topicSet.impact.node")}: {selectedNode?.name ?? "-"}
+      </div>
+      <div className="mt-1 text-xs text-muted-foreground">{displayPath ?? "-"}</div>
+      <div className="mt-3">
+        <div className="mb-2 text-xs text-muted-foreground">{t("topicSet.coverage.topics")}</div>
+        <div className="flex flex-wrap gap-2">
+          {selectedTopics.map((topic) => (
+            <button
+              key={topic.topicId}
+              type="button"
+              className="rounded-full border px-2 py-1 text-xs hover:bg-muted/30"
+              onClick={() => onOpenTopicDocs(topic.topicId, topic.topicName)}
+            >
+              {topic.topicName ?? topic.topicId}
+              <span className="ml-1 text-muted-foreground">{topic.hitDocs ?? 0}</span>
+            </button>
+          ))}
+          {selectedTopics.length === 0 && (
+            <span className="text-xs text-muted-foreground">{t("topicSet.binding.empty")}</span>
+          )}
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
         <select

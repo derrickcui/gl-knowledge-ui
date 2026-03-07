@@ -10,7 +10,15 @@ import {
   fetchTopicSetUnmapped,
   refreshTopicSetRuntimeCache,
 } from "@/lib/topicset-search-api";
-import { NodeTopicView, TopicSetNode, TopicSetNodeDetail, getTopicSetNodeDetail } from "@/lib/topicset-api";
+import {
+  NodeTopicView,
+  TopicSetNode,
+  TopicSetNodeDetail,
+  getTopicSetDiff,
+  getTopicSetNodeDetail,
+  restoreTopicSetVersionAsDraft,
+  rollbackTopicSetVersion,
+} from "@/lib/topicset-api";
 import { useTopicSetStore } from "@/store/topicsetStore";
 import { t } from "@/i18n";
 import { NodeDetailPanel } from "../components/node-detail-panel";
@@ -24,6 +32,7 @@ import { CoveragePage } from "./components/coverage/coverage-page";
 import { UnmappedPage } from "./components/unmapped/unmapped-page";
 import { VersionsPage } from "./components/versions/versions-page";
 import { TaxonomyDiffPage } from "./components/diff/taxonomy-diff-page";
+import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -56,6 +65,11 @@ type DeleteDialogState = {
   nodeId: string;
   nodeName: string;
   hasChildren: boolean;
+} | null;
+
+type VersionActionDialogState = {
+  mode: "restore" | "rollback";
+  version: number;
 } | null;
 
 const MAX_TAXONOMY_DEPTH = 6;
@@ -97,6 +111,14 @@ export function TopicSetWorkspaceClient({
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [publishDiffLoading, setPublishDiffLoading] = useState(false);
+  const [publishDiffSummary, setPublishDiffSummary] = useState<{
+    nodesAdded: number;
+    nodesRemoved: number;
+    nodesMoved: number;
+    nodesUpdated: number;
+    topicBindingsChanged: number;
+  } | null>(null);
   const [nodeSaving, setNodeSaving] = useState(false);
   const [createParentId, setCreateParentId] = useState<string | null | undefined>(undefined);
   const [createName, setCreateName] = useState("");
@@ -110,6 +132,9 @@ export function TopicSetWorkspaceClient({
   const [moveSourceNodeId, setMoveSourceNodeId] = useState<string | null>(null);
   const [moveParentId, setMoveParentId] = useState<string | null>(null);
   const [moveLoading, setMoveLoading] = useState(false);
+  const [versionActionDialog, setVersionActionDialog] = useState<VersionActionDialogState>(null);
+  const [versionActionComment, setVersionActionComment] = useState("");
+  const [versionActionLoading, setVersionActionLoading] = useState(false);
 
   const [coverageRows, setCoverageRows] = useState<Array<{ nodeId?: string; name: string; hitDocs: number }>>([]);
   const [coverageDedup, setCoverageDedup] = useState(false);
@@ -142,10 +167,19 @@ export function TopicSetWorkspaceClient({
   const [impactDrawerDocsCache, setImpactDrawerDocsCache] = useState<
     Record<string, Array<{ docId: string; title: string; weight: number }>>
   >({});
+  const [impactRuntimeRefreshing, setImpactRuntimeRefreshing] = useState(false);
+  const [runtimeRefreshTick, setRuntimeRefreshTick] = useState(0);
   const [nodeDetail, setNodeDetail] = useState<TopicSetNodeDetail | null>(null);
   const [nodeDetailLoading, setNodeDetailLoading] = useState(false);
   const [diffFromVersion, setDiffFromVersion] = useState<number | null>(null);
   const [diffToVersion, setDiffToVersion] = useState<number | null>(null);
+  const [headerDiffSummary, setHeaderDiffSummary] = useState<{
+    nodesAdded: number;
+    nodesRemoved: number;
+    nodesMoved: number;
+    nodesUpdated: number;
+    topicBindingsChanged: number;
+  } | null>(null);
 
   const refreshNodeDetail = useCallback(
     async (nodeId?: string | null) => {
@@ -181,6 +215,66 @@ export function TopicSetWorkspaceClient({
     return () => window.removeEventListener("click", closeMenu);
   }, []);
 
+  const latestPublishedVersion = useMemo(() => {
+    return versions
+      .filter((item) => !item.status?.toUpperCase().includes("DRAFT"))
+      .map((item) => item.version)
+      .sort((a, b) => b - a)[0] ?? null;
+  }, [versions]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHeaderDiff() {
+      if (!topicSetId || !topicSetDetail?.version || !latestPublishedVersion) {
+        setHeaderDiffSummary(null);
+        return;
+      }
+      const result = await getTopicSetDiff({
+        topicSetId,
+        fromVersion: latestPublishedVersion,
+        toVersion: topicSetDetail.version,
+      });
+      if (cancelled) return;
+      setHeaderDiffSummary(result.data?.summary ?? null);
+    }
+    void loadHeaderDiff();
+    return () => {
+      cancelled = true;
+    };
+  }, [latestPublishedVersion, topicSetDetail?.version, topicSetId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadPublishDiff() {
+      if (!publishOpen || !topicSetId || !topicSetDetail?.version) {
+        setPublishDiffSummary(null);
+        return;
+      }
+      const publishedVersions = versions
+        .filter((item) => !item.status?.toUpperCase().includes("DRAFT"))
+        .map((item) => item.version)
+        .sort((a, b) => b - a);
+      const baselineVersion = publishedVersions[0];
+      if (!baselineVersion) {
+        setPublishDiffSummary(null);
+        return;
+      }
+      setPublishDiffLoading(true);
+      const result = await getTopicSetDiff({
+        topicSetId,
+        fromVersion: baselineVersion,
+        toVersion: topicSetDetail.version,
+      });
+      if (cancelled) return;
+      setPublishDiffLoading(false);
+      setPublishDiffSummary(result.data?.summary ?? null);
+    }
+    void loadPublishDiff();
+    return () => {
+      cancelled = true;
+    };
+  }, [publishOpen, topicSetDetail?.version, topicSetId, versions]);
+
   useEffect(() => {
     if (!selectedNode) return;
     loadNodeTopics(selectedNode);
@@ -199,7 +293,10 @@ export function TopicSetWorkspaceClient({
   }, [selectedNode, refreshNodeDetail]);
 
   const selectedNodeData = findNodeById(selectedNode);
-  const selectedNodeTopics = selectedNode ? topics[selectedNode] ?? [] : [];
+  const selectedNodeTopics = useMemo(
+    () => (selectedNode ? topics[selectedNode] ?? [] : []),
+    [selectedNode, topics]
+  );
   const selectedNodeDisplayPath = useMemo(() => {
     if (!selectedNodeData) return null;
     const segments: string[] = [];
@@ -252,10 +349,35 @@ export function TopicSetWorkspaceClient({
   }, [coverageRows]);
   const selectedCoverageDocs = selectedNode ? coverageByNodeId[selectedNode] : undefined;
   const selectedImpactDocs = selectedNode ? impactTotal : undefined;
-  const selectedTopicIdsKey = useMemo(
-    () => selectedNodeTopics.map((item) => item.topicId).sort().join("|"),
-    [selectedNodeTopics]
+  const selectedCoverageRow = useMemo(() => {
+    if (!selectedNode) return null;
+    const node = nodeMap[selectedNode];
+    if (!node) return null;
+    return {
+      nodeId: selectedNode,
+      name: node.name,
+      hitDocs: coverageByNodeId[selectedNode] ?? node.docCount ?? 0,
+    };
+  }, [coverageByNodeId, nodeMap, selectedNode]);
+  const selectedCoverageTopics = useMemo(
+    () =>
+      selectedNodeTopics.map((topic) => ({
+        topicId: topic.topicId,
+        topicName: topic.topicName,
+        hitDocs: topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0,
+      })),
+    [selectedNodeTopics, topicDocCountMap, topicHitDocsMap]
   );
+  const loadedTopicIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const nodeTopics of Object.values(topics)) {
+      for (const topic of nodeTopics) {
+        ids.add(topic.topicId);
+      }
+    }
+    return Array.from(ids).sort();
+  }, [topics]);
+  const loadedTopicIdsKey = useMemo(() => loadedTopicIds.join("|"), [loadedTopicIds]);
 
   const getNodeDepth = useCallback(
     (nodeId: string) => {
@@ -313,9 +435,15 @@ export function TopicSetWorkspaceClient({
       const rows = coverageNodes
         .map((item) => ({
           nodeId: item.nodeId,
-          name: item.name || item.nodeId,
+          name: nodeMap[item.nodeId]?.name || item.name || item.nodeId,
           hitDocs: Number(item.docCount ?? 0),
         }))
+        .filter((item) => {
+          if (!item.nodeId) return true;
+          const isRoot = rootNodeIds.includes(item.nodeId);
+          const hasChildren = (childrenByParent[item.nodeId]?.length ?? 0) > 0;
+          return !(isRoot && hasChildren);
+        })
         .sort((a, b) => b.hitDocs - a.hitDocs);
       setCoverageRows(rows);
 
@@ -340,38 +468,56 @@ export function TopicSetWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [coverageDedup, topicSetId, unmappedPage, unmappedSize, unmappedSort]);
+  }, [
+    childrenByParent,
+    coverageDedup,
+    nodeMap,
+    rootNodeIds,
+    topicSetId,
+    unmappedPage,
+    unmappedSize,
+    unmappedSort,
+    runtimeRefreshTick,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadBoundTopicCounts() {
-      if (!selectedNode || selectedNodeTopics.length === 0) {
-        setTopicDocCountMap({});
+    async function loadTopicDocCounts() {
+      if (loadedTopicIds.length === 0) return;
+      const missingTopicIds = loadedTopicIds.filter((topicId) => !(topicId in topicDocCountMap));
+      if (missingTopicIds.length === 0) {
         return;
       }
       const entries = await Promise.all(
-        selectedNodeTopics.map(async (topic) => {
-          const result = await fetchGovernanceTopicDocs(topic.topicId, {
+        missingTopicIds.map(async (topicId) => {
+          const result = await fetchGovernanceTopicDocs(topicId, {
+            matchMode: "REALTIME",
             page: 0,
             size: 1,
             sortBy: "WEIGHT",
             sortOrder: "DESC",
           });
-          return [topic.topicId, Number(result.data?.total ?? 0)] as const;
+          return [topicId, Number(result.data?.total ?? 0)] as const;
         })
       );
       if (cancelled) return;
-      const nextMap: Record<string, number> = {};
-      for (const [topicId, total] of entries) {
-        nextMap[topicId] = total;
-      }
-      setTopicDocCountMap(nextMap);
+      setTopicDocCountMap((prev) => {
+        let changed = false;
+        const nextMap = { ...prev };
+        for (const [topicId, total] of entries) {
+          if (nextMap[topicId] !== total) {
+            nextMap[topicId] = total;
+            changed = true;
+          }
+        }
+        return changed ? nextMap : prev;
+      });
     }
-    void loadBoundTopicCounts();
+    void loadTopicDocCounts();
     return () => {
       cancelled = true;
     };
-  }, [selectedNode, selectedTopicIdsKey, selectedNodeTopics]);
+  }, [loadedTopicIdsKey, runtimeRefreshTick, topicDocCountMap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -407,7 +553,7 @@ export function TopicSetWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [impactPage, impactSize, impactSort, selectedNode, topicSetId]);
+  }, [impactPage, impactSize, impactSort, selectedNode, topicSetId, runtimeRefreshTick]);
 
   const prefetchImpactForNode = useCallback(
     async (nodeId: string) => {
@@ -478,7 +624,19 @@ export function TopicSetWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [impactDrawerDocsCache, impactDrawerNodeId, impactDrawerOpen, topicSetId]);
+  }, [impactDrawerDocsCache, impactDrawerNodeId, impactDrawerOpen, topicSetId, runtimeRefreshTick]);
+
+  async function refreshRuntimeViews() {
+    if (!topicSetId) return { ok: false, error: "TopicSet is not selected." };
+    const result = await refreshTopicSetRuntimeCache(topicSetId);
+    if (!result.data) {
+      return { ok: false, error: result.error ?? t("topicSet.feedback.runtimeRefreshFailed") };
+    }
+    setImpactDrawerDocsCache({});
+    setTopicDocCountMap({});
+    setRuntimeRefreshTick((prev) => prev + 1);
+    return { ok: true };
+  }
 
   async function handleCreateInlineNode(nextName?: string) {
     const resolvedName = (nextName ?? createName).trim();
@@ -523,6 +681,40 @@ export function TopicSetWorkspaceClient({
     setRenamingName("");
   }
 
+  async function openTopicDocs(topicId: string, topicName?: string | null) {
+    setTopicDocsOpen(true);
+    setTopicDocsLoading(true);
+    setTopicDocsError(null);
+    setTopicDocsTitle(topicName ?? topicId);
+    const result = await fetchGovernanceTopicDocs(topicId, {
+      matchMode: "REALTIME",
+      page: 0,
+      size: 50,
+      sortBy: "WEIGHT",
+      sortOrder: "DESC",
+    });
+    setTopicDocsLoading(false);
+    if (!result.data) {
+      setTopicDocsRows([]);
+      setTopicDocsTotal(0);
+      setTopicDocsError(result.error ?? t("topicSet.feedback.loadDocsFailed"));
+      return;
+    }
+    setTopicDocsTitle(result.data.topic?.topicName || topicName || topicId);
+    setTopicDocsTotal(Number(result.data.total ?? 0));
+    setTopicDocsRows(
+      (result.data.items ?? []).map((item) => ({
+        docId: item.docId,
+        title: item.title || item.docId,
+        weight: Number(item.weight ?? 0),
+      }))
+    );
+    setTopicDocCountMap((prev) => ({
+      ...prev,
+      [topicId]: Number(result.data?.total ?? 0),
+    }));
+  }
+
   return (
     <div className="space-y-4 p-5">
       <h1 className="text-xl font-semibold">{t("topicSet.workspace.title")}</h1>
@@ -541,7 +733,15 @@ export function TopicSetWorkspaceClient({
         version={version}
         versions={versions}
         editable={editable}
+        diffSummary={headerDiffSummary}
+        diffBaselineVersion={latestPublishedVersion}
         onChangeVersion={setVersion}
+        onViewDiff={() => {
+          if (!topicSetDetail?.version || !latestPublishedVersion) return;
+          setDiffFromVersion(latestPublishedVersion);
+          setDiffToVersion(topicSetDetail.version);
+          setActiveTab("diff");
+        }}
         onPublish={() => setPublishOpen(true)}
       />
 
@@ -718,6 +918,15 @@ export function TopicSetWorkspaceClient({
                   });
                   return;
                 }
+                const refreshResult = await refreshRuntimeViews();
+                if (!refreshResult.ok) {
+                  setFeedback({
+                    type: "error",
+                    title: t("topicSet.feedback.runtimeRefreshFailed"),
+                    message: refreshResult.error,
+                  });
+                  return;
+                }
                 await refreshNodeDetail(selectedNode);
               }}
               onUnbind={async (topicId) => {
@@ -731,43 +940,51 @@ export function TopicSetWorkspaceClient({
                   });
                   return;
                 }
+                const refreshResult = await refreshRuntimeViews();
+                if (!refreshResult.ok) {
+                  setFeedback({
+                    type: "error",
+                    title: t("topicSet.feedback.runtimeRefreshFailed"),
+                    message: refreshResult.error,
+                  });
+                  return;
+                }
                 await refreshNodeDetail(selectedNode);
               }}
               onViewDocuments={async (topic) => {
-                setTopicDocsOpen(true);
-                setTopicDocsLoading(true);
-                setTopicDocsError(null);
-                setTopicDocsTitle(topic.topicName ?? topic.topicId);
-                const result = await fetchGovernanceTopicDocs(topic.topicId, {
-                  page: 0,
-                  size: 50,
-                  sortBy: "WEIGHT",
-                  sortOrder: "DESC",
-                });
-                setTopicDocsLoading(false);
-                if (!result.data) {
-                  setTopicDocsRows([]);
-                  setTopicDocsTotal(0);
-                  setTopicDocsError(result.error ?? t("topicSet.feedback.loadDocsFailed"));
-                  return;
-                }
-                setTopicDocsTitle(result.data.topic?.topicName || topic.topicName || topic.topicId);
-                setTopicDocsTotal(Number(result.data.total ?? 0));
-                setTopicDocsRows(
-                  (result.data.items ?? []).map((item) => ({
-                    docId: item.docId,
-                    title: item.title || item.docId,
-                    weight: Number(item.weight ?? 0),
-                  }))
-                );
-                setTopicDocCountMap((prev) => ({
-                  ...prev,
-                  [topic.topicId]: Number(result.data?.total ?? 0),
-                }));
+                await openTopicDocs(topic.topicId, topic.topicName);
               }}
             />
           </div>
         </section>
+      )}
+
+      {activeTab === "map" && (
+        <KnowledgeMapPage
+          topicSetName={topicSetDetail?.name}
+          nodeMap={nodeMap}
+          childrenByParent={childrenByParent}
+          rootNodeIds={rootNodeIds}
+          selectedNodeId={selectedNode}
+          selectedNodeTopics={selectedNodeTopics}
+          topicsByNode={topics}
+          topicHitDocsMap={topicHitDocsMap}
+          topicDocCountMap={topicDocCountMap}
+          coverageByNodeId={coverageByNodeId}
+          unmappedTotal={unmappedTotal}
+          onSelectNode={(nodeId) => selectNode(nodeId)}
+          onOpenTaxonomy={(nodeId) => {
+            selectNode(nodeId);
+            setActiveTab("taxonomy");
+          }}
+          onOpenImpact={(nodeId) => {
+            selectNode(nodeId);
+            setImpactPage(0);
+            setActiveTab("impact");
+          }}
+          onOpenUnmapped={() => setActiveTab("unmapped")}
+          onLoadNodeTopics={loadNodeTopics}
+        />
       )}
 
       {topicDocsOpen && (
@@ -826,6 +1043,30 @@ export function TopicSetWorkspaceClient({
             <div className="text-sm font-semibold">{t("topicSet.impact.drawerTitle")}</div>
             <button
               type="button"
+              className="rounded border px-2 py-0.5 text-xs"
+              disabled={impactRuntimeRefreshing}
+              onClick={async () => {
+                setImpactRuntimeRefreshing(true);
+                const result = await refreshRuntimeViews();
+                setImpactRuntimeRefreshing(false);
+                if (!result.ok) {
+                  setFeedback({
+                    type: "error",
+                    title: t("topicSet.feedback.runtimeRefreshFailed"),
+                    message: result.error,
+                  });
+                  return;
+                }
+                setFeedback({
+                  type: "success",
+                  title: t("topicSet.feedback.runtimeRefreshed"),
+                });
+              }}
+            >
+              {impactRuntimeRefreshing ? t("common.loading") : t("topicSet.impact.refreshRuntime")}
+            </button>
+            <button
+              type="button"
               className="ml-auto rounded border px-2 py-0.5 text-xs"
               onClick={() => setImpactDrawerOpen(false)}
             >
@@ -854,7 +1095,7 @@ export function TopicSetWorkspaceClient({
                   >
                     <span className="truncate">{topic.topicName ?? topic.topicId}</span>
                     <span className="ml-auto text-muted-foreground">
-                      {topicHitDocsMap[topic.topicId] ?? 0}
+                      {topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0}
                     </span>
                   </div>
                 ))}
@@ -905,6 +1146,8 @@ export function TopicSetWorkspaceClient({
       {activeTab === "impact" && (
         <ImpactPage
           selectedNode={selectedNodeData}
+          displayPath={selectedNodeDisplayPath}
+          selectedTopics={selectedCoverageTopics}
           loading={impactDocsLoading}
           error={impactDocsError}
           docs={impactDocs}
@@ -912,6 +1155,9 @@ export function TopicSetWorkspaceClient({
           size={impactSize}
           total={impactTotal}
           sort={impactSort}
+          onOpenTopicDocs={(topicId, topicName) => {
+            void openTopicDocs(topicId, topicName);
+          }}
           onPageChange={setImpactPage}
           onSizeChange={(next) => {
             setImpactSize(next);
@@ -927,14 +1173,22 @@ export function TopicSetWorkspaceClient({
       {activeTab === "coverage" && (
         <CoveragePage
           rows={coverageRows}
+          selectedRow={selectedCoverageRow}
+          selectedTopics={selectedCoverageTopics}
+          selectedPath={selectedNodeDisplayPath}
           dedup={coverageDedup}
           onToggleDedup={(next) => setCoverageDedup(next)}
+          onOpenTopicDocs={(topicId, topicName) => {
+            void openTopicDocs(topicId, topicName);
+          }}
+          onOpenImpact={() => {
+            setImpactPage(0);
+            setActiveTab("impact");
+          }}
           onSelect={(row) => {
             const node = row.nodeId ? flatNodes.find((item) => item.id === row.nodeId) : null;
             if (!node) return;
             selectNode(node.id);
-            setImpactPage(0);
-            setActiveTab("impact");
           }}
         />
       )}
@@ -986,12 +1240,13 @@ export function TopicSetWorkspaceClient({
             setDiffToVersion(current);
             setActiveTab("diff");
           }}
+          onRestore={(v) => {
+            setVersionActionComment("");
+            setVersionActionDialog({ mode: "restore", version: v });
+          }}
           onRollback={(v) => {
-            setFeedback({
-              type: "info",
-              title: t("topicSet.versions.rollback"),
-              message: `${t("topicSet.versions.rollbackPending")} v${v}`,
-            });
+            setVersionActionComment("");
+            setVersionActionDialog({ mode: "rollback", version: v });
           }}
         />
       )}
@@ -1194,6 +1449,8 @@ export function TopicSetWorkspaceClient({
             : `${t("topicSet.version.published")} v${version}`
         }
         loading={publishLoading}
+        diffLoading={publishDiffLoading}
+        diffSummary={publishDiffSummary}
         onClose={() => setPublishOpen(false)}
         onPublish={async (comment) => {
           setPublishLoading(true);
@@ -1217,6 +1474,84 @@ export function TopicSetWorkspaceClient({
           });
         }}
       />
+
+      {versionActionDialog && topicSetId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[520px] rounded-lg bg-white p-5 shadow-xl">
+            <h3 className="text-base font-semibold">
+              {versionActionDialog.mode === "restore"
+                ? t("topicSet.versions.restoreTitle")
+                : t("topicSet.versions.rollbackTitle")}
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {versionActionDialog.mode === "restore"
+                ? t("topicSet.versions.restoreMessage", { version: `v${versionActionDialog.version}` })
+                : t("topicSet.versions.rollbackMessage", { version: `v${versionActionDialog.version}` })}
+            </p>
+            <label className="mt-4 block text-sm font-medium">{t("topicSet.publish.comment")}</label>
+            <textarea
+              className="mt-2 h-24 w-full rounded-md border px-3 py-2 text-sm"
+              value={versionActionComment}
+              onChange={(event) => setVersionActionComment(event.target.value)}
+              placeholder={t("topicSet.publish.placeholder")}
+            />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1.5 text-sm"
+                onClick={() => setVersionActionDialog(null)}
+                disabled={versionActionLoading}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-black px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                disabled={versionActionLoading}
+                onClick={async () => {
+                  setVersionActionLoading(true);
+                  const result =
+                    versionActionDialog.mode === "restore"
+                      ? await restoreTopicSetVersionAsDraft(topicSetId, versionActionDialog.version, {
+                          comment: versionActionComment || null,
+                        })
+                      : await rollbackTopicSetVersion(topicSetId, versionActionDialog.version, {
+                          comment: versionActionComment || null,
+                        });
+                  setVersionActionLoading(false);
+                  if (!result.data) {
+                    setFeedback({
+                      type: "error",
+                      title:
+                        versionActionDialog.mode === "restore"
+                          ? t("topicSet.versions.restoreFailed")
+                          : t("topicSet.versions.rollbackFailed"),
+                      message: result.error ?? undefined,
+                    });
+                    return;
+                  }
+                  await setTopicSet(topicSetId);
+                  setVersion(null);
+                  setVersionActionDialog(null);
+                  setFeedback({
+                    type: "success",
+                    title:
+                      versionActionDialog.mode === "restore"
+                        ? t("topicSet.versions.restoreSuccess", { version: `v${versionActionDialog.version}` })
+                        : t("topicSet.versions.rollbackSuccess", { version: `v${versionActionDialog.version}` }),
+                  });
+                }}
+              >
+                {versionActionLoading
+                  ? t("common.loading")
+                  : versionActionDialog.mode === "restore"
+                  ? t("topicSet.versions.restore")
+                  : t("topicSet.versions.rollback")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

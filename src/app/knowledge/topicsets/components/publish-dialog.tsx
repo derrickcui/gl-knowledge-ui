@@ -8,6 +8,14 @@ type PublishDialogProps = {
   open: boolean;
   versionLabel: string;
   loading?: boolean;
+  diffLoading?: boolean;
+  diffSummary?: {
+    nodesAdded: number;
+    nodesRemoved: number;
+    nodesMoved: number;
+    nodesUpdated: number;
+    topicBindingsChanged: number;
+  } | null;
   onClose: () => void;
   onPublish: (comment: string) => Promise<void>;
 };
@@ -16,6 +24,8 @@ export function PublishDialog({
   open,
   versionLabel,
   loading = false,
+  diffLoading = false,
+  diffSummary,
   onClose,
   onPublish,
 }: PublishDialogProps) {
@@ -36,6 +46,29 @@ export function PublishDialog({
         <p className="mt-3 text-sm text-muted-foreground">
           {t("topicSet.publish.currentVersion")} {versionLabel}
         </p>
+        <div className="mt-4 rounded-lg border bg-slate-50 p-3 text-xs">
+          <div className="font-medium">{t("topicSet.publish.changes")}</div>
+          {diffLoading && <div className="mt-2 text-muted-foreground">{t("common.loading")}</div>}
+          {!diffLoading && diffSummary && (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div>{t("topicSet.diff.summary.added")}: {diffSummary.nodesAdded}</div>
+              <div>{t("topicSet.diff.summary.removed")}: {diffSummary.nodesRemoved}</div>
+              <div>{t("topicSet.diff.summary.moved")}: {diffSummary.nodesMoved}</div>
+              <div>{t("topicSet.diff.summary.updated")}: {diffSummary.nodesUpdated}</div>
+              <div className="col-span-2">
+                {t("topicSet.diff.summary.topicChanged")}: {diffSummary.topicBindingsChanged}
+              </div>
+            </div>
+          )}
+          {!diffLoading && !diffSummary && (
+            <div className="mt-2 text-muted-foreground">{t("topicSet.publish.noBaseline")}</div>
+          )}
+          {!diffLoading && (diffSummary?.nodesRemoved ?? 0) >= 10 && (
+            <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800">
+              {t("topicSet.publish.warningRemoved", { count: diffSummary?.nodesRemoved ?? 0 })}
+            </div>
+          )}
+        </div>
         <label className="mt-4 block text-sm font-medium">{t("topicSet.publish.comment")}</label>
         <textarea
           className="mt-2 h-24 w-full rounded-md border px-3 py-2 text-sm"

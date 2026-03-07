@@ -2375,6 +2375,104 @@ paths:
         '304':
           description: Not Modified
 
+  /api/topicsets/{id}/versions/{version}/restore:
+    post:
+      tags: [TopicSet]
+      summary: Restore historical version as new draft
+      operationId: restoreTopicSetVersionAsDraft
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreTopicSetVersionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRestoreTopicSetVersionResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/versions/{version}/rollback:
+    post:
+      tags: [TopicSet]
+      summary: Rollback to historical published version
+      operationId: rollbackTopicSetVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RollbackTopicSetVersionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRollbackTopicSetVersionResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/topicsets/{id}/diff:
     get:
       tags: [TopicSet]
@@ -3611,6 +3709,57 @@ components:
           format: date-time
       required: [publishedVersion, previousPublishedVersion, publishedAt]
 
+    RestoreTopicSetVersionRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          example: DRAFT_COPY
+        comment:
+          type: string
+          nullable: true
+
+    RestoreTopicSetVersionResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        draftVersion:
+          type: integer
+          format: int32
+        sourceVersion:
+          type: integer
+          format: int32
+        status:
+          type: string
+          example: DRAFT
+      required: [topicSetId, draftVersion, sourceVersion, status]
+
+    RollbackTopicSetVersionRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+
+    RollbackTopicSetVersionResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        publishedVersion:
+          type: integer
+          format: int32
+        restoredFromVersion:
+          type: integer
+          format: int32
+        status:
+          type: string
+          example: PUBLISHED
+      required: [topicSetId, publishedVersion, restoredFromVersion, status]
+
     TopicNodeResponse:
       type: object
       properties:
@@ -3680,13 +3829,15 @@ components:
       properties:
         nodeId:
           type: string
+        name:
+          type: string
         path:
           type: string
         topics:
           type: array
           items:
             type: string
-      required: [nodeId, path, topics]
+      required: [nodeId, name, path, topics]
 
     RuntimeResponse:
       type: object
@@ -4197,6 +4348,28 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/PublishResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRestoreTopicSetVersionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RestoreTopicSetVersionResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRollbackTopicSetVersionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RollbackTopicSetVersionResponse'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
@@ -5591,5 +5764,6 @@ components:
         message:
           type: string
       required: [errorCode, message]
+
 
 

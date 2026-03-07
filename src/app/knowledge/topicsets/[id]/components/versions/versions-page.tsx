@@ -8,6 +8,7 @@ export function VersionsPage({
   versions,
   onView,
   onCompare,
+  onRestore,
   onRollback,
 }: {
   currentVersion: number | null;
@@ -15,6 +16,7 @@ export function VersionsPage({
   versions: Array<{ version: number; status: string; createdAt?: string }>;
   onView: (version: number | null) => void;
   onCompare: (version: number) => void;
+  onRestore: (version: number) => void;
   onRollback: (version: number) => void;
 }) {
   const formatDate = (value?: string) => {
@@ -77,6 +79,9 @@ export function VersionsPage({
                     </button>
                     <button className="rounded border px-2 py-1 text-xs" onClick={() => onCompare(item.version)}>
                       {t("topicSet.versions.compare")}
+                    </button>
+                    <button className="rounded border px-2 py-1 text-xs" onClick={() => onRestore(item.version)}>
+                      {t("topicSet.versions.restore")}
                     </button>
                     <button className="rounded border px-2 py-1 text-xs" onClick={() => onRollback(item.version)}>
                       {t("topicSet.versions.rollback")}

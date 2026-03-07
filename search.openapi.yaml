@@ -88,6 +88,13 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: dedup
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When true, counts each node with one OR expression to avoid double-counting documents matched by multiple topics under the same node
       responses:
         "200":
           description: Coverage loaded
@@ -95,6 +102,67 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiEnvelopeTopicSetCoverage'
+              examples:
+                summedCoverage:
+                  summary: `dedup=false` topic count summed by node
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      nodes:
+                        - nodeId: node-a
+                          name: 博士
+                          docCount: 14
+                        - nodeId: node-b
+                          name: 企业
+                          docCount: 4
+                    error: null
+                dedupCoverage:
+                  summary: `dedup=true` node-level OR count without duplicate documents
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      nodes:
+                        - nodeId: node-a
+                          name: 博士
+                          docCount: 11
+                        - nodeId: node-b
+                          name: 企业
+                          docCount: 4
+                    error: null
+        "400":
+          description: Invalid topicSet id, dataset mismatch, or invalid runtime binding
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUuid:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: "Method parameter 'id': Failed to convert value of type 'java.lang.String' to required type 'java.util.UUID'; Invalid UUID string: not-a-uuid"
+                datasetMismatch:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: topicset runtime dataset mismatch: expected gl_demo, got other_collection
+        "502":
+          description: Failed to fetch or execute runtime-backed coverage query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                runtimeFetchFailed:
+                  value:
+                    type: about:blank
+                    title: Bad Gateway
+                    status: 502
+                    detail: failed to fetch topicset runtime
 
   /api/topicsets/{id}/nodes/{nodeId}/impact:
     get:
@@ -141,6 +209,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiEnvelopeTopicSetDocumentPage'
+              examples:
+                impactDocs:
+                  value:
+                    success: true
+                    data:
+                      page: 0
+                      size: 20
+                      total: 2
+                      items:
+                        - docId: doc-1
+                          title: 人才政策通知
+                          summary: "<em>人才</em>政策片段"
+                          highlightFragments:
+                            - "<em>人才</em>政策片段"
+                        - docId: doc-2
+                          title: 博士后支持办法
+                          summary: 面向博士后的人才支持政策摘要
+                          highlightFragments: []
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                datasetMismatch:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: topicset runtime dataset mismatch: expected gl_demo, got other_collection
+        "404":
+          description: TopicSet node not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                nodeNotFound:
+                  value:
+                    type: about:blank
+                    title: Not Found
+                    status: 404
+                    detail: topicset node not found: node-a
+        "502":
+          description: Failed to fetch runtime or execute Solr query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                runtimeFetchFailed:
+                  value:
+                    type: about:blank
+                    title: Bad Gateway
+                    status: 502
+                    detail: failed to fetch topicset runtime
 
   /api/topicsets/{id}/unmapped:
     get:
@@ -182,6 +308,59 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiEnvelopeTopicSetDocumentPage'
+              examples:
+                unmappedDocs:
+                  value:
+                    success: true
+                    data:
+                      page: 0
+                      size: 20
+                      total: 1
+                      items:
+                        - docId: doc-99
+                          title: 一般政策公告
+                          summary: 当前 TopicSet 未覆盖到的文档摘要
+                          highlightFragments: []
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                datasetMismatch:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: topicset runtime dataset mismatch: expected gl_demo, got other_collection
+        "404":
+          description: TopicSet runtime not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                topicSetNotFound:
+                  value:
+                    type: about:blank
+                    title: Not Found
+                    status: 404
+                    detail: topicset not found
+        "502":
+          description: Failed to fetch runtime or execute Solr query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                runtimeFetchFailed:
+                  value:
+                    type: about:blank
+                    title: Bad Gateway
+                    status: 502
+                    detail: failed to fetch topicset runtime
 
   /internal/topicsets/{id}/runtime-cache/refresh:
     post:
@@ -202,6 +381,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiEnvelopeTopicSetRuntimeCacheRefresh'
+              examples:
+                refreshed:
+                  value:
+                    success: true
+                    data:
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      version: 7
+                      refreshedAt: "2026-03-06T12:00:00Z"
+                    error: null
+        "400":
+          description: Invalid topicSet id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUuid:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: "Method parameter 'id': Failed to convert value of type 'java.lang.String' to required type 'java.util.UUID'; Invalid UUID string: not-a-uuid"
+        "502":
+          description: Failed to fetch latest runtime from Rule Service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                runtimeFetchFailed:
+                  value:
+                    type: about:blank
+                    title: Bad Gateway
+                    status: 502
+                    detail: failed to fetch topicset runtime
 
   /api/topic/evaluate-doc:
     post:
@@ -1020,6 +1234,16 @@ paths:
             type: string
             enum: [ASC, DESC]
             default: DESC
+        - name: matchMode
+          in: query
+          required: false
+          description: |
+            `ANNOTATED` reads `_gl_ann_topic_ids` tagging results.
+            `REALTIME` executes the topic `compiledGql` directly, aligned with TopicSet impact semantics.
+          schema:
+            type: string
+            enum: [ANNOTATED, REALTIME]
+            default: ANNOTATED
         - name: hitMode
           in: query
           required: false

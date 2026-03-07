@@ -165,6 +165,7 @@ async function unwrapEnvelope<T>(path: string): Promise<ApiResult<T>> {
 export async function fetchGovernanceTopicDocs(
   topicId: string,
   params?: {
+    matchMode?: "ANNOTATED" | "REALTIME";
     runtimeVersion?: string;
     page?: number;
     size?: number;
@@ -178,6 +179,7 @@ export async function fetchGovernanceTopicDocs(
     `${GOVERNANCE_TOPIC_PROXY}/${encodeURIComponent(topicId)}/docs`,
     "http://localhost"
   );
+  if (params?.matchMode) url.searchParams.set("matchMode", params.matchMode);
   if (params?.runtimeVersion) url.searchParams.set("runtimeVersion", params.runtimeVersion);
   if (params?.page != null) url.searchParams.set("page", String(params.page));
   if (params?.size != null) url.searchParams.set("size", String(params.size));
@@ -241,4 +243,3 @@ export async function fetchGovernanceTopicCooccurrence(
   if (params?.runtimeVersion) url.searchParams.set("runtimeVersion", params.runtimeVersion);
   return unwrapEnvelope<GovernanceTopicCooccurrenceResponse>(`${url.pathname}${url.search}`);
 }
-

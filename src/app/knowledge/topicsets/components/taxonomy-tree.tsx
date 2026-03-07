@@ -317,7 +317,9 @@ function ArborNode({
         onContextMenu(node.id, event.clientX, event.clientY);
       }}
       onMouseEnter={() => {
-        onPrefetchImpact?.(node.id);
+        if ((node.data.topicCount ?? 0) > 0) {
+          onPrefetchImpact?.(node.id);
+        }
       }}
     >
       <div ref={dragHandle} className="inline-flex">
@@ -413,33 +415,15 @@ function ArborNode({
           >
             {node.data.name}
           </button>
-          {typeof node.data.docCount === "number" && (
-            <span className="inline-flex items-center gap-1">
-              <span className="text-[10px] text-muted-foreground">
-                {node.data.docCount} {t("topicSet.tree.docs")}
-              </span>
-              <span className="h-1.5 w-10 overflow-hidden rounded bg-slate-200">
-                <span
-                  className="block h-full bg-slate-500"
-                  style={{
-                    width: `${Math.max(
-                      8,
-                      Math.min(100, ((node.data.docCount ?? 0) / Math.max(maxDocCount ?? 0, 1)) * 100)
-                    )}%`,
-                  }}
-                />
-              </span>
-            </span>
-          )}
           {typeof node.data.topicCount === "number" && node.data.topicCount > 0 && (
             <span
               className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
               title={`${t("topicSet.tree.boundTopics")}: ${node.data.topicCount}`}
             >
-              T{node.data.topicCount}
+              {node.data.topicCount}
             </span>
           )}
-          {node.data.topicCount === 0 && (
+          {node.data.topicCount === 0 && !node.data.hasChildren && (
             <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">
               {t("topicSet.tree.emptyCategory")}
             </span>
@@ -450,20 +434,22 @@ function ArborNode({
             </span>
           )}
           <div className={cn("ml-auto flex items-center gap-1", isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100")}>
-            <button
-              type="button"
-              className="rounded border p-0.5"
-              title={t("topicSet.tree.impact")}
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenImpact?.(node.id);
-              }}
-              onMouseEnter={() => {
-                onPrefetchImpact?.(node.id);
-              }}
-            >
-              <BarChart3 className="h-3 w-3" />
-            </button>
+            {(node.data.topicCount ?? 0) > 0 && (
+              <button
+                type="button"
+                className="rounded border p-0.5"
+                title={t("topicSet.tree.impact")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenImpact?.(node.id);
+                }}
+                onMouseEnter={() => {
+                  onPrefetchImpact?.(node.id);
+                }}
+              >
+                <BarChart3 className="h-3 w-3" />
+              </button>
+            )}
             <button
               type="button"
               className="rounded border p-0.5"

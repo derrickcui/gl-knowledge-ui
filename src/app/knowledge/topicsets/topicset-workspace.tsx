@@ -230,6 +230,7 @@ export function TopicSetWorkspace({
       setImpactDocsLoading(true);
       setImpactDocsError(null);
       const result = await fetchGovernanceTopicDocs(impactTopicId, {
+        matchMode: "REALTIME",
         page: 1,
         size: 50,
         sortBy: "WEIGHT",
@@ -562,6 +563,7 @@ export function TopicSetWorkspace({
                 error: null,
               });
               const result = await fetchGovernanceTopicDocs(topic.topicId, {
+                matchMode: "REALTIME",
                 size: 20,
                 sortBy: "TIME",
               });

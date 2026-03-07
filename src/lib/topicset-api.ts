@@ -153,6 +153,20 @@ type PublishResponse = {
   publishedVersion?: number;
 };
 
+type RestoreTopicSetVersionResponse = {
+  topicSetId: string;
+  draftVersion: number;
+  sourceVersion: number;
+  status: string;
+};
+
+type RollbackTopicSetVersionResponse = {
+  topicSetId: string;
+  publishedVersion: number;
+  restoredFromVersion: number;
+  status: string;
+};
+
 type CreateNodeResponse = {
   node: TopicSetNodeItem;
 };
@@ -438,6 +452,41 @@ export async function listTopicSetVersions(
   );
   if (!result.data) return { data: null, error: result.error };
   return { data: result.data.items ?? result.data.versions ?? [], error: null };
+}
+
+export async function restoreTopicSetVersionAsDraft(
+  topicSetId: string,
+  version: number,
+  payload?: { mode?: string; comment?: string | null }
+) {
+  return unwrapOrReturn<RestoreTopicSetVersionResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/versions/${version}/restore`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        mode: payload?.mode ?? "DRAFT_COPY",
+        comment: payload?.comment ?? null,
+      }),
+    }
+  );
+}
+
+export async function rollbackTopicSetVersion(
+  topicSetId: string,
+  version: number,
+  payload?: { comment?: string | null }
+) {
+  return unwrapOrReturn<RollbackTopicSetVersionResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/versions/${version}/rollback`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        comment: payload?.comment ?? null,
+      }),
+    }
+  );
 }
 
 export async function getTopicSetVersionTree(
