@@ -2,11 +2,20 @@
 
 import { t } from "@/i18n";
 
-export type TopicSetWorkspaceTab = "taxonomy" | "map" | "impact" | "coverage" | "unmapped" | "versions" | "diff";
+export type TopicSetWorkspaceTab =
+  | "taxonomy"
+  | "map"
+  | "analytics"
+  | "impact"
+  | "coverage"
+  | "unmapped"
+  | "versions"
+  | "diff";
 
 const TAB_KEYS: Record<TopicSetWorkspaceTab, Parameters<typeof t>[0]> = {
   taxonomy: "topicSet.tab.taxonomy",
   map: "topicSet.tab.map",
+  analytics: "topicSet.tab.analytics",
   impact: "topicSet.tab.impact",
   coverage: "topicSet.tab.coverage",
   unmapped: "topicSet.tab.unmapped",

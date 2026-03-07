@@ -7,6 +7,8 @@ export function CoveragePage({
   selectedRow,
   selectedTopics,
   selectedPath,
+  selectedTopicsLoading = false,
+  selectedTopicsError = null,
   onSelect,
   onOpenTopicDocs,
   onOpenImpact,
@@ -17,6 +19,8 @@ export function CoveragePage({
   selectedRow?: { nodeId?: string; name: string; hitDocs: number } | null;
   selectedTopics: Array<{ topicId: string; topicName?: string | null; hitDocs?: number }>;
   selectedPath?: string | null;
+  selectedTopicsLoading?: boolean;
+  selectedTopicsError?: string | null;
   onSelect: (row: { nodeId?: string; name: string; hitDocs: number }) => void;
   onOpenTopicDocs: (topicId: string, topicName?: string | null) => void;
   onOpenImpact: () => void;
@@ -83,7 +87,17 @@ export function CoveragePage({
               <div>
                 <div className="mb-2 text-[11px] text-muted-foreground">{t("topicSet.coverage.topics")}</div>
                 <div className="space-y-2">
-                  {selectedTopics.map((topic) => (
+                  {selectedTopicsLoading && (
+                    <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
+                      {t("common.loading")}
+                    </div>
+                  )}
+                  {!selectedTopicsLoading && selectedTopicsError && (
+                    <div className="rounded-md border border-dashed px-3 py-3 text-xs text-rose-700">
+                      {selectedTopicsError}
+                    </div>
+                  )}
+                  {!selectedTopicsLoading && !selectedTopicsError && selectedTopics.map((topic) => (
                     <div key={topic.topicId} className="rounded-md border bg-white px-3 py-2 text-xs">
                       <div className="flex items-center justify-between gap-3">
                         <span className="truncate">{topic.topicName ?? topic.topicId}</span>
@@ -107,7 +121,7 @@ export function CoveragePage({
                       </div>
                     </div>
                   ))}
-                  {selectedTopics.length === 0 && (
+                  {!selectedTopicsLoading && !selectedTopicsError && selectedTopics.length === 0 && (
                     <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
                       {t("topicSet.binding.empty")}
                     </div>

@@ -158,12 +158,10 @@ export function KnowledgeMapPage({
 
   useEffect(() => {
     if (!showTopics) return;
-    const topicNodeIds = allNodes
-      .filter((item) => !(item.id in topicsByNode))
-      .map((item) => item.id);
-    if (topicNodeIds.length === 0) return;
-    void Promise.all(topicNodeIds.map((nodeId) => onLoadNodeTopics(nodeId)));
-  }, [allNodes, onLoadNodeTopics, showTopics, topicsByNode]);
+    if (!selectedNodeId) return;
+    if (selectedNodeId in topicsByNode) return;
+    void onLoadNodeTopics(selectedNodeId);
+  }, [onLoadNodeTopics, selectedNodeId, showTopics, topicsByNode]);
 
   const elements = useMemo(() => {
     const nodeIds = new Set<string>();
@@ -210,13 +208,14 @@ export function KnowledgeMapPage({
     }
 
     if (showTopics) {
-      for (const nodeId of Array.from(nodeIds)) {
-        const topicItems = topicsByNode[nodeId] ?? [];
-        for (const topic of topicItems) {
+      const selectedTopics = selectedNodeId ? topicsByNode[selectedNodeId] ?? [] : [];
+      if (selectedNodeId && nodeIds.has(selectedNodeId)) {
+        for (const topic of selectedTopics) {
           const topicDocs = topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0;
           output.push({
             data: {
               id: `topic:${topic.topicId}`,
+              parentNodeId: selectedNodeId,
               label: topic.topicName ?? topic.topicId,
               kind: "topic",
               docs: topicDocs,
@@ -228,8 +227,8 @@ export function KnowledgeMapPage({
           });
           output.push({
             data: {
-              id: `${nodeId}->topic:${topic.topicId}`,
-              source: nodeId,
+              id: `${selectedNodeId}->topic:${topic.topicId}`,
+              source: selectedNodeId,
               target: `topic:${topic.topicId}`,
               kind: "topic-edge",
             },
@@ -249,6 +248,7 @@ export function KnowledgeMapPage({
     showHasTopics,
     showHighCoverage,
     showNoTopics,
+    selectedNodeId,
     showTopics,
     getEffectiveTopicCount,
     topicDocCountMap,
@@ -360,6 +360,31 @@ export function KnowledgeMapPage({
       ],
     });
 
+    const topicNodes = cy.nodes('[kind = "topic"]');
+    topicNodes.unlock();
+    if (showTopics) {
+      topicNodes.forEach((topicNode) => {
+        const parentNodeId = String(topicNode.data("parentNodeId") ?? "");
+        if (!parentNodeId) return;
+        const parentNode = cy.$id(parentNodeId);
+        if (!parentNode || parentNode.empty()) return;
+        const siblingTopicNodes = parentNode
+          .outgoers('node[kind = "topic"]')
+          .toArray()
+          .sort((a: { id: () => string }, b: { id: () => string }) => a.id().localeCompare(b.id()));
+        const topicIndex = siblingTopicNodes.findIndex((item: { id: () => string }) => item.id() === topicNode.id());
+        const siblingCount = Math.max(siblingTopicNodes.length, 1);
+        const parentPosition = parentNode.position();
+        const spread = 44;
+        const startX = parentPosition.x - ((siblingCount - 1) * spread) / 2;
+        topicNode.position({
+          x: startX + topicIndex * spread,
+          y: parentPosition.y + 96,
+        });
+        topicNode.lock();
+      });
+    }
+
     cy.on("tap", "node", (event: EventObjectNode) => {
       const id = String(event.target.id());
       const kind = String(event.target.data("kind"));
@@ -403,7 +428,7 @@ export function KnowledgeMapPage({
       cy.destroy();
       cyRef.current = null;
     };
-  }, [elements, onOpenUnmapped, onSelectNode, rootNodeIds]);
+  }, [elements, onOpenUnmapped, onSelectNode, rootNodeIds, showTopics]);
 
   useEffect(() => {
     const cy = cyRef.current;
@@ -439,6 +464,7 @@ export function KnowledgeMapPage({
   const selectedNode = selectedNodeId ? nodeMap[selectedNodeId] ?? null : null;
   const selectedDocs = selectedNodeId ? coverageByNodeId[selectedNodeId] ?? selectedNode?.docCount ?? 0 : 0;
   const selectedCoverage = selectedDocs > 0 ? Math.round((selectedDocs / Math.max(maxDocs, 1)) * 100) : 0;
+  const canShowTopics = Boolean(selectedNodeId);
   const visibleNodeCount = useMemo(
     () => elements.filter((item) => !("source" in (item.data ?? {})) && String(item.data?.kind) === "node").length,
     [elements]
@@ -528,8 +554,18 @@ export function KnowledgeMapPage({
         >
           {t("topicSet.map.focus")}
         </button>
-        <label className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1">
-          <input type="checkbox" checked={showTopics} onChange={(event) => setShowTopics(event.target.checked)} />
+        <label
+          className={`inline-flex items-center gap-1 rounded border bg-white px-2 py-1 ${
+            canShowTopics ? "" : "cursor-not-allowed opacity-50"
+          }`}
+          title={canShowTopics ? undefined : t("topicSet.map.selectNodeFirst")}
+        >
+          <input
+            type="checkbox"
+            checked={showTopics}
+            disabled={!canShowTopics}
+            onChange={(event) => setShowTopics(event.target.checked)}
+          />
           {t("topicSet.map.showTopics")}
         </label>
         <label className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1">
@@ -609,7 +645,10 @@ export function KnowledgeMapPage({
             </div>
           )}
           {!selectedNode ? (
-            <div className="mt-4 text-sm text-muted-foreground">{t("topicSet.map.empty")}</div>
+            <div className="mt-4 space-y-2 text-sm text-muted-foreground">
+              <div>{t("topicSet.map.empty")}</div>
+              <div className="text-xs">{t("topicSet.map.selectNodeFirst")}</div>
+            </div>
           ) : (
             <div className="mt-4 space-y-4 text-sm">
               <div>

@@ -38,6 +38,37 @@ export type TopicSetDocumentPageResponse = {
   items: TopicSetDocumentItemView[];
 };
 
+export type TopicSetDistributionItemView = {
+  topicId: string;
+  topicName: string;
+  docCount: number;
+  nodeCount: number;
+  nodeIds: string[];
+};
+
+export type TopicSetDistributionResponse = {
+  version?: number;
+  topicSetId: string;
+  dedup: boolean;
+  totalTopics: number;
+  items: TopicSetDistributionItemView[];
+};
+
+export type TopicSetNodeDistributionItemView = {
+  topicId: string;
+  topicName: string;
+  docCount: number;
+};
+
+export type TopicSetNodeDistributionResponse = {
+  version?: number;
+  topicSetId: string;
+  nodeId: string;
+  dedup: boolean;
+  totalTopics: number;
+  items: TopicSetNodeDistributionItemView[];
+};
+
 export type TopicSetRuntimeCacheRefreshResponse = {
   topicSetId: string;
   version: number;
@@ -115,6 +146,49 @@ export async function fetchTopicSetUnmapped(
     `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/unmapped${
       query.toString() ? `?${query.toString()}` : ""
     }`
+  );
+}
+
+export async function fetchTopicSetDistribution(
+  topicSetId: string,
+  params?: {
+    dedup?: boolean;
+    limit?: number;
+    sort?: "docCount" | "topicName";
+    order?: "asc" | "desc";
+  }
+) {
+  const query = new URLSearchParams();
+  if (params?.dedup != null) query.set("dedup", String(params.dedup));
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  if (params?.sort) query.set("sort", params.sort);
+  if (params?.order) query.set("order", params.order);
+  return unwrapEnvelope<TopicSetDistributionResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/distribution${
+      query.toString() ? `?${query.toString()}` : ""
+    }`
+  );
+}
+
+export async function fetchTopicSetNodeDistribution(
+  topicSetId: string,
+  nodeId: string,
+  params?: {
+    dedup?: boolean;
+    limit?: number;
+    sort?: "docCount" | "topicName";
+    order?: "asc" | "desc";
+  }
+) {
+  const query = new URLSearchParams();
+  if (params?.dedup != null) query.set("dedup", String(params.dedup));
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  if (params?.sort) query.set("sort", params.sort);
+  if (params?.order) query.set("order", params.order);
+  return unwrapEnvelope<TopicSetNodeDistributionResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/nodes/${encodeURIComponent(
+      nodeId
+    )}/distribution${query.toString() ? `?${query.toString()}` : ""}`
   );
 }
 

@@ -164,6 +164,114 @@ paths:
                     status: 502
                     detail: failed to fetch topicset runtime
 
+  /api/topicsets/{id}/distribution:
+    get:
+      tags: [topicset-search]
+      summary: Real-time topic distribution for one TopicSet
+      operationId: topicSetDistribution
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dedup
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When false, uses batched facet counting for fast distribution stats; when true, switches to precise per-topic counting under the same TopicSet runtime
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 50
+            minimum: 1
+            maximum: 500
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [docCount, topicName]
+            default: docCount
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Topic distribution loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDistribution'
+              examples:
+                distribution:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      dedup: false
+                      totalTopics: 3
+                      items:
+                        - topicId: topic-1
+                          topicName: 博士后政策
+                          docCount: 80
+                          nodeCount: 2
+                          nodeIds: [node-a, node-b]
+                        - topicId: topic-2
+                          topicName: 高层次人才
+                          docCount: 40
+                          nodeCount: 1
+                          nodeIds: [node-c]
+                        - topicId: topic-3
+                          topicName: 企业补贴
+                          docCount: 20
+                          nodeCount: 1
+                          nodeIds: [node-d]
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUuid:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: "Invalid UUID string: not-a-uuid"
+                datasetMismatch:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: topicset runtime dataset mismatch
+        "502":
+          description: Failed to fetch runtime or execute distribution query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                runtimeFetchFailed:
+                  value:
+                    type: about:blank
+                    title: Bad Gateway
+                    status: 502
+                    detail: failed to fetch topicset runtime
+
   /api/topicsets/{id}/nodes/{nodeId}/impact:
     get:
       tags: [topicset-search]
@@ -256,6 +364,124 @@ paths:
                     detail: topicset node not found: node-a
         "502":
           description: Failed to fetch runtime or execute Solr query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                runtimeFetchFailed:
+                  value:
+                    type: about:blank
+                    title: Bad Gateway
+                    status: 502
+                    detail: failed to fetch topicset runtime
+
+  /api/topicsets/{id}/nodes/{nodeId}/distribution:
+    get:
+      tags: [topicset-search]
+      summary: Real-time topic distribution for one TopicSet node
+      operationId: topicSetNodeDistribution
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: dedup
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: When false, uses batched facet counting for fast node-scoped distribution stats; when true, switches to precise per-topic counting under the same TopicSet runtime
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 50
+            minimum: 1
+            maximum: 500
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [docCount, topicName]
+            default: docCount
+        - name: order
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+      responses:
+        "200":
+          description: Node topic distribution loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetNodeDistribution'
+              examples:
+                distribution:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      nodeId: node-a
+                      dedup: false
+                      totalTopics: 2
+                      items:
+                        - topicId: topic-1
+                          topicName: 博士后政策
+                          docCount: 80
+                        - topicId: topic-2
+                          topicName: 高层次人才
+                          docCount: 40
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidUuid:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: "Invalid UUID string: not-a-uuid"
+                datasetMismatch:
+                  value:
+                    type: about:blank
+                    title: Bad Request
+                    status: 400
+                    detail: topicset runtime dataset mismatch
+        "404":
+          description: TopicSet node not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                nodeNotFound:
+                  value:
+                    type: about:blank
+                    title: Not Found
+                    status: 404
+                    detail: topicset node not found: node-a
+        "502":
+          description: Failed to fetch runtime or execute distribution query
           content:
             application/json:
               schema:
@@ -2705,6 +2931,79 @@ components:
           type: integer
           format: int64
 
+    TopicSetDistributionItem:
+      type: object
+      required: [topicId, topicName, docCount, nodeCount, nodeIds]
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        docCount:
+          type: integer
+          format: int64
+        nodeCount:
+          type: integer
+          format: int32
+        nodeIds:
+          type: array
+          items:
+            type: string
+
+    TopicSetDistributionResponse:
+      type: object
+      required: [version, topicSetId, dedup, totalTopics, items]
+      properties:
+        version:
+          type: integer
+          format: int64
+        topicSetId:
+          type: string
+          format: uuid
+        dedup:
+          type: boolean
+        totalTopics:
+          type: integer
+          format: int32
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDistributionItem'
+
+    TopicSetNodeDistributionItem:
+      type: object
+      required: [topicId, topicName, docCount]
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        docCount:
+          type: integer
+          format: int64
+
+    TopicSetNodeDistributionResponse:
+      type: object
+      required: [version, topicSetId, nodeId, dedup, totalTopics, items]
+      properties:
+        version:
+          type: integer
+          format: int64
+        topicSetId:
+          type: string
+          format: uuid
+        nodeId:
+          type: string
+        dedup:
+          type: boolean
+        totalTopics:
+          type: integer
+          format: int32
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetNodeDistributionItem'
+
     TopicSetDocumentPageResponse:
       type: object
       properties:
@@ -2757,6 +3056,32 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicSetCoverageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetDistribution:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDistributionResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetNodeDistribution:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetNodeDistributionResponse'
         error:
           nullable: true
           oneOf:

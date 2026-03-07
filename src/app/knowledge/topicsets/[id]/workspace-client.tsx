@@ -6,6 +6,8 @@ import { fetchGovernanceTopicDocs } from "@/lib/governance-topic-detail-api";
 import { fetchCoverageTopics } from "@/lib/governance-coverage-api";
 import {
   fetchTopicSetCoverage,
+  fetchTopicSetDistribution,
+  fetchTopicSetNodeDistribution,
   fetchTopicSetNodeImpact,
   fetchTopicSetUnmapped,
   refreshTopicSetRuntimeCache,
@@ -33,6 +35,7 @@ import { UnmappedPage } from "./components/unmapped/unmapped-page";
 import { VersionsPage } from "./components/versions/versions-page";
 import { TaxonomyDiffPage } from "./components/diff/taxonomy-diff-page";
 import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
+import { DashboardPage } from "./components/analytics/dashboard-page";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -152,6 +155,17 @@ export function TopicSetWorkspaceClient({
   const [impactSort, setImpactSort] = useState<"score" | "updatedAt" | "publishedAt">("score");
   const [impactTotal, setImpactTotal] = useState(0);
   const [topicHitDocsMap, setTopicHitDocsMap] = useState<Record<string, number>>({});
+  const [topicDistributionRows, setTopicDistributionRows] = useState<
+    Array<{ topicId: string; topicName: string; hitDocs: number; nodeCount: number; nodeIds: string[] }>
+  >([]);
+  const [topicDistributionLoading, setTopicDistributionLoading] = useState(false);
+  const [topicDistributionError, setTopicDistributionError] = useState<string | null>(null);
+  const [topicDistributionDedup, setTopicDistributionDedup] = useState(false);
+  const [selectedNodeDistributionRows, setSelectedNodeDistributionRows] = useState<
+    Array<{ topicId: string; topicName: string; hitDocs: number }>
+  >([]);
+  const [selectedNodeDistributionLoading, setSelectedNodeDistributionLoading] = useState(false);
+  const [selectedNodeDistributionError, setSelectedNodeDistributionError] = useState<string | null>(null);
   const [topicDocCountMap, setTopicDocCountMap] = useState<Record<string, number>>({});
   const [topicDocsOpen, setTopicDocsOpen] = useState(false);
   const [topicDocsLoading, setTopicDocsLoading] = useState(false);
@@ -378,6 +392,30 @@ export function TopicSetWorkspaceClient({
     return Array.from(ids).sort();
   }, [topics]);
   const loadedTopicIdsKey = useMemo(() => loadedTopicIds.join("|"), [loadedTopicIds]);
+  const emptyLeafRows = useMemo(
+    () =>
+      Object.values(nodeMap)
+        .filter((node) => {
+          const hasChildren = (childrenByParent[node.id]?.length ?? 0) > 0;
+          return !hasChildren && (node.topicCount ?? 0) === 0;
+        })
+        .map((node) => ({
+          nodeId: node.id,
+          name: node.name,
+          path: node.path,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [childrenByParent, nodeMap]
+  );
+  const dashboardSummary = useMemo(
+    () => ({
+      coveredDocs: coverageRows.reduce((sum, row) => sum + row.hitDocs, 0),
+      coveredNodes: coverageRows.length,
+      trackedTopics: topicDistributionRows.length,
+      emptyLeaves: emptyLeafRows.length,
+    }),
+    [coverageRows, emptyLeafRows.length, topicDistributionRows.length]
+  );
 
   const getNodeDepth = useCallback(
     (nodeId: string) => {
@@ -479,6 +517,82 @@ export function TopicSetWorkspaceClient({
     unmappedSort,
     runtimeRefreshTick,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadTopicDistribution() {
+      if (!topicSetId) {
+        setTopicDistributionRows([]);
+        setTopicDistributionError(null);
+        return;
+      }
+      setTopicDistributionLoading(true);
+      setTopicDistributionError(null);
+      const result = await fetchTopicSetDistribution(topicSetId, {
+        dedup: topicDistributionDedup,
+        limit: 50,
+        sort: "docCount",
+        order: "desc",
+      });
+      if (cancelled) return;
+      setTopicDistributionLoading(false);
+      if (!result.data) {
+        setTopicDistributionRows([]);
+        setTopicDistributionError(result.error ?? t("topicSet.analytics.distributionLoadFailed"));
+        return;
+      }
+      setTopicDistributionRows(
+        (result.data.items ?? []).map((item) => ({
+          topicId: item.topicId,
+          topicName: item.topicName,
+          hitDocs: Number(item.docCount ?? 0),
+          nodeCount: Number(item.nodeCount ?? 0),
+          nodeIds: item.nodeIds ?? [],
+        }))
+      );
+    }
+    void loadTopicDistribution();
+    return () => {
+      cancelled = true;
+    };
+  }, [topicDistributionDedup, topicSetId, runtimeRefreshTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSelectedNodeDistribution() {
+      if (!topicSetId || !selectedNode) {
+        setSelectedNodeDistributionRows([]);
+        setSelectedNodeDistributionError(null);
+        return;
+      }
+      setSelectedNodeDistributionLoading(true);
+      setSelectedNodeDistributionError(null);
+      const result = await fetchTopicSetNodeDistribution(topicSetId, selectedNode, {
+        dedup: coverageDedup,
+        limit: 50,
+        sort: "docCount",
+        order: "desc",
+      });
+      if (cancelled) return;
+      setSelectedNodeDistributionLoading(false);
+      if (!result.data) {
+        setSelectedNodeDistributionRows([]);
+        setSelectedNodeDistributionError(result.error ?? t("topicSet.analytics.distributionLoadFailed"));
+        return;
+      }
+      setSelectedNodeDistributionRows(
+        (result.data.items ?? []).map((item) => ({
+          topicId: item.topicId,
+          topicName: item.topicName,
+          hitDocs: Number(item.docCount ?? 0),
+        }))
+      );
+    }
+    void loadSelectedNodeDistribution();
+    return () => {
+      cancelled = true;
+    };
+  }, [coverageDedup, selectedNode, topicSetId, runtimeRefreshTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1170,12 +1284,43 @@ export function TopicSetWorkspaceClient({
         />
       )}
 
+      {activeTab === "analytics" && (
+        <DashboardPage
+          coverageRows={coverageRows}
+          summary={dashboardSummary}
+          unmappedTotal={unmappedTotal}
+          unmappedDocs={unmappedDocs}
+          topicRows={topicDistributionRows}
+          topicDistributionLoading={topicDistributionLoading}
+          topicDistributionError={topicDistributionError}
+          topicDistributionDedup={topicDistributionDedup}
+          emptyLeafRows={emptyLeafRows}
+          onOpenCoverage={(row) => {
+            if (row?.nodeId) {
+              selectNode(row.nodeId);
+            }
+            setActiveTab("coverage");
+          }}
+          onOpenUnmapped={() => setActiveTab("unmapped")}
+          onOpenTopicDocs={(topicId, topicName) => {
+            void openTopicDocs(topicId, topicName);
+          }}
+          onOpenTaxonomy={(nodeId) => {
+            selectNode(nodeId);
+            setActiveTab("taxonomy");
+          }}
+          onToggleTopicDistributionDedup={setTopicDistributionDedup}
+        />
+      )}
+
       {activeTab === "coverage" && (
         <CoveragePage
           rows={coverageRows}
           selectedRow={selectedCoverageRow}
-          selectedTopics={selectedCoverageTopics}
+          selectedTopics={selectedNodeDistributionRows}
           selectedPath={selectedNodeDisplayPath}
+          selectedTopicsLoading={selectedNodeDistributionLoading}
+          selectedTopicsError={selectedNodeDistributionError}
           dedup={coverageDedup}
           onToggleDedup={(next) => setCoverageDedup(next)}
           onOpenTopicDocs={(topicId, topicName) => {
