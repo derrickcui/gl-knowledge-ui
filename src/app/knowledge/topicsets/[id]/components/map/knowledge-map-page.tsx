@@ -70,7 +70,7 @@ type KnowledgeMapPageProps = {
   childrenByParent: Record<string, string[]>;
   rootNodeIds: string[];
   selectedNodeId: string | null;
-  selectedNodeTopics: NodeTopicView[];
+  selectedNodeTopics: Array<{ topicId: string; topicName?: string | null; hitDocs?: number }>;
   topicsByNode: Record<string, NodeTopicView[]>;
   topicHitDocsMap: Record<string, number>;
   topicDocCountMap?: Record<string, number>;
@@ -208,10 +208,10 @@ export function KnowledgeMapPage({
     }
 
     if (showTopics) {
-      const selectedTopics = selectedNodeId ? topicsByNode[selectedNodeId] ?? [] : [];
+      const selectedTopics = selectedNodeId ? selectedNodeTopics : [];
       if (selectedNodeId && nodeIds.has(selectedNodeId)) {
         for (const topic of selectedTopics) {
-          const topicDocs = topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0;
+          const topicDocs = topic.hitDocs ?? topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0;
           output.push({
             data: {
               id: `topic:${topic.topicId}`,
@@ -249,6 +249,7 @@ export function KnowledgeMapPage({
     showHighCoverage,
     showNoTopics,
     selectedNodeId,
+    selectedNodeTopics,
     showTopics,
     getEffectiveTopicCount,
     topicDocCountMap,

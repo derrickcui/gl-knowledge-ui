@@ -161,11 +161,11 @@ export function TopicSetWorkspaceClient({
   const [topicDistributionLoading, setTopicDistributionLoading] = useState(false);
   const [topicDistributionError, setTopicDistributionError] = useState<string | null>(null);
   const [topicDistributionDedup, setTopicDistributionDedup] = useState(false);
-  const [selectedNodeDistributionRows, setSelectedNodeDistributionRows] = useState<
-    Array<{ topicId: string; topicName: string; hitDocs: number }>
-  >([]);
-  const [selectedNodeDistributionLoading, setSelectedNodeDistributionLoading] = useState(false);
-  const [selectedNodeDistributionError, setSelectedNodeDistributionError] = useState<string | null>(null);
+  const [nodeDistributionCache, setNodeDistributionCache] = useState<
+    Record<string, Array<{ topicId: string; topicName: string; hitDocs: number }>>
+  >({});
+  const [nodeDistributionLoadingByNode, setNodeDistributionLoadingByNode] = useState<Record<string, boolean>>({});
+  const [nodeDistributionErrorByNode, setNodeDistributionErrorByNode] = useState<Record<string, string | null>>({});
   const [topicDocCountMap, setTopicDocCountMap] = useState<Record<string, number>>({});
   const [topicDocsOpen, setTopicDocsOpen] = useState(false);
   const [topicDocsLoading, setTopicDocsLoading] = useState(false);
@@ -329,15 +329,14 @@ export function TopicSetWorkspaceClient({
   }, [nodeMap, selectedNodeData]);
 
   const impactDrawerNode = findNodeById(impactDrawerNodeId);
+  const selectedNodeDistributionRows = selectedNode ? nodeDistributionCache[selectedNode] ?? [] : [];
+  const selectedNodeDistributionLoading = selectedNode ? Boolean(nodeDistributionLoadingByNode[selectedNode]) : false;
+  const selectedNodeDistributionError = selectedNode ? nodeDistributionErrorByNode[selectedNode] ?? null : null;
+  const impactDrawerDistributionRows = impactDrawerNodeId ? nodeDistributionCache[impactDrawerNodeId] ?? [] : [];
   const impactDrawerTopics = useMemo(() => {
     if (!impactDrawerNodeId) return [];
-    const current = topics[impactDrawerNodeId] ?? [];
-    return [...current].sort((a, b) => {
-      const ah = topicHitDocsMap[a.topicId] ?? 0;
-      const bh = topicHitDocsMap[b.topicId] ?? 0;
-      return bh - ah;
-    });
-  }, [impactDrawerNodeId, topicHitDocsMap, topics]);
+    return impactDrawerDistributionRows;
+  }, [impactDrawerDistributionRows, impactDrawerNodeId]);
   const flatNodes = useMemo(
     () => Object.values(nodeMap).sort((a, b) => a.path.localeCompare(b.path)),
     [nodeMap]
@@ -374,13 +373,12 @@ export function TopicSetWorkspaceClient({
     };
   }, [coverageByNodeId, nodeMap, selectedNode]);
   const selectedCoverageTopics = useMemo(
-    () =>
-      selectedNodeTopics.map((topic) => ({
-        topicId: topic.topicId,
-        topicName: topic.topicName,
-        hitDocs: topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0,
-      })),
-    [selectedNodeTopics, topicDocCountMap, topicHitDocsMap]
+    () => (selectedNodeDistributionRows.length > 0 ? selectedNodeDistributionRows : selectedNodeTopics.map((topic) => ({
+      topicId: topic.topicId,
+      topicName: topic.topicName,
+      hitDocs: topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0,
+    }))),
+    [selectedNodeDistributionRows, selectedNodeTopics, topicDocCountMap, topicHitDocsMap]
   );
   const loadedTopicIds = useMemo(() => {
     const ids = new Set<string>();
@@ -557,42 +555,48 @@ export function TopicSetWorkspaceClient({
     };
   }, [topicDistributionDedup, topicSetId, runtimeRefreshTick]);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadSelectedNodeDistribution() {
-      if (!topicSetId || !selectedNode) {
-        setSelectedNodeDistributionRows([]);
-        setSelectedNodeDistributionError(null);
-        return;
-      }
-      setSelectedNodeDistributionLoading(true);
-      setSelectedNodeDistributionError(null);
-      const result = await fetchTopicSetNodeDistribution(topicSetId, selectedNode, {
+  const loadNodeDistribution = useCallback(
+    async (nodeId: string) => {
+      if (!topicSetId) return;
+      setNodeDistributionLoadingByNode((prev) => ({ ...prev, [nodeId]: true }));
+      setNodeDistributionErrorByNode((prev) => ({ ...prev, [nodeId]: null }));
+      const result = await fetchTopicSetNodeDistribution(topicSetId, nodeId, {
         dedup: coverageDedup,
         limit: 50,
         sort: "docCount",
         order: "desc",
       });
-      if (cancelled) return;
-      setSelectedNodeDistributionLoading(false);
+      setNodeDistributionLoadingByNode((prev) => ({ ...prev, [nodeId]: false }));
       if (!result.data) {
-        setSelectedNodeDistributionRows([]);
-        setSelectedNodeDistributionError(result.error ?? t("topicSet.analytics.distributionLoadFailed"));
+        setNodeDistributionCache((prev) => ({ ...prev, [nodeId]: [] }));
+        setNodeDistributionErrorByNode((prev) => ({
+          ...prev,
+          [nodeId]: result.error ?? t("topicSet.analytics.distributionLoadFailed"),
+        }));
         return;
       }
-      setSelectedNodeDistributionRows(
-        (result.data.items ?? []).map((item) => ({
+      setNodeDistributionCache((prev) => ({
+        ...prev,
+        [nodeId]: (result.data?.items ?? []).map((item) => ({
           topicId: item.topicId,
           topicName: item.topicName,
           hitDocs: Number(item.docCount ?? 0),
-        }))
-      );
-    }
-    void loadSelectedNodeDistribution();
-    return () => {
-      cancelled = true;
-    };
-  }, [coverageDedup, selectedNode, topicSetId, runtimeRefreshTick]);
+        })),
+      }));
+      setNodeDistributionErrorByNode((prev) => ({ ...prev, [nodeId]: null }));
+    },
+    [coverageDedup, topicSetId]
+  );
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    void loadNodeDistribution(selectedNode);
+  }, [loadNodeDistribution, runtimeRefreshTick, selectedNode]);
+
+  useEffect(() => {
+    if (!impactDrawerOpen || !impactDrawerNodeId) return;
+    void loadNodeDistribution(impactDrawerNodeId);
+  }, [impactDrawerNodeId, impactDrawerOpen, loadNodeDistribution, runtimeRefreshTick]);
 
   useEffect(() => {
     let cancelled = false;
@@ -747,6 +751,9 @@ export function TopicSetWorkspaceClient({
       return { ok: false, error: result.error ?? t("topicSet.feedback.runtimeRefreshFailed") };
     }
     setImpactDrawerDocsCache({});
+    setNodeDistributionCache({});
+    setNodeDistributionLoadingByNode({});
+    setNodeDistributionErrorByNode({});
     setTopicDocCountMap({});
     setRuntimeRefreshTick((prev) => prev + 1);
     return { ok: true };
@@ -1080,7 +1087,7 @@ export function TopicSetWorkspaceClient({
           childrenByParent={childrenByParent}
           rootNodeIds={rootNodeIds}
           selectedNodeId={selectedNode}
-          selectedNodeTopics={selectedNodeTopics}
+          selectedNodeTopics={selectedCoverageTopics}
           topicsByNode={topics}
           topicHitDocsMap={topicHitDocsMap}
           topicDocCountMap={topicDocCountMap}
@@ -1209,7 +1216,7 @@ export function TopicSetWorkspaceClient({
                   >
                     <span className="truncate">{topic.topicName ?? topic.topicId}</span>
                     <span className="ml-auto text-muted-foreground">
-                      {topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0}
+                      {topic.hitDocs ?? topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0}
                     </span>
                   </div>
                 ))}
