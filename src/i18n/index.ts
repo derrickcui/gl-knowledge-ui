@@ -2,7 +2,7 @@ import { zhCN } from "./zh-CN";
 import { enUS } from "./en-US";
 
 export type Locale = "zh-CN" | "en-US";
-type Dictionary = typeof zhCN;
+type Dictionary = Record<keyof typeof zhCN, string>;
 
 const dictionaries: Record<Locale, Dictionary> = {
   "zh-CN": zhCN,

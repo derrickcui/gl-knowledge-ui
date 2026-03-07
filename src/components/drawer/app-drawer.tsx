@@ -114,6 +114,15 @@ export function AppDrawer() {
           />
 
           <DrawerItem
+            href="/knowledge/topicsets"
+            label={t("drawer.topicsets")}
+            icon={<Layers className="h-4 w-4" />}
+            collapsed={collapsed}
+            nested
+            active={isActive("/knowledge/topicsets")}
+          />
+
+          <DrawerItem
             href="/knowledge/governance"
             label={t("drawer.semanticTagging")}
             icon={<Tags className="h-4 w-4" />}

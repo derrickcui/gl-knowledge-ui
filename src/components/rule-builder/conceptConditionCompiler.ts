@@ -76,7 +76,7 @@ function applyLocations(baseNode: RuleNode, draft: ConceptConditionDraft) {
 export function buildConceptAstFromDraft(
   draft: ConceptConditionDraft
 ): RuleNode {
-  const explain = {
+  const explain: RuleNode["explain"] = {
     mode: "AUTO",
     text: draft.explainPreview,
   };
@@ -92,7 +92,7 @@ export function buildConceptAstFromDraft(
       const name = draft.scope.selectedChildNames?.[index];
       if (name) nameMap.set(id, name);
     });
-    const children = [
+    const children: RuleNode[] = [
       {
         id: createNodeId(),
         type: "CONCEPT_MATCH",
@@ -102,7 +102,7 @@ export function buildConceptAstFromDraft(
           relation: "SELF",
         },
       },
-      ...draft.scope.selectedChildIds.map((conceptId) => ({
+      ...draft.scope.selectedChildIds.map((conceptId): RuleNode => ({
         id: createNodeId(),
         type: "CONCEPT_MATCH",
         params: {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AnalyticsMatrixDiffCellView,
@@ -10,6 +10,8 @@ import {
   fetchAnalyticsTopicStats,
 } from "@/lib/analytics-api";
 import { fetchGovernanceTopicDiff } from "@/lib/governance-topic-detail-api";
+
+export const dynamic = "force-dynamic";
 
 type ChangedRow = {
   docId: string;
@@ -26,7 +28,7 @@ function toFixedOrDash(value: number | null | undefined, digits = 3) {
   return Number(value).toFixed(digits);
 }
 
-export default function GovernanceDiffPage() {
+function GovernanceDiffPageClient() {
   const searchParams = useSearchParams();
   const fromVersion = searchParams.get("v1") ?? "";
   const toVersion = searchParams.get("v2") ?? "";
@@ -232,3 +234,10 @@ export default function GovernanceDiffPage() {
   );
 }
 
+export default function GovernanceDiffPage() {
+  return (
+    <Suspense fallback={<div className="min-h-full p-6 text-sm text-slate-500">Loading...</div>}>
+      <GovernanceDiffPageClient />
+    </Suspense>
+  );
+}

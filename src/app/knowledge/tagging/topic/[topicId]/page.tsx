@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, Suspense, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   AnalyticsMatrixCellView,
@@ -18,6 +18,8 @@ import {
   fetchGovernanceTopicDocs,
   fetchGovernanceTopicVersions,
 } from "@/lib/governance-topic-detail-api";
+
+export const dynamic = "force-dynamic";
 
 type TopicDocRow = {
   docId: string;
@@ -66,7 +68,7 @@ function formatDateTime(value: string | null | undefined) {
   return date.toLocaleString();
 }
 
-export default function TopicDetailPage() {
+function TopicDetailPageClient() {
   const params = useParams<{ topicId: string }>();
   const searchParams = useSearchParams();
   const topicId = decodeURIComponent(params.topicId);
@@ -92,7 +94,7 @@ export default function TopicDetailPage() {
 
   const [explainLoadingDocId, setExplainLoadingDocId] = useState("");
   const [expandedExplainDocId, setExpandedExplainDocId] = useState("");
-  const [explainMap, setExplainMap] = useState<Record<string, GovernanceTopicDocExplainResponse>>({});
+  const [explainMap, setExplainMap] = useState<Record<string, GovernanceTopicDocExplainResponse | null>>({});
   const [explainErrorMap, setExplainErrorMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -483,5 +485,13 @@ export default function TopicDetailPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+export default function TopicDetailPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-slate-400">Loading...</div>}>
+      <TopicDetailPageClient />
+    </Suspense>
   );
 }

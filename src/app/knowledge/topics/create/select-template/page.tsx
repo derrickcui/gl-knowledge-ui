@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchTemplatesList, RuleTemplateItem } from "@/lib/api";
 
-export default function SelectTemplatePage() {
+export const dynamic = "force-dynamic";
+
+function SelectTemplatePageClient() {
   const search = useSearchParams();
   const router = useRouter();
   const name = search.get("name") ?? "";
@@ -86,5 +88,13 @@ export default function SelectTemplatePage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function SelectTemplatePage() {
+  return (
+    <Suspense fallback={<div className="max-w-3xl p-6 text-sm text-muted-foreground">Loading...</div>}>
+      <SelectTemplatePageClient />
+    </Suspense>
   );
 }

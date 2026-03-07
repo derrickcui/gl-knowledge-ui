@@ -1,9 +1,12 @@
 "use client";
 
+import { Suspense } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import RuntimeEnvironmentEditor from "@/components/runtime/runtime-environment-editor";
 
-export default function RuntimeDetailPage() {
+export const dynamic = "force-dynamic";
+
+function RuntimeDetailPageClient() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const id = Number.parseInt(params.id, 10);
@@ -14,4 +17,12 @@ export default function RuntimeDetailPage() {
   }
 
   return <RuntimeEnvironmentEditor environmentId={id} forceReadOnly={readonly} />;
+}
+
+export default function RuntimeDetailPage() {
+  return (
+    <Suspense fallback={<div className="px-6 py-6 text-sm text-slate-500">Loading...</div>}>
+      <RuntimeDetailPageClient />
+    </Suspense>
+  );
 }

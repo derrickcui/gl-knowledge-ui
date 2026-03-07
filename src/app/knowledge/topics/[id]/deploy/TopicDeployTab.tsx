@@ -32,6 +32,14 @@ type Feedback = {
 
 const DEPLOY_MODE_OPTIONS: RuntimeDeployMode[] = ["FILTER", "BOOST", "LABEL", "MAP", "SIGNAL"];
 
+const DEPLOY_MODE_LABEL_KEY: Record<RuntimeDeployMode, Parameters<typeof t>[0]> = {
+  FILTER: "topicDeploy.wizard.deployMode.filter",
+  BOOST: "topicDeploy.wizard.deployMode.boost",
+  LABEL: "topicDeploy.wizard.deployMode.label",
+  MAP: "topicDeploy.wizard.deployMode.map",
+  SIGNAL: "topicDeploy.wizard.deployMode.signal",
+};
+
 type ConfirmAction =
   | { type: "ACTIVATE"; item: RuntimeDeploymentItem }
   | { type: "DELETE"; item: RuntimeDeploymentItem };
@@ -796,7 +804,7 @@ export function TopicDeployTab({
                               });
                             }}
                           />
-                          <span>{t(`topicDeploy.wizard.deployMode.${mode.toLowerCase()}`)}</span>
+                          <span>{t(DEPLOY_MODE_LABEL_KEY[mode])}</span>
                         </label>
                       );
                     })}

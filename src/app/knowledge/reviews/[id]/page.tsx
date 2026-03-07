@@ -293,7 +293,7 @@ function normalizeExplainDiffForUi(packet: any) {
       if (!kind) return null;
       return { kind, blockIndex: blockIndex ?? index };
     })
-    .filter(Boolean);
+    .filter((item): item is { kind: "ADD" | "REMOVE" | "MODIFY"; blockIndex: number } => item !== null);
   return mapped.length ? mapped : undefined;
 }
 
@@ -311,7 +311,7 @@ function normalizeExplainDiffForChecklist(packet: any) {
       if (!kind) return null;
       return { kind, blockIndex: item.blockIndex ?? index };
     })
-    .filter(Boolean);
+    .filter((item): item is { kind: "ADD" | "REMOVE" | "MODIFY"; blockIndex: number } => item !== null);
 }
 
 function mapDiffKind(raw: any) {

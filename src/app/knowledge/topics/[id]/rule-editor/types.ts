@@ -54,7 +54,7 @@ export interface UiPositionRelationNode {
   distance?: number;
   ordered?: boolean;
   strict?: boolean;
-  children: UiTermSetNode[];
+  children: UiExpressionNode[];
 }
 
 // Backward-compatibility for legacy persisted trees.

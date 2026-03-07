@@ -77,7 +77,7 @@ function applyLocations(baseNode: RuleNode, draft: TopicConditionDraft) {
 export function buildTopicAstFromDraft(
   draft: TopicConditionDraft
 ): RuleNode {
-  const explain = {
+  const explain: RuleNode["explain"] = {
     mode: "AUTO",
     text: draft.explainPreview,
   };

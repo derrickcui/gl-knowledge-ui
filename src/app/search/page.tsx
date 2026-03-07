@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 
 type FacetBucket = {
   dimensionId?: string;
@@ -36,7 +38,7 @@ function normalizeError(error: SearchFacetResponse["error"]) {
   return "facet request failed";
 }
 
-export default function SearchPage() {
+function SearchPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const currentFq = searchParams.get("fq") ?? "";
@@ -199,5 +201,13 @@ export default function SearchPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div className="min-h-full bg-slate-950 p-6 text-slate-100">Loading...</div>}>
+      <SearchPageClient />
+    </Suspense>
   );
 }

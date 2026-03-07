@@ -52,6 +52,7 @@ export function AuditDrawer({
   useEffect(() => {
     if (!open || !record) return;
     let ignore = false;
+    const currentRecord = record;
 
     async function load() {
       setCandidate(null);
@@ -59,7 +60,7 @@ export function AuditDrawer({
       setError(null);
 
       const isSnapshot = mode === "snapshot";
-      if (isSnapshot && !record.snapshotId) {
+      if (isSnapshot && !currentRecord.snapshotId) {
         setError(t("glossary.audit.snapshotUnavailable"));
         return;
       }
@@ -71,8 +72,8 @@ export function AuditDrawer({
             : t("glossary.common.action.loadCurrent"),
         })
       );
-      const candidateId = Number(record.conceptId);
-      const snapshotId = record.snapshotId ?? "";
+      const candidateId = Number(currentRecord.conceptId);
+      const snapshotId = currentRecord.snapshotId ?? "";
 
       const [candidateRes, relationRes] = isSnapshot
         ? await Promise.all([

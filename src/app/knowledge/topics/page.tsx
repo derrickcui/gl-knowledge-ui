@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -16,6 +16,8 @@ import { fetchReviewPacketBusiness } from "@/components/review/reviewApi";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { t } from "@/i18n";
 import { useDraggableDialog } from "@/lib/useDraggableDialog";
+
+export const dynamic = "force-dynamic";
 
 const TOPIC_LIST_TTL_MS = 30_000;
 const topicListCache: {
@@ -113,7 +115,7 @@ function formatUpdatedAt(updatedAt?: string | null) {
   return parsed.toISOString().slice(0, 10);
 }
 
-export default function TopicsPage() {
+function TopicsPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const mountedRef = useRef(true);
@@ -877,6 +879,14 @@ function SelectTemplateDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+export default function TopicsPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
+      <TopicsPageClient />
+    </Suspense>
   );
 }
 

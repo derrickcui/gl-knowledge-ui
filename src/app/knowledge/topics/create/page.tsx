@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createTopic } from "@/lib/topic-api";
 import { fetchTemplatesList } from "@/lib/api";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 
-export default function TopicCreatePage() {
+export const dynamic = "force-dynamic";
+
+function TopicCreatePageClient() {
   const search = useSearchParams();
   const router = useRouter();
   const selectedTemplate = search.get("template");
@@ -102,5 +104,13 @@ export default function TopicCreatePage() {
         </button>
       </div>
     </div>
+  );
+}
+
+export default function TopicCreatePage() {
+  return (
+    <Suspense fallback={<div className="max-w-2xl p-6 text-sm text-muted-foreground">Loading...</div>}>
+      <TopicCreatePageClient />
+    </Suspense>
   );
 }

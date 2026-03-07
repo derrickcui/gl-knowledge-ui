@@ -20,13 +20,14 @@ export type BusinessGroup = {
   conditions: BusinessCondition[];
   operator?: "AND" | "OR" | "ALL" | "ANY" | "EXCLUDE" | "ACCRUE" | "LOGSUM";
   score?: BusinessScore;
-  mode?: "ACCRUE";
+  mode?: "ACCRUE" | "LOGSUM";
   threshold?: number;
   proximity?: GroupProximity;
 };
 
 export type GroupProximity = {
   mode: "NEAR" | "SENTENCE" | "PARAGRAPH" | "DOCUMENT";
+  scope?: "PARAGRAPH" | "SENTENCE";
   distance?: number;
   ordered?: boolean;
 };
@@ -76,6 +77,7 @@ export type ConceptConditionPayload = {
   conceptId: string;
   conceptName?: string;
   scope: "SELF" | "DESCENDANT" | "PARTIAL_DESCENDANT";
+  useOriginalRule?: boolean;
   selectedChildIds?: string[];
   selectedChildNames?: string[];
   location: LocationPayload;
@@ -282,10 +284,21 @@ function mapRelationToScope(rel?: string): ConceptConditionPayload["scope"] {
   return "DESCENDANT";
 }
 
-function normalizeScenarioOperator(operator?: string) {
+function normalizeScenarioOperator(
+  operator?: string
+): BusinessGroup["operator"] | undefined {
   if (operator === "ALL") return "AND";
   if (operator === "ANY") return "OR";
-  return operator;
+  if (
+    operator === "AND" ||
+    operator === "OR" ||
+    operator === "EXCLUDE" ||
+    operator === "ACCRUE" ||
+    operator === "LOGSUM"
+  ) {
+    return operator;
+  }
+  return undefined;
 }
 
 type ImportanceLevel = "HIGH" | "NORMAL" | "LOW";
@@ -700,10 +713,10 @@ export function ruleNodeToBusinessRule(root: RuleNode): BusinessRule {
 
 export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
   const groups = rule.groups.map((group, index) => {
+    const weightedScore = group.score?.type === "WEIGHTED" ? group.score : undefined;
     const hasWeights =
-      group.score?.type === "WEIGHTED" &&
-      group.score.weights &&
-      Object.keys(group.score.weights).length > 0;
+      Boolean(weightedScore?.weights) &&
+      Object.keys(weightedScore?.weights ?? {}).length > 0;
     const scenarioOperator = (() => {
       if (group.score?.type === "AT_LEAST") return "ACCRUE";
       if (group.score?.type === "WEIGHTED" && group.score?.mode === "LOGSUM") {
@@ -735,7 +748,7 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
     const children = group.conditions
       .map((condition) => {
         const importance = hasWeights
-          ? weightToImportance(group.score?.weights?.[condition.id])
+          ? weightToImportance(weightedScore?.weights?.[condition.id])
           : "NORMAL";
         if (condition.kind === "CONCEPT") {
           const payload = condition.payload;
@@ -827,7 +840,7 @@ export function businessRuleToRuleNode(rule: BusinessRule): RuleNode {
               rangeMode:
                 payload.location.inBody && payload.location.inTitle
                   ? "ALL"
-                  : "LIMITED",
+                  : "LIMITED" as "ALL" | "LIMITED",
               explainPreview: fallbackExplain,
               validation: { valid: true },
             };

@@ -17,6 +17,8 @@ servers:
 tags:
   - name: search
     description: Search endpoints
+  - name: topicset-search
+    description: Search-side TopicSet runtime endpoints
   - name: topic
     description: Topic rule evaluation endpoints
   - name: suggest
@@ -73,6 +75,133 @@ paths:
                         deployMode: [FILTER, BOOST, LABEL, MAP, SIGNAL]
                         weight: 1
                         namespace: policy
+
+  /api/topicsets/{id}/coverage:
+    get:
+      tags: [topicset-search]
+      summary: Real-time TopicSet node coverage
+      operationId: topicSetCoverage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Coverage loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetCoverage'
+
+  /api/topicsets/{id}/nodes/{nodeId}/impact:
+    get:
+      tags: [topicset-search]
+      summary: Real-time impacted documents for one TopicSet node
+      operationId: topicSetNodeImpact
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [score, updatedAt, publishedAt]
+            default: score
+      responses:
+        "200":
+          description: Impact docs loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDocumentPage'
+
+  /api/topicsets/{id}/unmapped:
+    get:
+      tags: [topicset-search]
+      summary: Real-time unmapped documents for one TopicSet
+      operationId: topicSetUnmapped
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [score, updatedAt, publishedAt]
+            default: score
+      responses:
+        "200":
+          description: Unmapped docs loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDocumentPage'
+
+  /internal/topicsets/{id}/runtime-cache/refresh:
+    post:
+      tags: [topicset-search]
+      summary: Refresh cached TopicSet runtime in Search Service
+      operationId: refreshTopicSetRuntimeCache
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Runtime cache refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetRuntimeCacheRefresh'
 
   /api/topic/evaluate-doc:
     post:
@@ -2328,6 +2457,113 @@ components:
           format: int32
         namespace:
           type: string
+
+    TopicSetCoverageResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetCoverageNodeView'
+
+    TopicSetCoverageNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        docCount:
+          type: integer
+          format: int64
+
+    TopicSetDocumentPageResponse:
+      type: object
+      properties:
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
+    TopicSetDocumentItemView:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        summary:
+          type: string
+          nullable: true
+        highlightFragments:
+          type: array
+          items:
+            type: string
+
+    TopicSetRuntimeCacheRefreshResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+        version:
+          type: integer
+          format: int32
+        refreshedAt:
+          type: string
+          format: date-time
+
+    ApiEnvelopeTopicSetCoverage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetCoverageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetDocumentPage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDocumentPageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetRuntimeCacheRefresh:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetRuntimeCacheRefreshResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
 
     TopicStatsRequest:
       type: object

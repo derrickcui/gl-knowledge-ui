@@ -120,10 +120,11 @@ function fieldLabel(field: "CONTENT" | "TITLE" | "COLUMN") {
   return "正文";
 }
 
-function relationLabel(relation: "NONE" | "NEAR" | "SENTENCE" | "PARAGRAPH") {
+function relationLabel(relation: "NONE" | "NEAR" | "SENTENCE" | "PARAGRAPH" | "ORDER") {
   if (relation === "NEAR") return "彼此靠近";
   if (relation === "SENTENCE") return "同一句";
   if (relation === "PARAGRAPH") return "同一段";
+  if (relation === "ORDER") return "按顺序";
   return "无特殊关系";
 }
 

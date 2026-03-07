@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 
 import {
@@ -70,11 +70,21 @@ import type {
   RiskAssessment,
 } from "./rule-editor/rule-intelligence";
 
+export const dynamic = "force-dynamic";
+
 const DEFAULT_VERSION_WINDOW = 20;
 const MAX_VERSION_WINDOW = 100;
 
 function normalizeStatus(status: string) {
   return String(status ?? "").trim().toUpperCase();
+}
+
+export default function TopicDetailPage() {
+  return (
+    <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading...</div>}>
+      <TopicDetailPageClient />
+    </Suspense>
+  );
 }
 
 function getStatusLabel(status: string) {
@@ -410,7 +420,7 @@ function mapStatusToLatestAction(status: string): RuleVersionEntry["action"] {
   return "SAVED";
 }
 
-export default function TopicDetailPage() {
+function TopicDetailPageClient() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();

@@ -32,6 +32,8 @@ tags:
     description: Topic tagging job management APIs
   - name: Analytics
     description: Semantic analytics APIs
+  - name: TopicSet
+    description: TopicSet governance APIs
 
 paths:
   /api/runtime/active:
@@ -1702,6 +1704,916 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
 
+  /api/topicsets:
+    post:
+      tags: [TopicSet]
+      summary: Create TopicSet
+      operationId: createTopicSet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTopicSetRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetSummaryResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+    get:
+      tags: [TopicSet]
+      summary: List TopicSet
+      operationId: listTopicSet
+      parameters:
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetSummaryList'
+        '304':
+          description: Not Modified
+
+  /api/topicsets/{id}:
+    get:
+      tags: [TopicSet]
+      summary: Get TopicSet detail
+      operationId: getTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetDetailResponse'
+        '304':
+          description: Not Modified
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/tree:
+    get:
+      tags: [TopicSet]
+      summary: Get TopicSet tree
+      operationId: getTopicSetTree
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNodeTreeResponse'
+
+  /api/topicsets/{id}/nodes:
+    get:
+      tags: [TopicSet]
+      summary: List nodes by parent (lazy load)
+      operationId: listTopicSetNodes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: parentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            nullable: true
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: includeStats
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetNodeListResponse'
+        '304':
+          description: Not Modified
+    post:
+      tags: [TopicSet]
+      summary: Create node
+      operationId: createTopicSetNode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNodeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseCreateNodeResponse'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{topicSetId}/nodes/{nodeId}/children:
+    get:
+      tags: [TopicSet]
+      summary: List children by node id
+      operationId: listTopicSetNodeChildren
+      parameters:
+        - name: topicSetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: includeStats
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetNodeListResponse'
+        '304':
+          description: Not Modified
+
+  /api/topicsets/{topicSetId}/nodes/{nodeId}:
+    get:
+      tags: [TopicSet]
+      summary: Get node detail
+      operationId: getTopicSetNodeDetail
+      parameters:
+        - name: topicSetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: includeStats
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetNodeDetailResponse'
+        '304':
+          description: Not Modified
+
+  /api/topicsets/nodes/{id}:
+    patch:
+      tags: [TopicSet]
+      summary: Update node
+      operationId: updateTopicSetNode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNodeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseUpdateNodeResponse'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+    delete:
+      tags: [TopicSet]
+      summary: Delete node
+      operationId: deleteTopicSetNode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cascade
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseDeleteNodeResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/nodes/{id}/move:
+    post:
+      tags: [TopicSet]
+      summary: Move node
+      operationId: moveTopicSetNode
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveNodeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseMoveNodeResponse'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/nodes/{nodeId}/topics:
+    post:
+      tags: [TopicSet]
+      summary: Bind topic to node
+      operationId: bindTopicToTopicSetNode
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindTopicRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNodeTopicView'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+    get:
+      tags: [TopicSet]
+      summary: List node topics
+      operationId: listTopicSetNodeTopics
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNodeTopicsResponse'
+
+  /api/topicsets/nodes/{nodeId}/topics/{topicId}:
+    delete:
+      tags: [TopicSet]
+      summary: Unbind topic from node
+      operationId: unbindTopicFromTopicSetNode
+      parameters:
+        - name: nodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/{topicId}/node:
+    get:
+      tags: [TopicSet]
+      summary: Get node by topic id
+      operationId: getNodeByTopicId
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicNodeBindingResponse'
+
+  /api/topicsets/{id}/publish:
+    post:
+      tags: [TopicSet]
+      summary: Publish TopicSet
+      operationId: publishTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePublishResponse'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/runtime:
+    get:
+      tags: [TopicSet]
+      summary: Get runtime snapshot
+      operationId: getTopicSetRuntime
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRuntimeResponse'
+
+  /api/topicsets/runtime/topic-lookup:
+    post:
+      tags: [TopicSet]
+      summary: Lookup node path by topic ids
+      operationId: lookupTopicSetRuntimeTopic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicLookupRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicLookupResponse'
+
+  /api/topicsets/{id}/versions:
+    get:
+      tags: [TopicSet]
+      summary: List TopicSet versions
+      operationId: listTopicSetVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetVersionsResponse'
+        '304':
+          description: Not Modified
+
+  /api/topicsets/{id}/diff:
+    get:
+      tags: [TopicSet]
+      summary: Diff two TopicSet versions
+      operationId: diffTopicSetVersions
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fromVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v4
+        - name: toVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v5
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetDiffResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/diff/nodes:
+    get:
+      tags: [TopicSet]
+      summary: Diff node changes with pagination
+      operationId: diffTopicSetVersionNodes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fromVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v4
+        - name: toVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v5
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNodeDiffPage'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/diff/topic-bindings:
+    get:
+      tags: [TopicSet]
+      summary: Diff topic binding changes with pagination
+      operationId: diffTopicSetVersionTopicBindings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fromVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v4
+        - name: toVersion
+          in: query
+          required: true
+          schema:
+            type: string
+            example: v5
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicBindingDiffPage'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/versions/{version}/nodes:
+    get:
+      tags: [TopicSet]
+      summary: List nodes in a specific version
+      operationId: listTopicSetVersionNodes
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+        - name: parentId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+            nullable: true
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: includeStats
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: updatedSince
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetNodeListResponse'
+        '304':
+          description: Not Modified
+
+  /api/topicsets/{id}/versions/{version}/tree:
+    get:
+      tags: [TopicSet]
+      summary: Get version tree
+      operationId: getTopicSetVersionTree
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseNodeTreeResponse'
+
 components:
   schemas:
     RuntimeActiveItem:
@@ -2577,6 +3489,530 @@ components:
           nullable: true
       required: [jobsRunning, incrementalEnabled]
 
+    CreateTopicSetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        namespace:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+      required: [name]
+
+    TopicSetSummaryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        namespace:
+          type: string
+          nullable: true
+        status:
+          type: string
+        version:
+          type: integer
+          format: int32
+      required: [id, name, status, version]
+
+    TopicSetDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        namespace:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        status:
+          type: string
+        version:
+          type: integer
+          format: int32
+        nodeCount:
+          type: integer
+          format: int32
+        topicCount:
+          type: integer
+          format: int32
+      required: [id, name, status, version, nodeCount, topicCount]
+
+    CreateNodeRequest:
+      type: object
+      properties:
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+      required: [name]
+
+    UpdateNodeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+      required: [name]
+
+    MoveNodeRequest:
+      type: object
+      properties:
+        newParentId:
+          type: string
+          format: uuid
+        index:
+          type: integer
+          format: int32
+          nullable: true
+      required: [newParentId]
+
+    BindTopicRequest:
+      type: object
+      properties:
+        topicId:
+          type: string
+      required: [topicId]
+
+    PublishRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+
+    PublishResponse:
+      type: object
+      properties:
+        publishedVersion:
+          type: integer
+          format: int32
+        previousPublishedVersion:
+          type: integer
+          format: int32
+        publishedAt:
+          type: string
+          format: date-time
+      required: [publishedVersion, previousPublishedVersion, publishedAt]
+
+    TopicNodeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        path:
+          type: string
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicNodeResponse'
+      required: [id, name, path, children]
+
+    NodeTreeResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicNodeResponse'
+      required: [nodes]
+
+    NodeTopicView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        score:
+          type: number
+          format: double
+          nullable: true
+      required: [topicId]
+
+    NodeTopicsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeTopicView'
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+          format: int32
+      required: [items, total]
+
+    TopicNodeBindingResponse:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+        nodePath:
+          type: string
+      required: [nodeId, nodePath]
+
+    RuntimeNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        path:
+          type: string
+        topics:
+          type: array
+          items:
+            type: string
+      required: [nodeId, path, topics]
+
+    RuntimeResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeNodeView'
+      required: [version, nodes]
+
+    TopicLookupRequest:
+      type: object
+      properties:
+        topicIds:
+          type: array
+          items:
+            type: string
+      required: [topicIds]
+
+    TopicLookupItem:
+      type: object
+      properties:
+        topicId:
+          type: string
+        nodePath:
+          type: string
+      required: [topicId, nodePath]
+
+    TopicLookupResponse:
+      type: object
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicLookupItem'
+      required: [nodes]
+
+    TopicSetVersionItem:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [version, status, createdAt]
+
+    TopicSetVersionsResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetVersionItem'
+      required: [items]
+
+    NodeDiffStatus:
+      type: string
+      enum: [ADDED, REMOVED, MOVED, UPDATED, UNCHANGED]
+
+    BindingChangeType:
+      type: string
+      enum: [ADDED, REMOVED]
+
+    NodeDiffItem:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        status:
+          $ref: '#/components/schemas/NodeDiffStatus'
+        path:
+          type: string
+          nullable: true
+        oldPath:
+          type: string
+          nullable: true
+        newPath:
+          type: string
+          nullable: true
+        oldName:
+          type: string
+          nullable: true
+        newName:
+          type: string
+          nullable: true
+      required: [nodeId, status]
+
+    TopicBindingDiffItem:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        change:
+          $ref: '#/components/schemas/BindingChangeType'
+      required: [nodeId, topicId, change]
+
+    TopicSetDiffSummaryResponse:
+      type: object
+      properties:
+        nodesAdded:
+          type: integer
+          format: int32
+        nodesRemoved:
+          type: integer
+          format: int32
+        nodesMoved:
+          type: integer
+          format: int32
+        nodesUpdated:
+          type: integer
+          format: int32
+        topicBindingsChanged:
+          type: integer
+          format: int32
+      required: [nodesAdded, nodesRemoved, nodesMoved, nodesUpdated, topicBindingsChanged]
+
+    TopicSetDiffResponse:
+      type: object
+      properties:
+        summary:
+          $ref: '#/components/schemas/TopicSetDiffSummaryResponse'
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeDiffItem'
+        topicBindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicBindingDiffItem'
+      required: [summary, nodes, topicBindings]
+
+    ParentPatch:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          nullable: true
+        childCount:
+          type: integer
+          format: int32
+      required: [childCount]
+
+    TopicSetNodeItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        path:
+          type: string
+        depth:
+          type: integer
+          format: int32
+        hasChildren:
+          type: boolean
+        childCount:
+          type: integer
+          format: int32
+        topicCount:
+          type: integer
+          format: int32
+        docCount:
+          type: integer
+          format: int32
+      required: [id, name, path, depth, hasChildren, childCount, topicCount, docCount]
+
+    TopicSetNodeListResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int32
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetNodeItem'
+        nextCursor:
+          type: string
+          nullable: true
+        total:
+          type: integer
+          format: int32
+      required: [topicSetId, version, items, total]
+
+    TopicSetNodeDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        topicSetId:
+          type: string
+          format: uuid
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        path:
+          type: string
+        depth:
+          type: integer
+          format: int32
+        hasChildren:
+          type: boolean
+        childCount:
+          type: integer
+          format: int32
+        topicCount:
+          type: integer
+          format: int32
+        docCount:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, topicSetId, name, path, depth, hasChildren, childCount, topicCount, docCount]
+
+    CreateNodeResponse:
+      type: object
+      properties:
+        node:
+          $ref: '#/components/schemas/TopicSetNodeItem'
+        parentPatch:
+          $ref: '#/components/schemas/ParentPatch'
+      required: [node, parentPatch]
+
+    UpdateNodeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+      required: [id, name, updatedAt]
+
+    MoveNodeResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        oldParentId:
+          type: string
+          format: uuid
+          nullable: true
+        newParentId:
+          type: string
+          format: uuid
+        oldPath:
+          type: string
+        newPath:
+          type: string
+        newDepth:
+          type: integer
+          format: int32
+        movedSubtreeCount:
+          type: integer
+          format: int32
+        sourceParentPatch:
+          $ref: '#/components/schemas/ParentPatch'
+        targetParentPatch:
+          $ref: '#/components/schemas/ParentPatch'
+      required: [id, newParentId, oldPath, newPath, newDepth, movedSubtreeCount, sourceParentPatch, targetParentPatch]
+
+    DeleteNodeResponse:
+      type: object
+      properties:
+        deletedNodeId:
+          type: string
+          format: uuid
+        deletedCount:
+          type: integer
+          format: int32
+        parentPatch:
+          $ref: '#/components/schemas/ParentPatch'
+      required: [deletedNodeId, deletedCount, parentPatch]
+
     ApiError:
       type: object
       properties:
@@ -2594,6 +4030,275 @@ components:
         data:
           type: object
           nullable: true
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetSummaryResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSummaryResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetSummaryList:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetSummaryResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDetailResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseCreateNodeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/CreateNodeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseUpdateNodeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/UpdateNodeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseMoveNodeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/MoveNodeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseDeleteNodeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/DeleteNodeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetNodeListResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetNodeListResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetNodeDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetNodeDetailResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicNodeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicNodeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseNodeTreeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/NodeTreeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseNodeTopicView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/NodeTopicView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseNodeTopicsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/NodeTopicsResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicNodeBindingResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicNodeBindingResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponsePublishResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/PublishResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseRuntimeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RuntimeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicLookupResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicLookupResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetVersionsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetVersionsResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetDiffResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDiffResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    NodeDiffPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeDiffItem'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+      required: [items, page, size, total]
+
+    ApiResponseNodeDiffPage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/NodeDiffPage'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    TopicBindingDiffPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicBindingDiffItem'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+      required: [items, page, size, total]
+
+    ApiResponseTopicBindingDiffPage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicBindingDiffPage'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
@@ -3886,4 +5591,5 @@ components:
         message:
           type: string
       required: [errorCode, message]
+
 

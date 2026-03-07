@@ -118,7 +118,7 @@ export function PublishedView({
     useState<ConceptGraphResponse | null>(null);
   const [graphDepth, setGraphDepth] = useState(1);
   const [graphMaxNodes, setGraphMaxNodes] = useState(20);
-  const graphContainerRef = useRef<HTMLDivElement | null>(
+  const graphContainerRef = useRef<HTMLDivElement>(
     null
   );
 
@@ -844,7 +844,7 @@ function ConceptGraphDialog({
   data: ConceptGraphResponse | null;
   depth: number;
   maxNodes: number;
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement>;
   onExpand: () => void;
   onClose: () => void;
 }) {
@@ -915,7 +915,7 @@ function ConceptGraphDialog({
             "text-rotation": "autorotate",
             "text-background-color": "#f8fafc",
             "text-background-opacity": 0.8,
-            "text-background-padding": 2,
+            "text-background-padding": "2px",
             width: 1.5,
             "line-color": "#94a3b8",
             "target-arrow-shape": "triangle",
