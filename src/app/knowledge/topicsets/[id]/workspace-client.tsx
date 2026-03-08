@@ -6,9 +6,14 @@ import { fetchGovernanceTopicDocs } from "@/lib/governance-topic-detail-api";
 import { fetchCoverageTopics } from "@/lib/governance-coverage-api";
 import {
   fetchTopicSetCoverage,
-  fetchTopicSetDistribution,
+  fetchTopicSetGovernanceDashboard,
   fetchTopicSetNodeDistribution,
   fetchTopicSetNodeImpact,
+  fetchTopicSetOverlapDashboard,
+  fetchTopicSetOverlapDocExplain,
+  fetchTopicSetOverlapDocs,
+  fetchTopicSetSearchEnvelopeByPath,
+  fetchTopicSetUnmappedDashboard,
   fetchTopicSetUnmapped,
   refreshTopicSetRuntimeCache,
 } from "@/lib/topicset-search-api";
@@ -37,13 +42,13 @@ import { TopicBindingPanel } from "../components/topic-binding-panel";
 import { LifecycleValidationPanel } from "../components/lifecycle-validation-panel";
 import { WorkspaceHeader } from "./components/workspace-header";
 import { TopicSetWorkspaceTab, WorkspaceTabs } from "./components/workspace-tabs";
+import { GovernanceDashboardPage } from "./components/dashboard/governance-dashboard-page";
 import { ImpactPage } from "./components/impact/impact-page";
 import { CoveragePage } from "./components/coverage/coverage-page";
 import { UnmappedPage } from "./components/unmapped/unmapped-page";
 import { VersionsPage } from "./components/versions/versions-page";
 import { TaxonomyDiffPage } from "./components/diff/taxonomy-diff-page";
 import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
-import { DashboardPage } from "./components/analytics/dashboard-page";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -94,6 +99,66 @@ type SubmitReviewDialogState = {
   errorMessage?: string | null;
   validationDetails?: TopicSetValidationDetails | null;
 } | null;
+
+function OverlapExplainCard({
+  title,
+  item,
+}: {
+  title: string;
+  item: {
+    topicId: string;
+    topicName: string;
+    matched: boolean;
+    matchedNodeIds: string[];
+    matchedTerms: string[];
+    appliedModes?: string[];
+    reason?: string | null;
+    explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+  };
+}) {
+  return (
+    <section className="rounded-lg border bg-slate-50/60 p-4 text-sm">
+      <div className="font-semibold">{title}</div>
+      <div className="mt-2 text-xs text-muted-foreground">{item.topicName || item.topicId}</div>
+      <div className="mt-3 grid gap-3">
+        <div>
+          <div className="text-[11px] text-muted-foreground">{t("topicSet.docs.explainMatched")}</div>
+          <div className="mt-1">{item.matched ? t("common.yes") : t("common.no")}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">{t("topicSet.docs.explainTerms")}</div>
+          <div className="mt-1 text-xs">{item.matchedTerms.length ? item.matchedTerms.join(", ") : "-"}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">{t("topicSet.docs.explainNodes")}</div>
+          <div className="mt-1 text-xs">{item.matchedNodeIds.length ? item.matchedNodeIds.join(", ") : "-"}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">{t("topicSet.docs.explainModes")}</div>
+          <div className="mt-1 text-xs">{item.appliedModes?.length ? item.appliedModes.join(", ") : "-"}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">{t("topicSet.docs.explainReason")}</div>
+          <div className="mt-1 text-xs">{item.reason || "-"}</div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground">{t("topicSet.docs.explainDetail")}</div>
+          <div className="mt-1 space-y-1">
+            {item.explain?.length ? (
+              item.explain.map((node, index) => (
+                <div key={`${node.nodeId ?? "node"}-${index}`} className="rounded border bg-white px-2 py-1 text-xs">
+                  {(node.label || node.nodeId || "-")} · {node.matched ? t("common.yes") : t("common.no")}
+                </div>
+              ))
+            ) : (
+              <div className="text-xs text-muted-foreground">-</div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function normalizeLifecycleStatus(value?: string | null): LifecycleStatus {
   const normalized = String(value ?? "").trim().toUpperCase();
@@ -174,10 +239,37 @@ export function TopicSetWorkspaceClient({
   const [versionActionLoading, setVersionActionLoading] = useState(false);
   const [submitReviewDialog, setSubmitReviewDialog] = useState<SubmitReviewDialogState>(null);
 
-  const [coverageRows, setCoverageRows] = useState<Array<{ nodeId?: string; name: string; hitDocs: number }>>([]);
+  const [coverageRows, setCoverageRows] = useState<Array<{ nodeId?: string; name: string; hitDocs: number; topics?: number }>>([]);
+  const [coverageDashboard, setCoverageDashboard] = useState<{
+    totalDocs: number;
+    classifiedDocs: number;
+    unmappedDocs: number;
+    nodes: number;
+    topics: number;
+  } | null>(null);
   const [coverageDedup, setCoverageDedup] = useState(false);
+  const [lowCoverageRows, setLowCoverageRows] = useState<
+    Array<{ nodeId: string; name: string; hitDocs: number; topicCount: number }>
+  >([]);
+  const [overlapRows, setOverlapRows] = useState<
+    Array<{
+      topicAId: string;
+      topicAName?: string | null;
+      topicBId: string;
+      topicBName?: string | null;
+      overlapDocs: number;
+      docsPath?: string | null;
+      explainPathTemplate?: string | null;
+    }>
+  >([]);
   const [unmappedTotal, setUnmappedTotal] = useState(0);
   const [unmappedDocs, setUnmappedDocs] = useState<Array<{ docId: string; title?: string | null }>>([]);
+  const [unmappedDashboard, setUnmappedDashboard] = useState<{
+    totalDocs: number;
+    classifiedDocs: number;
+    unmappedDocs: number;
+    sampleDocuments: Array<{ docId: string; title?: string | null }>;
+  } | null>(null);
   const [unmappedPage, setUnmappedPage] = useState(0);
   const [unmappedSize, setUnmappedSize] = useState(20);
   const [unmappedSort, setUnmappedSort] = useState<"score" | "updatedAt" | "publishedAt">("score");
@@ -190,12 +282,6 @@ export function TopicSetWorkspaceClient({
   const [impactSort, setImpactSort] = useState<"score" | "updatedAt" | "publishedAt">("score");
   const [impactTotal, setImpactTotal] = useState(0);
   const [topicHitDocsMap, setTopicHitDocsMap] = useState<Record<string, number>>({});
-  const [topicDistributionRows, setTopicDistributionRows] = useState<
-    Array<{ topicId: string; topicName: string; hitDocs: number; nodeCount: number; nodeIds: string[] }>
-  >([]);
-  const [topicDistributionLoading, setTopicDistributionLoading] = useState(false);
-  const [topicDistributionError, setTopicDistributionError] = useState<string | null>(null);
-  const [topicDistributionDedup, setTopicDistributionDedup] = useState(false);
   const [nodeDistributionCache, setNodeDistributionCache] = useState<
     Record<string, Array<{ topicId: string; topicName: string; hitDocs: number }>>
   >({});
@@ -207,7 +293,40 @@ export function TopicSetWorkspaceClient({
   const [topicDocsError, setTopicDocsError] = useState<string | null>(null);
   const [topicDocsTitle, setTopicDocsTitle] = useState("");
   const [topicDocsTotal, setTopicDocsTotal] = useState(0);
-  const [topicDocsRows, setTopicDocsRows] = useState<Array<{ docId: string; title: string; weight: number }>>([]);
+  const [topicDocsContext, setTopicDocsContext] = useState<
+    | { kind: "topic"; topicId: string }
+    | { kind: "overlap"; topicAId: string; topicAName?: string | null; topicBId: string; topicBName?: string | null }
+    | null
+  >(null);
+  const [topicDocsRows, setTopicDocsRows] = useState<
+    Array<{ docId: string; title: string; secondary?: string | null; metric?: string | null }>
+  >([]);
+  const [overlapExplainOpen, setOverlapExplainOpen] = useState(false);
+  const [overlapExplainLoading, setOverlapExplainLoading] = useState(false);
+  const [overlapExplainError, setOverlapExplainError] = useState<string | null>(null);
+  const [overlapExplainData, setOverlapExplainData] = useState<{
+    docId: string;
+    topicA: {
+      topicId: string;
+      topicName: string;
+      matched: boolean;
+      matchedNodeIds: string[];
+      matchedTerms: string[];
+      appliedModes?: string[];
+      reason?: string | null;
+      explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+    };
+    topicB: {
+      topicId: string;
+      topicName: string;
+      matched: boolean;
+      matchedNodeIds: string[];
+      matchedTerms: string[];
+      appliedModes?: string[];
+      reason?: string | null;
+      explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+    };
+  } | null>(null);
   const [impactDrawerOpen, setImpactDrawerOpen] = useState(false);
   const [impactDrawerNodeId, setImpactDrawerNodeId] = useState<string | null>(null);
   const [impactDrawerDocsLoading, setImpactDrawerDocsLoading] = useState(false);
@@ -414,7 +533,6 @@ export function TopicSetWorkspaceClient({
     return version === topicSetDetail.version;
   }, [topicSetDetail, version]);
   const canEdit = Boolean(topicSetDetail) && editable && lifecycleStatus === "DRAFT";
-  const canUseAi = lifecycleStatus === "DRAFT" || lifecycleStatus === "REVIEW";
   const canSubmitReview = Boolean(topicSetDetail) && editable && lifecycleStatus === "DRAFT";
   const canApprove = Boolean(topicSetDetail) && editable && lifecycleStatus === "REVIEW";
   const canReject = Boolean(topicSetDetail) && editable && lifecycleStatus === "REVIEW";
@@ -442,8 +560,9 @@ export function TopicSetWorkspaceClient({
       nodeId: selectedNode,
       name: node.name,
       hitDocs: coverageByNodeId[selectedNode] ?? node.docCount ?? 0,
+      topics: coverageRows.find((row) => row.nodeId === selectedNode)?.topics ?? node.topicCount ?? 0,
     };
-  }, [coverageByNodeId, nodeMap, selectedNode]);
+  }, [coverageByNodeId, coverageRows, nodeMap, selectedNode]);
   const selectedCoverageTopics = useMemo(
     () => (selectedNodeDistributionRows.length > 0 ? selectedNodeDistributionRows : selectedNodeTopics.map((topic) => ({
       topicId: topic.topicId,
@@ -462,30 +581,6 @@ export function TopicSetWorkspaceClient({
     return Array.from(ids).sort();
   }, [topics]);
   const loadedTopicIdsKey = useMemo(() => loadedTopicIds.join("|"), [loadedTopicIds]);
-  const emptyLeafRows = useMemo(
-    () =>
-      Object.values(nodeMap)
-        .filter((node) => {
-          const hasChildren = (childrenByParent[node.id]?.length ?? 0) > 0;
-          return !hasChildren && (node.topicCount ?? 0) === 0;
-        })
-        .map((node) => ({
-          nodeId: node.id,
-          name: node.name,
-          path: node.path,
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [childrenByParent, nodeMap]
-  );
-  const dashboardSummary = useMemo(
-    () => ({
-      coveredDocs: coverageRows.reduce((sum, row) => sum + row.hitDocs, 0),
-      coveredNodes: coverageRows.length,
-      trackedTopics: topicDistributionRows.length,
-      emptyLeaves: emptyLeafRows.length,
-    }),
-    [coverageRows, emptyLeafRows.length, topicDistributionRows.length]
-  );
   const lifecycleChanges = useMemo(() => {
     const nodes = baselineDiff?.nodes ?? [];
     const added = nodes.filter((item) => item.status === "ADDED").slice(0, 5);
@@ -539,8 +634,18 @@ export function TopicSetWorkspaceClient({
     let cancelled = false;
     async function loadCoverage() {
       if (!topicSetId) return;
-      const [coverageResult, unmappedResult, topicsResult] = await Promise.all([
+      const [coverageResult, governanceResult, overlapDashboardResult, unmappedDashboardResult, unmappedResult, topicsResult] = await Promise.all([
         fetchTopicSetCoverage(topicSetId, { dedup: coverageDedup }),
+        fetchTopicSetGovernanceDashboard(topicSetId, {
+          lowCoverageThreshold: 3,
+          overlapMinOverlap: 1,
+          overlapLimit: 20,
+        }),
+        fetchTopicSetOverlapDashboard(topicSetId, {
+          minOverlap: 1,
+          limit: 20,
+        }),
+        fetchTopicSetUnmappedDashboard(topicSetId, { sampleSize: 10 }),
         fetchTopicSetUnmapped(topicSetId, { page: unmappedPage, size: unmappedSize, sort: unmappedSort }),
         fetchCoverageTopics(),
       ]);
@@ -552,6 +657,7 @@ export function TopicSetWorkspaceClient({
           nodeId: item.nodeId,
           name: nodeMap[item.nodeId]?.name || item.name || item.nodeId,
           hitDocs: Number(item.docCount ?? 0),
+          topics: Number(item.topics ?? nodeMap[item.nodeId]?.topicCount ?? 0),
         }))
         .filter((item) => {
           if (!item.nodeId) return true;
@@ -561,6 +667,49 @@ export function TopicSetWorkspaceClient({
         })
         .sort((a, b) => b.hitDocs - a.hitDocs);
       setCoverageRows(rows);
+      setCoverageDashboard(
+        governanceResult.data?.coverage
+          ? {
+              totalDocs: Number(governanceResult.data.coverage.totalDocs ?? 0),
+              classifiedDocs: Number(governanceResult.data.coverage.classifiedDocs ?? 0),
+              unmappedDocs: Number(governanceResult.data.coverage.unmappedDocs ?? 0),
+              nodes: Number(governanceResult.data.coverage.nodes ?? 0),
+              topics: Number(governanceResult.data.coverage.topics ?? 0),
+            }
+          : null
+      );
+      setLowCoverageRows(
+        (governanceResult.data?.lowCoverage?.nodes ?? []).map((item) => ({
+          nodeId: item.nodeId,
+          name: nodeMap[item.nodeId]?.name || item.name || item.nodeId,
+          hitDocs: Number(item.docCount ?? 0),
+          topicCount: Number(item.topicCount ?? 0),
+        }))
+      );
+      setOverlapRows(
+        (overlapDashboardResult.data?.items ?? []).map((item) => ({
+          topicAId: item.topicAId,
+          topicAName: item.topicAName,
+          topicBId: item.topicBId,
+          topicBName: item.topicBName,
+          overlapDocs: Number(item.overlapDocs ?? 0),
+          docsPath: item.docsPath ?? null,
+          explainPathTemplate: item.explainPathTemplate ?? null,
+        }))
+      );
+      setUnmappedDashboard(
+        unmappedDashboardResult.data
+          ? {
+              totalDocs: Number(unmappedDashboardResult.data.totalDocs ?? 0),
+              classifiedDocs: Number(unmappedDashboardResult.data.classifiedDocs ?? 0),
+              unmappedDocs: Number(unmappedDashboardResult.data.unmappedDocs ?? 0),
+              sampleDocuments: (unmappedDashboardResult.data.sampleDocuments ?? []).map((item) => ({
+                docId: item.docId,
+                title: item.title ?? null,
+              })),
+            }
+          : null
+      );
 
       const unmappedItems = unmappedResult.data?.items ?? [];
       setUnmappedTotal(Number(unmappedResult.data?.total ?? unmappedItems.length));
@@ -594,45 +743,6 @@ export function TopicSetWorkspaceClient({
     unmappedSort,
     runtimeRefreshTick,
   ]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadTopicDistribution() {
-      if (!topicSetId) {
-        setTopicDistributionRows([]);
-        setTopicDistributionError(null);
-        return;
-      }
-      setTopicDistributionLoading(true);
-      setTopicDistributionError(null);
-      const result = await fetchTopicSetDistribution(topicSetId, {
-        dedup: topicDistributionDedup,
-        limit: 50,
-        sort: "docCount",
-        order: "desc",
-      });
-      if (cancelled) return;
-      setTopicDistributionLoading(false);
-      if (!result.data) {
-        setTopicDistributionRows([]);
-        setTopicDistributionError(result.error ?? t("topicSet.analytics.distributionLoadFailed"));
-        return;
-      }
-      setTopicDistributionRows(
-        (result.data.items ?? []).map((item) => ({
-          topicId: item.topicId,
-          topicName: item.topicName,
-          hitDocs: Number(item.docCount ?? 0),
-          nodeCount: Number(item.nodeCount ?? 0),
-          nodeIds: item.nodeIds ?? [],
-        }))
-      );
-    }
-    void loadTopicDistribution();
-    return () => {
-      cancelled = true;
-    };
-  }, [topicDistributionDedup, topicSetId, runtimeRefreshTick]);
 
   const loadNodeDistribution = useCallback(
     async (nodeId: string) => {
@@ -1043,6 +1153,7 @@ export function TopicSetWorkspaceClient({
     setTopicDocsOpen(true);
     setTopicDocsLoading(true);
     setTopicDocsError(null);
+    setTopicDocsContext({ kind: "topic", topicId });
     setTopicDocsTitle(topicName ?? topicId);
     const result = await fetchGovernanceTopicDocs(topicId, {
       matchMode: "REALTIME",
@@ -1064,13 +1175,127 @@ export function TopicSetWorkspaceClient({
       (result.data.items ?? []).map((item) => ({
         docId: item.docId,
         title: item.title || item.docId,
-        weight: Number(item.weight ?? 0),
+        secondary: item.snippet ?? null,
+        metric: Number(item.weight ?? 0).toFixed(2),
       }))
     );
     setTopicDocCountMap((prev) => ({
       ...prev,
       [topicId]: Number(result.data?.total ?? 0),
     }));
+  }
+
+  async function openOverlapDocs(row: {
+    topicAId: string;
+    topicAName?: string | null;
+    topicBId: string;
+    topicBName?: string | null;
+    overlapDocs: number;
+    docsPath?: string | null;
+    explainPathTemplate?: string | null;
+  }) {
+    if (!topicSetId) return;
+    setTopicDocsOpen(true);
+    setTopicDocsLoading(true);
+    setTopicDocsError(null);
+    setTopicDocsContext({
+      kind: "overlap",
+      topicAId: row.topicAId,
+      topicAName: row.topicAName,
+      topicBId: row.topicBId,
+      topicBName: row.topicBName,
+    });
+    setTopicDocsTitle(`${row.topicAName ?? row.topicAId} / ${row.topicBName ?? row.topicBId}`);
+    const result = row.docsPath
+      ? await fetchTopicSetSearchEnvelopeByPath<{
+          page: number;
+          size: number;
+          total: number;
+          items: Array<{
+            docId: string;
+            title?: string | null;
+            summary?: string | null;
+            highlightFragments?: string[];
+          }>;
+        }>(row.docsPath)
+      : await fetchTopicSetOverlapDocs(topicSetId, {
+          topicAId: row.topicAId,
+          topicBId: row.topicBId,
+          page: 0,
+          size: 20,
+          sort: "score",
+        });
+    setTopicDocsLoading(false);
+    if (!result.data) {
+      setTopicDocsRows([]);
+      setTopicDocsTotal(0);
+      setTopicDocsError(result.error ?? t("topicSet.feedback.loadDocsFailed"));
+      return;
+    }
+    setTopicDocsTotal(Number(result.data.total ?? 0));
+    setTopicDocsRows(
+      (result.data.items ?? []).map((item) => ({
+        docId: item.docId,
+        title: item.title || item.docId,
+        secondary: item.highlightFragments?.[0] ?? item.summary ?? null,
+        metric: null,
+      }))
+    );
+  }
+
+  async function openOverlapExplain(docId: string) {
+    if (!topicSetId || topicDocsContext?.kind !== "overlap") return;
+    setOverlapExplainOpen(true);
+    setOverlapExplainLoading(true);
+    setOverlapExplainError(null);
+    const overlapRow = overlapRows.find(
+      (row) =>
+        row.topicAId === topicDocsContext.topicAId &&
+        row.topicBId === topicDocsContext.topicBId
+    );
+    const explainPath = overlapRow?.explainPathTemplate?.replace("{docId}", encodeURIComponent(docId));
+    const result = explainPath
+      ? await fetchTopicSetSearchEnvelopeByPath<{
+          version?: number;
+          topicSetId: string;
+          docId: string;
+          topicA: {
+            topicId: string;
+            topicName: string;
+            matched: boolean;
+            matchedNodeIds: string[];
+            matchedTerms: string[];
+            appliedModes?: string[];
+            reason?: string | null;
+            explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+          };
+          topicB: {
+            topicId: string;
+            topicName: string;
+            matched: boolean;
+            matchedNodeIds: string[];
+            matchedTerms: string[];
+            appliedModes?: string[];
+            reason?: string | null;
+            explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+          };
+        }>(explainPath)
+      : await fetchTopicSetOverlapDocExplain(topicSetId, {
+          docId,
+          topicAId: topicDocsContext.topicAId,
+          topicBId: topicDocsContext.topicBId,
+        });
+    setOverlapExplainLoading(false);
+    if (!result.data) {
+      setOverlapExplainData(null);
+      setOverlapExplainError(result.error ?? t("topicSet.docs.explainLoadFailed"));
+      return;
+    }
+    setOverlapExplainData({
+      docId: result.data.docId,
+      topicA: result.data.topicA,
+      topicB: result.data.topicB,
+    });
   }
 
   return (
@@ -1385,6 +1610,7 @@ export function TopicSetWorkspaceClient({
           topicHitDocsMap={topicHitDocsMap}
           topicDocCountMap={topicDocCountMap}
           coverageByNodeId={coverageByNodeId}
+          lowCoverageNodeIds={lowCoverageRows.map((row) => row.nodeId)}
           unmappedTotal={unmappedTotal}
           onSelectNode={(nodeId) => selectNode(nodeId)}
           onOpenTaxonomy={(nodeId) => {
@@ -1413,7 +1639,10 @@ export function TopicSetWorkspaceClient({
               <button
                 type="button"
                 className="rounded border px-2 py-0.5 text-xs"
-                onClick={() => setTopicDocsOpen(false)}
+                onClick={() => {
+                  setTopicDocsOpen(false);
+                  setTopicDocsContext(null);
+                }}
               >
                 {t("common.close")}
               </button>
@@ -1426,25 +1655,87 @@ export function TopicSetWorkspaceClient({
                   <thead>
                     <tr className="border-b text-left text-xs text-muted-foreground">
                       <th className="py-2">{t("topicSet.docs.columnTitle")}</th>
-                      <th className="py-2">{t("topicSet.impact.score")}</th>
+                      <th className="py-2">{t("topicSet.docs.columnTopic")}</th>
+                      {topicDocsContext?.kind === "overlap" && (
+                        <th className="py-2">{t("topicSet.docs.columnAction")}</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
                     {topicDocsRows.map((row) => (
                       <tr key={row.docId} className="border-b">
-                        <td className="py-2">{row.title}</td>
-                        <td className="py-2">{row.weight.toFixed(2)}</td>
+                        <td className="py-2">
+                          <div>{row.title}</div>
+                          <div className="text-[10px] text-muted-foreground">{row.docId}</div>
+                        </td>
+                        <td className="py-2">
+                          {row.secondary ? (
+                            <div className="text-xs text-muted-foreground">{row.secondary}</div>
+                          ) : row.metric ? (
+                            <div>{row.metric}</div>
+                          ) : (
+                            <div className="text-xs text-muted-foreground">-</div>
+                          )}
+                        </td>
+                        {topicDocsContext?.kind === "overlap" && (
+                          <td className="py-2">
+                            <button
+                              type="button"
+                              className="rounded border px-2 py-1 text-xs"
+                              onClick={() => {
+                                void openOverlapExplain(row.docId);
+                              }}
+                            >
+                              {t("topicSet.docs.explain")}
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                     {topicDocsRows.length === 0 && (
                       <tr>
-                        <td className="py-4 text-muted-foreground" colSpan={2}>
+                        <td
+                          className="py-4 text-muted-foreground"
+                          colSpan={topicDocsContext?.kind === "overlap" ? 3 : 2}
+                        >
                           {t("topicSet.docs.empty")}
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {overlapExplainOpen && (
+        <div className="fixed inset-0 z-50 bg-black/30 px-4 py-8">
+          <div className="mx-auto w-full max-w-4xl rounded-lg border bg-white shadow-2xl">
+            <div className="flex items-center gap-2 border-b px-4 py-3">
+              <div className="text-sm font-semibold">{t("topicSet.docs.explain")}</div>
+              <div className="truncate text-xs text-muted-foreground">{overlapExplainData?.docId}</div>
+              <button
+                type="button"
+                className="ml-auto rounded border px-2 py-0.5 text-xs"
+                onClick={() => {
+                  setOverlapExplainOpen(false);
+                  setOverlapExplainData(null);
+                  setOverlapExplainError(null);
+                }}
+              >
+                {t("common.close")}
+              </button>
+            </div>
+            <div className="max-h-[70vh] overflow-auto p-4">
+              {overlapExplainLoading && <div className="text-sm text-muted-foreground">{t("common.loading")}</div>}
+              {overlapExplainError && <div className="text-sm text-rose-700">{overlapExplainError}</div>}
+              {!overlapExplainLoading && !overlapExplainError && overlapExplainData && (
+                <div className="grid gap-4 md:grid-cols-2">
+                  <OverlapExplainCard title="Topic A" item={overlapExplainData.topicA} />
+                  <OverlapExplainCard title="Topic B" item={overlapExplainData.topicB} />
+                </div>
               )}
             </div>
           </div>
@@ -1584,47 +1875,58 @@ export function TopicSetWorkspaceClient({
         />
       )}
 
-      {activeTab === "analytics" && (
-        <DashboardPage
+      {activeTab === "dashboard" && (
+        <GovernanceDashboardPage
+          topicSetName={topicSetDetail?.name}
+          coverage={coverageDashboard}
           coverageRows={coverageRows}
-          summary={dashboardSummary}
-          unmappedTotal={unmappedTotal}
-          unmappedDocs={unmappedDocs}
-          topicRows={topicDistributionRows}
-          topicDistributionLoading={topicDistributionLoading}
-          topicDistributionError={topicDistributionError}
-          topicDistributionDedup={topicDistributionDedup}
-          emptyLeafRows={emptyLeafRows}
-          onOpenCoverage={(row) => {
-            if (row?.nodeId) {
+          lowCoverageRows={lowCoverageRows}
+          overlapRows={overlapRows}
+          unmapped={unmappedDashboard ? {
+            unmappedDocs: unmappedDashboard.unmappedDocs,
+            sampleDocuments: unmappedDashboard.sampleDocuments,
+          } : null}
+          onOpenCoverageNode={(row) => {
+            if (row.nodeId) {
               selectNode(row.nodeId);
             }
-            setActiveTab("coverage");
+            setImpactPage(0);
+            setActiveTab("impact");
           }}
-          onOpenUnmapped={() => setActiveTab("unmapped")}
-          onOpenTopicDocs={(topicId, topicName) => {
-            void openTopicDocs(topicId, topicName);
-          }}
-          onOpenTaxonomy={(nodeId) => {
+          onOpenLowCoverageNode={(nodeId) => {
             selectNode(nodeId);
             setActiveTab("taxonomy");
           }}
-          onToggleTopicDistributionDedup={setTopicDistributionDedup}
+          onOpenOverlapDocs={(row) => {
+            void openOverlapDocs(row);
+          }}
+          onOpenUnmapped={() => setActiveTab("unmapped")}
         />
       )}
 
       {activeTab === "coverage" && (
         <CoveragePage
+          dashboard={coverageDashboard}
           rows={coverageRows}
           selectedRow={selectedCoverageRow}
-          selectedTopics={selectedNodeDistributionRows}
+          selectedTopics={selectedCoverageTopics}
           selectedPath={selectedNodeDisplayPath}
           selectedTopicsLoading={selectedNodeDistributionLoading}
           selectedTopicsError={selectedNodeDistributionError}
+          lowCoverageRows={lowCoverageRows}
+          lowCoverageThreshold={3}
+          overlapRows={overlapRows}
           dedup={coverageDedup}
           onToggleDedup={(next) => setCoverageDedup(next)}
           onOpenTopicDocs={(topicId, topicName) => {
             void openTopicDocs(topicId, topicName);
+          }}
+          onOpenNode={(nodeId) => {
+            selectNode(nodeId);
+            setActiveTab("taxonomy");
+          }}
+          onViewOverlapDocs={(row) => {
+            void openOverlapDocs(row);
           }}
           onOpenImpact={() => {
             setImpactPage(0);
@@ -1640,6 +1942,7 @@ export function TopicSetWorkspaceClient({
 
       {activeTab === "unmapped" && (
         <UnmappedPage
+          dashboard={unmappedDashboard}
           total={unmappedTotal}
           docs={unmappedDocs}
           page={unmappedPage}

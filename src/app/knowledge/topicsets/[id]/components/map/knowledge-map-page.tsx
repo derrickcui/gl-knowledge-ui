@@ -52,16 +52,15 @@ function alignViewportTopCenter(cy: Core, zoomLevel?: number) {
   });
 }
 
-function topicColor(topicCount: number, coverageRatio: number, heatmap: boolean) {
+function topicColor(topicCount: number, coverageRatio: number, heatmap: boolean, docs: number, lowCoverage: boolean) {
   if (heatmap) {
     if (coverageRatio >= 0.67) return "#22c55e";
     if (coverageRatio >= 0.34) return "#eab308";
     return "#ef4444";
   }
-  if (topicCount <= 0) return "#cbd5e1";
-  if (topicCount <= 3) return "#60a5fa";
-  if (topicCount <= 10) return "#8b5cf6";
-  return "#ef4444";
+  if (docs <= 0) return "#94a3b8";
+  if (lowCoverage) return "#ef4444";
+  return "#3b82f6";
 }
 
 type KnowledgeMapPageProps = {
@@ -75,6 +74,7 @@ type KnowledgeMapPageProps = {
   topicHitDocsMap: Record<string, number>;
   topicDocCountMap?: Record<string, number>;
   coverageByNodeId: Record<string, number>;
+  lowCoverageNodeIds?: string[];
   unmappedTotal: number;
   onSelectNode: (nodeId: string) => void;
   onOpenTaxonomy: (nodeId: string) => void;
@@ -94,6 +94,7 @@ export function KnowledgeMapPage({
   topicHitDocsMap,
   topicDocCountMap = {},
   coverageByNodeId,
+  lowCoverageNodeIds = [],
   unmappedTotal,
   onSelectNode,
   onOpenTaxonomy,
@@ -155,6 +156,7 @@ export function KnowledgeMapPage({
       .filter((item) => item.name.toLowerCase().includes(keyword) || item.path.toLowerCase().includes(keyword))
       .slice(0, 20);
   }, [searchValue, searchableNodes]);
+  const lowCoverageNodeIdSet = useMemo(() => new Set(lowCoverageNodeIds), [lowCoverageNodeIds]);
 
   useEffect(() => {
     if (!showTopics) return;
@@ -175,6 +177,7 @@ export function KnowledgeMapPage({
       if (!includeByTopic || !includeByCoverage) continue;
       nodeIds.add(node.id);
       const coverageRatio = docs / Math.max(maxDocs, 1);
+      const isLowCoverage = lowCoverageNodeIdSet.has(node.id);
       output.push({
         data: {
           id: node.id,
@@ -183,7 +186,7 @@ export function KnowledgeMapPage({
           docs,
           topics: topicCount,
           coverage: Math.round(coverageRatio * 100),
-          color: topicColor(topicCount, coverageRatio, heatmap),
+          color: topicColor(topicCount, coverageRatio, heatmap, docs, isLowCoverage),
           size: clamp(30 + coverageRatio * 56, 30, 86),
         },
       });
@@ -244,6 +247,7 @@ export function KnowledgeMapPage({
     coverageByNodeId,
     heatmap,
     highCoverageThreshold,
+    lowCoverageNodeIdSet,
     maxDocs,
     showHasTopics,
     showHighCoverage,

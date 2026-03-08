@@ -18,6 +18,7 @@ import {
   fetchGovernanceTopicDocs,
   fetchGovernanceTopicVersions,
 } from "@/lib/governance-topic-detail-api";
+import { getLocale, t } from "@/i18n";
 
 export const dynamic = "force-dynamic";
 
@@ -65,7 +66,7 @@ function formatDateTime(value: string | null | undefined) {
   if (!value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString();
+  return date.toLocaleString(getLocale());
 }
 
 function TopicDetailPageClient() {
@@ -273,11 +274,12 @@ function TopicDetailPageClient() {
     return Array.from(counts.entries()).map(([bucket, count]) => ({ bucket, count }));
   }, [rows]);
 
-  const topicName = topicStat?.topicName?.trim() || topicNameFromQuery || "Topic";
+  const topicName = topicStat?.topicName?.trim() || topicNameFromQuery || t("common.topic");
   const hitCount = summary.matchedDocs || topicStat?.docCount || rows.length;
   const avgWeight = summary.avgWeight || topicStat?.avgWeight || 0;
   const compareFrom = versions[1]?.version ?? "";
   const compareTo = versions[0]?.version ?? "";
+  const locale = getLocale();
 
   async function handleExplain(docId: string) {
     if (expandedExplainDocId === docId) {
@@ -290,7 +292,10 @@ function TopicDetailPageClient() {
     const res = await fetchGovernanceTopicDocExplain(topicId, docId);
     setExplainLoadingDocId("");
     if (!res.data) {
-      setExplainErrorMap((prev) => ({ ...prev, [docId]: res.error ?? "failed to load explain" }));
+      setExplainErrorMap((prev) => ({
+        ...prev,
+        [docId]: res.error ?? t("tagging.topicDetail.explain.loadFailed"),
+      }));
       return;
     }
     setExplainMap((prev) => ({ ...prev, [docId]: res.data }));
@@ -302,18 +307,30 @@ function TopicDetailPageClient() {
         <section className="rounded-2xl border border-slate-700 bg-gradient-to-r from-slate-900 to-blue-950/70 p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="text-2xl font-semibold">Topic Detail</h1>
+              <h1 className="text-2xl font-semibold">{t("tagging.topicDetail.title")}</h1>
               <p className="mt-2 text-sm text-slate-300">
-                Topic: {topicName} · Dimension: {topicStat?.dimensionName?.trim() || "-"}
+                {t("tagging.topicDetail.summary.topicAndDimension", {
+                  topicName,
+                  dimensionName: topicStat?.dimensionName?.trim() || "-",
+                })}
               </p>
               <p className="mt-1 text-sm text-slate-300">
-                Docs: {hitCount.toLocaleString()} (Coverage {toPercent(summary.coverageRate)}) · Multi-hit{" "}
-                {toPercent(summary.multiHitRate)} · Blindspots: {summary.blindspotCount.toLocaleString()}
+                {t("tagging.topicDetail.summary.docs", {
+                  docs: hitCount.toLocaleString(locale),
+                  coverage: toPercent(summary.coverageRate),
+                  multiHit: toPercent(summary.multiHitRate),
+                  blindspots: summary.blindspotCount.toLocaleString(locale),
+                })}
               </p>
               <p className="mt-1 text-sm text-slate-300">
-                Avg Strength: {avgWeight.toFixed(3)} · Runtime: {runtimeVersion}
+                {t("tagging.topicDetail.summary.runtime", {
+                  avgStrength: avgWeight.toFixed(3),
+                  runtimeVersion,
+                })}
               </p>
-              <p className="mt-1 text-xs text-slate-400">Dataset: {dataset}</p>
+              <p className="mt-1 text-xs text-slate-400">
+                {t("tagging.topicDetail.summary.dataset", { dataset })}
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               {compareFrom && compareTo ? (
@@ -323,14 +340,17 @@ function TopicDetailPageClient() {
                   )}&v2=${encodeURIComponent(compareTo)}&topicId=${encodeURIComponent(topicId)}&topicName=${encodeURIComponent(topicName)}`}
                   className="rounded-md border border-violet-400/40 bg-violet-500/10 px-3 py-2 text-sm text-violet-200 hover:bg-violet-500/20"
                 >
-                  Compare {compareFrom} {"->"} {compareTo}
+                  {t("tagging.topicDetail.actions.compareVersions", {
+                    from: compareFrom,
+                    to: compareTo,
+                  })}
                 </Link>
               ) : null}
               <Link
                 href="/knowledge/governance"
                 className="rounded-md border border-blue-400/40 bg-blue-500/10 px-3 py-2 text-sm text-blue-200 hover:bg-blue-500/20"
               >
-                Back to Control Center
+                {t("tagging.topicDetail.actions.backToControlCenter")}
               </Link>
             </div>
           </div>
@@ -338,23 +358,23 @@ function TopicDetailPageClient() {
 
         <section className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-sm text-slate-300">Matched Documents</div>
+            <div className="text-sm text-slate-300">{t("tagging.topicDetail.matchedDocuments")}</div>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter by title or docId"
+              placeholder={t("tagging.topicDetail.filterPlaceholder")}
               className="h-9 w-full max-w-xs rounded-md border border-slate-600 bg-slate-950 px-3 text-sm outline-none placeholder:text-slate-500"
             />
           </div>
 
-          {loading ? <div className="text-xs text-slate-400">Loading...</div> : null}
+          {loading ? <div className="text-xs text-slate-400">{t("common.loading")}</div> : null}
           {error ? (
             <div className="mb-3 rounded border border-rose-500/40 bg-rose-500/10 p-2 text-xs text-rose-200">
               {error}
             </div>
           ) : null}
           {!loading && !filteredRows.length ? (
-            <div className="text-xs text-slate-400">No matched documents in current data window.</div>
+            <div className="text-xs text-slate-400">{t("tagging.topicDetail.emptyMatchedDocuments")}</div>
           ) : null}
 
           {filteredRows.length ? (
@@ -362,11 +382,11 @@ function TopicDetailPageClient() {
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-900 text-xs uppercase tracking-wide text-slate-400">
                   <tr>
-                    <th className="px-3 py-2 text-left">Title</th>
-                    <th className="px-3 py-2 text-left">Strength</th>
-                    <th className="px-3 py-2 text-left">Time</th>
-                    <th className="px-3 py-2 text-left">Explain</th>
-                    <th className="px-3 py-2 text-left">Document</th>
+                    <th className="px-3 py-2 text-left">{t("tagging.topicDetail.columns.title")}</th>
+                    <th className="px-3 py-2 text-left">{t("tagging.topicDetail.columns.strength")}</th>
+                    <th className="px-3 py-2 text-left">{t("tagging.topicDetail.columns.time")}</th>
+                    <th className="px-3 py-2 text-left">{t("tagging.topicDetail.columns.explain")}</th>
+                    <th className="px-3 py-2 text-left">{t("tagging.topicDetail.columns.document")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -388,10 +408,10 @@ function TopicDetailPageClient() {
                               className="rounded border border-slate-600 px-2 py-1 text-xs text-slate-200 hover:bg-slate-800"
                             >
                               {explainLoadingDocId === row.docId
-                                ? "Loading..."
+                                ? t("common.loading")
                                 : expanded
-                                  ? "Hide"
-                                  : "View Explain"}
+                                  ? t("tagging.topicDetail.explain.hide")
+                                  : t("tagging.topicDetail.explain.view")}
                             </button>
                           </td>
                           <td className="px-3 py-2 text-xs text-slate-500">{row.docId}</td>
@@ -404,8 +424,12 @@ function TopicDetailPageClient() {
                               ) : explain ? (
                                 <div className="space-y-2">
                                   <div className="text-slate-300">
-                                    score: {toNumber(explain.score).toFixed(3)} · matched:{" "}
-                                    {explain.matched ? "true" : "false"}
+                                    {t("tagging.topicDetail.explain.scoreMatched", {
+                                      score: toNumber(explain.score).toFixed(3),
+                                      matched: explain.matched
+                                        ? t("tagging.topicDetail.explain.matched")
+                                        : t("tagging.topicDetail.explain.notMatched"),
+                                    })}
                                   </div>
                                   {explain.finalExplain ? (
                                     <div className="text-slate-300">{explain.finalExplain}</div>
@@ -416,16 +440,22 @@ function TopicDetailPageClient() {
                                       className="rounded border border-slate-700 bg-slate-900/70 p-2 text-slate-300"
                                     >
                                       <div className="font-medium">
-                                        {rule.ruleName} ({rule.matched ? "matched" : "not matched"})
+                                        {rule.ruleName} ({rule.matched
+                                          ? t("tagging.topicDetail.explain.matched")
+                                          : t("tagging.topicDetail.explain.notMatched")})
                                       </div>
                                       {rule.weightContribution != null ? (
-                                        <div>contribution: {toNumber(rule.weightContribution).toFixed(3)}</div>
+                                        <div>
+                                          {t("tagging.topicDetail.explain.contribution", {
+                                            value: toNumber(rule.weightContribution).toFixed(3),
+                                          })}
+                                        </div>
                                       ) : null}
                                     </div>
                                   ))}
                                 </div>
                               ) : (
-                                <div className="text-slate-500">No explain data.</div>
+                                <div className="text-slate-500">{t("tagging.topicDetail.explain.empty")}</div>
                               )}
                             </td>
                           </tr>
@@ -441,7 +471,7 @@ function TopicDetailPageClient() {
 
         <section className="mt-5 grid gap-5 lg:grid-cols-2">
           <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-            <h2 className="text-sm font-semibold">Strength Distribution</h2>
+            <h2 className="text-sm font-semibold">{t("tagging.topicDetail.strengthDistribution")}</h2>
             <div className="mt-3 space-y-2">
               {strengthDistribution.map((item) => {
                 const ratio = rows.length > 0 ? Math.max(4, Math.round((item.count / rows.length) * 100)) : 4;
@@ -462,9 +492,9 @@ function TopicDetailPageClient() {
           </article>
 
           <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-            <h2 className="text-sm font-semibold">Top 5 Co-occurring Topics</h2>
+            <h2 className="text-sm font-semibold">{t("tagging.topicDetail.cooccurringTopics")}</h2>
             {!coTopics.length ? (
-              <div className="mt-3 text-xs text-slate-400">No co-occurrence data.</div>
+              <div className="mt-3 text-xs text-slate-400">{t("tagging.topicDetail.emptyCooccurrence")}</div>
             ) : (
               <div className="mt-3 space-y-2">
                 {coTopics.map((item) => (
@@ -490,7 +520,7 @@ function TopicDetailPageClient() {
 
 export default function TopicDetailPage() {
   return (
-    <Suspense fallback={<div className="p-6 text-sm text-slate-400">Loading...</div>}>
+    <Suspense fallback={<div className="p-6 text-sm text-slate-400">{t("common.loading")}</div>}>
       <TopicDetailPageClient />
     </Suspense>
   );

@@ -3,9 +3,9 @@
 import { t } from "@/i18n";
 
 export type TopicSetWorkspaceTab =
+  | "dashboard"
   | "taxonomy"
   | "map"
-  | "analytics"
   | "impact"
   | "coverage"
   | "unmapped"
@@ -14,14 +14,25 @@ export type TopicSetWorkspaceTab =
 
 const TAB_KEYS: Record<TopicSetWorkspaceTab, Parameters<typeof t>[0]> = {
   taxonomy: "topicSet.tab.taxonomy",
+  dashboard: "topicSet.tab.dashboard",
   map: "topicSet.tab.map",
-  analytics: "topicSet.tab.analytics",
   impact: "topicSet.tab.impact",
   coverage: "topicSet.tab.coverage",
   unmapped: "topicSet.tab.unmapped",
   versions: "topicSet.tab.versions",
   diff: "topicSet.tab.diff",
 };
+
+const TAB_ORDER: TopicSetWorkspaceTab[] = [
+  "taxonomy",
+  "dashboard",
+  "map",
+  "coverage",
+  "impact",
+  "unmapped",
+  "versions",
+  "diff",
+];
 
 export function WorkspaceTabs({
   activeTab,
@@ -33,7 +44,7 @@ export function WorkspaceTabs({
   return (
     <section className="rounded-lg border bg-white">
       <div className="flex items-center gap-1 border-b px-3 py-2">
-        {(Object.keys(TAB_KEYS) as TopicSetWorkspaceTab[]).map((tab) => (
+        {TAB_ORDER.map((tab) => (
           <button
             key={tab}
             type="button"

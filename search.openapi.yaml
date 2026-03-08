@@ -580,6 +580,80 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/unmapped-dashboard:
+    get:
+      tags: [topicset-search]
+      summary: Unmapped dashboard for one TopicSet
+      operationId: topicSetUnmappedDashboard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: sampleSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 10
+            minimum: 1
+            maximum: 50
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [score, updatedAt, publishedAt]
+            default: score
+      responses:
+        "200":
+          description: Unmapped dashboard loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetUnmappedDashboard'
+              examples:
+                dashboard:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      totalDocs: 500
+                      classifiedDocs: 329
+                      unmappedDocs: 171
+                      sampleSize: 10
+                      sampleSort: score
+                      unmappedDocsPath: /api/topicsets/4257e57e-a1c9-4b76-b880-e487560f382c/unmapped?page=0&size=10&sort=score
+                      suggestPath: /api/topicsets/4257e57e-a1c9-4b76-b880-e487560f382c/unmapped?page=0&size=10&sort=score
+                      sampleDocuments:
+                        - docId: doc-99
+                          title: general-policy
+                          summary: unmapped doc summary
+                          highlightFragments: []
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: TopicSet runtime not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute unmapped dashboard query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
               examples:
                 runtimeFetchFailed:
                   value:
@@ -587,6 +661,541 @@ paths:
                     title: Bad Gateway
                     status: 502
                     detail: failed to fetch topicset runtime
+
+  /api/topicsets/{id}/coverage-dashboard:
+    get:
+      tags: [topicset-search]
+      summary: Real-time TopicSet coverage dashboard
+      operationId: topicSetCoverageDashboard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Coverage dashboard loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetCoverageDashboard'
+              examples:
+                dashboard:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      totalDocs: 500
+                      classifiedDocs: 329
+                      unmappedDocs: 171
+                      nodes: 10
+                      topics: 23
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute dashboard query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/governance-dashboard:
+    get:
+      tags: [topicset-search]
+      summary: Governance dashboard for one TopicSet
+      operationId: topicSetGovernanceDashboard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: lowCoverageThreshold
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+            minimum: 0
+        - name: overlapMinOverlap
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 1
+            minimum: 1
+        - name: overlapLimit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+            minimum: 1
+            maximum: 200
+        - name: unmappedSampleSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 10
+            minimum: 1
+            maximum: 50
+        - name: unmappedSort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [score, updatedAt, publishedAt]
+            default: score
+      responses:
+        "200":
+          description: Governance dashboard loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetGovernanceDashboard'
+              examples:
+                dashboard:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      coverage:
+                        version: 5
+                        topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                        totalDocs: 500
+                        classifiedDocs: 329
+                        unmappedDocs: 171
+                        nodes: 10
+                        topics: 23
+                      unmapped:
+                        version: 5
+                        topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                        totalDocs: 500
+                        classifiedDocs: 329
+                        unmappedDocs: 171
+                        sampleSize: 10
+                        sampleSort: score
+                        unmappedDocsPath: /api/topicsets/4257e57e-a1c9-4b76-b880-e487560f382c/unmapped?page=0&size=10&sort=score
+                        suggestPath: /api/topicsets/4257e57e-a1c9-4b76-b880-e487560f382c/unmapped?page=0&size=10&sort=score
+                        sampleDocuments: []
+                      lowCoverage:
+                        version: 5
+                        topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                        dedup: true
+                        threshold: 5
+                        nodes: []
+                      overlap:
+                        version: 5
+                        topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                        minOverlap: 1
+                        limit: 20
+                        totalPairs: 1
+                        items: []
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: TopicSet runtime not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute governance dashboard query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/low-coverage:
+    get:
+      tags: [topicset-search]
+      summary: Low coverage nodes for one TopicSet
+      operationId: topicSetLowCoverage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dedup
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+        - name: threshold
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: Low coverage nodes loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetLowCoverage'
+              examples:
+                lowCoverage:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      dedup: true
+                      threshold: 3
+                      nodes:
+                        - nodeId: node-c
+                          name: fiscal
+                          docCount: 3
+                          topicCount: 1
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute low coverage query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/overlap:
+    get:
+      tags: [topicset-search]
+      summary: Topic overlap pairs for one TopicSet
+      operationId: topicSetOverlap
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: minOverlap
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Topic overlaps loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetOverlap'
+              examples:
+                overlap:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      minOverlap: 10
+                      totalPairs: 1
+                      overlaps:
+                        - topicAId: topic-1
+                          topicAName: postdoc-policy
+                          topicBId: topic-2
+                          topicBName: postdoc-grant
+                          overlapDocs: 50
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute overlap query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/overlap-dashboard:
+    get:
+      tags: [topicset-search]
+      summary: Overlap dashboard for one TopicSet
+      operationId: topicSetOverlapDashboard
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: minOverlap
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Overlap dashboard loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetOverlapDashboard'
+              examples:
+                dashboard:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      minOverlap: 10
+                      limit: 5
+                      totalPairs: 1
+                      items:
+                        - topicAId: topic-1
+                          topicAName: postdoc-policy
+                          topicBId: topic-2
+                          topicBName: postdoc-grant
+                          overlapDocs: 50
+                          docsPath: /api/topicsets/4257e57e-a1c9-4b76-b880-e487560f382c/overlap-docs?topicAId=topic-1&topicBId=topic-2
+                          explainPathTemplate: /api/topicsets/4257e57e-a1c9-4b76-b880-e487560f382c/overlap-docs/{docId}/explain?topicAId=topic-1&topicBId=topic-2
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute overlap dashboard query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/overlap-docs:
+    get:
+      tags: [topicset-search]
+      summary: Overlapping documents for two TopicSet topics
+      operationId: topicSetOverlapDocs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: topicAId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: topicBId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [score, updatedAt, publishedAt]
+            default: score
+      responses:
+        "200":
+          description: Overlap documents loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDocumentPage'
+              examples:
+                overlapDocs:
+                  value:
+                    success: true
+                    data:
+                      page: 0
+                      size: 20
+                      total: 1
+                      items:
+                        - docId: doc-1
+                          title: Talent Policy Notice
+                          summary: "<em>talent</em> policy fragment"
+                          highlightFragments:
+                            - "<em>talent</em> policy fragment"
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Topic not found in TopicSet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                topicNotFound:
+                  value:
+                    type: about:blank
+                    title: Not Found
+                    status: 404
+                    detail: topicset topic not found: topic-x
+        "502":
+          description: Failed to fetch runtime or execute overlap document query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/overlap-docs/{docId}/explain:
+    get:
+      tags: [topicset-search]
+      summary: Explain why one document overlaps two TopicSet topics
+      operationId: topicSetOverlapDocExplain
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: topicAId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: topicBId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Overlap doc explain loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetOverlapDocExplain'
+              examples:
+                explain:
+                  value:
+                    success: true
+                    data:
+                      version: 5
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      docId: doc-1
+                      topicA:
+                        topicId: topic-1
+                        topicName: talent-policy
+                        matched: true
+                        matchedNodeIds: [node-a]
+                        matchedTerms: [talent]
+                        appliedModes: [FILTER]
+                        reason: DOC_EVAL
+                        explain:
+                          - nodeId: node-a
+                            label: talent
+                            matched: true
+                      topicB:
+                        topicId: topic-2
+                        topicName: company-policy
+                        matched: true
+                        matchedNodeIds: [node-b]
+                        matchedTerms: [company]
+                        appliedModes: [FILTER]
+                        reason: DOC_EVAL
+                        explain:
+                          - nodeId: node-b
+                            label: company
+                            matched: true
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Topic or document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute explain query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /internal/topicsets/{id}/runtime-cache/refresh:
     post:
@@ -2930,6 +3539,208 @@ components:
         docCount:
           type: integer
           format: int64
+        topics:
+          type: integer
+          format: int32
+
+    TopicSetCoverageDashboardResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        totalDocs:
+          type: integer
+          format: int64
+        classifiedDocs:
+          type: integer
+          format: int64
+        unmappedDocs:
+          type: integer
+          format: int64
+        nodes:
+          type: integer
+          format: int32
+        topics:
+          type: integer
+          format: int32
+
+    TopicSetGovernanceDashboardResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        coverage:
+          $ref: '#/components/schemas/TopicSetCoverageDashboardResponse'
+        unmapped:
+          $ref: '#/components/schemas/TopicSetUnmappedDashboardResponse'
+        lowCoverage:
+          $ref: '#/components/schemas/TopicSetLowCoverageResponse'
+        overlap:
+          $ref: '#/components/schemas/TopicSetOverlapDashboardResponse'
+
+    TopicSetLowCoverageNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        docCount:
+          type: integer
+          format: int64
+        topicCount:
+          type: integer
+          format: int32
+
+    TopicSetLowCoverageResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        dedup:
+          type: boolean
+        threshold:
+          type: integer
+          format: int64
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetLowCoverageNodeView'
+
+    TopicSetOverlapItemView:
+      type: object
+      properties:
+        topicAId:
+          type: string
+        topicAName:
+          type: string
+        topicBId:
+          type: string
+        topicBName:
+          type: string
+        overlapDocs:
+          type: integer
+          format: int64
+
+    TopicSetOverlapResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        minOverlap:
+          type: integer
+          format: int64
+        totalPairs:
+          type: integer
+          format: int32
+        overlaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetOverlapItemView'
+
+    TopicSetOverlapTopicExplainView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        matched:
+          type: boolean
+        matchedNodeIds:
+          type: array
+          items:
+            type: string
+        matchedTerms:
+          type: array
+          items:
+            type: string
+        appliedModes:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+          nullable: true
+        explain:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicDocEvaluationExplainNode'
+
+    TopicSetOverlapDocExplainResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        docId:
+          type: string
+        topicA:
+          $ref: '#/components/schemas/TopicSetOverlapTopicExplainView'
+        topicB:
+          $ref: '#/components/schemas/TopicSetOverlapTopicExplainView'
+
+    TopicSetOverlapDashboardItemView:
+      type: object
+      properties:
+        topicAId:
+          type: string
+        topicAName:
+          type: string
+        topicBId:
+          type: string
+        topicBName:
+          type: string
+        overlapDocs:
+          type: integer
+          format: int64
+        docsPath:
+          type: string
+        explainPathTemplate:
+          type: string
+
+    TopicSetOverlapDashboardResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        minOverlap:
+          type: integer
+          format: int64
+        limit:
+          type: integer
+          format: int32
+        totalPairs:
+          type: integer
+          format: int32
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetOverlapDashboardItemView'
 
     TopicSetDistributionItem:
       type: object
@@ -3037,6 +3848,38 @@ components:
           items:
             type: string
 
+    TopicSetUnmappedDashboardResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          format: int32
+        topicSetId:
+          type: string
+          format: uuid
+        totalDocs:
+          type: integer
+          format: int64
+        classifiedDocs:
+          type: integer
+          format: int64
+        unmappedDocs:
+          type: integer
+          format: int64
+        sampleSize:
+          type: integer
+          format: int32
+        sampleSort:
+          type: string
+        unmappedDocsPath:
+          type: string
+        suggestPath:
+          type: string
+        sampleDocuments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
     TopicSetRuntimeCacheRefreshResponse:
       type: object
       properties:
@@ -3075,6 +3918,84 @@ components:
             - type: object
             - type: string
 
+    ApiEnvelopeTopicSetCoverageDashboard:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetCoverageDashboardResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetGovernanceDashboard:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetGovernanceDashboardResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetLowCoverage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetLowCoverageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetOverlap:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetOverlapResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetOverlapDocExplain:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetOverlapDocExplainResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetOverlapDashboard:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetOverlapDashboardResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
     ApiEnvelopeTopicSetNodeDistribution:
       type: object
       properties:
@@ -3095,6 +4016,19 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicSetDocumentPageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetUnmappedDashboard:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetUnmappedDashboardResponse'
         error:
           nullable: true
           oneOf:
