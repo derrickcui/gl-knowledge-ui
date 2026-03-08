@@ -7,6 +7,7 @@ const TOPICSET_SERVICE_ERROR_MESSAGE = "topicset-service request failed";
 type ApiErrorShape = {
   code?: string;
   message?: string;
+  details?: unknown;
 };
 
 type ApiEnvelope<T> = {
@@ -15,12 +16,41 @@ type ApiEnvelope<T> = {
   error?: ApiErrorShape | string | null;
 };
 
+export type TopicSetValidationIssue = {
+  nodeId?: string | null;
+  parentId?: string | null;
+  path?: string | null;
+  message: string;
+};
+
+export type TopicSetCoverageConflict = {
+  nodeId: string;
+  path: string;
+  conflictingNodeId: string;
+  conflictingPath: string;
+  message: string;
+};
+
+export type TopicSetValidationDetails = {
+  cycleStructure: TopicSetValidationIssue[];
+  orphanNodes: TopicSetValidationIssue[];
+  unboundTopics: TopicSetValidationIssue[];
+  coverageConflicts: TopicSetCoverageConflict[];
+};
+
+type TopicSetApiResult<T> = ApiResult<T> & {
+  errorDetails?: TopicSetValidationDetails | null;
+  status?: number;
+  etag?: string | null;
+};
+
 export type TopicSetSummary = {
   id: string;
   name: string;
   namespace?: string | null;
   status: string;
   version: number;
+  currentVersion?: number;
 };
 
 export type TopicSetDetail = {
@@ -30,6 +60,7 @@ export type TopicSetDetail = {
   description?: string | null;
   status: string;
   version: number;
+  currentVersion?: number;
   nodeCount: number;
   topicCount: number;
 };
@@ -90,6 +121,11 @@ export type TopicSetVersionItem = {
   createdAt?: string;
 };
 
+export type TopicSetLifecycleResponse = {
+  status: string;
+  version: number;
+};
+
 export type TopicSetDiffStatus = "ADDED" | "REMOVED" | "MOVED" | "UPDATED" | "UNCHANGED";
 
 export type TopicSetDiffSummary = {
@@ -132,6 +168,28 @@ export type NodeTopicView = {
 
 type TopicSetSummaryList = TopicSetSummary[];
 
+function normalizeTopicSetSummary(item: TopicSetSummary): TopicSetSummary {
+  return {
+    ...item,
+    version: item.version ?? item.currentVersion ?? 0,
+  };
+}
+
+function normalizeTopicSetDetail(item: TopicSetDetail): TopicSetDetail {
+  return {
+    ...item,
+    version: item.version ?? item.currentVersion ?? 0,
+  };
+}
+
+function withIfMatch(etag?: string | null, headers?: HeadersInit) {
+  const nextHeaders = new Headers(headers ?? {});
+  if (etag) {
+    nextHeaders.set("if-match", etag);
+  }
+  return nextHeaders;
+}
+
 type NodeTreeResponse = {
   nodes: TopicSetNode[];
 };
@@ -151,6 +209,7 @@ type TopicSetVersionsResponse = {
 type PublishResponse = {
   version?: number;
   publishedVersion?: number;
+  status?: string;
 };
 
 type RestoreTopicSetVersionResponse = {
@@ -180,25 +239,59 @@ function normalizeError(error: ApiEnvelope<unknown>["error"], fallback: string) 
   return fallback;
 }
 
-async function buildErrorMessage(res: Response, fallback: string) {
-  const text = await res.text().catch(() => "");
-  if (text) return text;
-  const status = res.status ? ` (${res.status} ${res.statusText})` : "";
-  return `${fallback}${status}`.trim();
+function isValidationDetails(value: unknown): value is TopicSetValidationDetails {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    Array.isArray(record.cycleStructure) &&
+    Array.isArray(record.orphanNodes) &&
+    Array.isArray(record.unboundTopics) &&
+    Array.isArray(record.coverageConflicts)
+  );
 }
 
-async function requestJson<T>(input: string, init?: RequestInit): Promise<ApiResult<T>> {
+async function buildErrorPayload(res: Response, fallback: string) {
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      const parsed = JSON.parse(text) as ApiEnvelope<unknown> | { error?: ApiErrorShape; message?: string };
+      const envelopeError =
+        parsed && typeof parsed === "object" && "error" in parsed ? parsed.error : undefined;
+      const message =
+        (typeof envelopeError === "object" && envelopeError?.message) ||
+        (typeof parsed === "object" && parsed && "message" in parsed && typeof parsed.message === "string"
+          ? parsed.message
+          : text);
+      const details =
+        typeof envelopeError === "object" && envelopeError && isValidationDetails(envelopeError.details)
+          ? envelopeError.details
+          : null;
+      return { message, details };
+    } catch {
+      return { message: text, details: null };
+    }
+  }
+  const status = res.status ? ` (${res.status} ${res.statusText})` : "";
+  return { message: `${fallback}${status}`.trim(), details: null };
+}
+
+async function requestJson<T>(input: string, init?: RequestInit): Promise<TopicSetApiResult<T>> {
   try {
     const res = await fetch(input, init);
+    const etag = res.headers.get("etag");
     if (!res.ok) {
+      const errorPayload = await buildErrorPayload(res, TOPICSET_SERVICE_ERROR_MESSAGE);
       return {
         data: null,
-        error: await buildErrorMessage(res, TOPICSET_SERVICE_ERROR_MESSAGE),
+        error: errorPayload.message,
+        errorDetails: errorPayload.details,
+        status: res.status,
+        etag,
       };
     }
-    return { data: (await res.json()) as T, error: null };
+    return { data: (await res.json()) as T, error: null, errorDetails: null, status: res.status, etag };
   } catch {
-    return { data: null, error: TOPICSET_SERVICE_DOWN_MESSAGE };
+    return { data: null, error: TOPICSET_SERVICE_DOWN_MESSAGE, errorDetails: null, etag: null };
   }
 }
 
@@ -211,28 +304,54 @@ function isEnvelope<T>(value: unknown): value is ApiEnvelope<T> {
   );
 }
 
-async function unwrapOrReturn<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+async function unwrapOrReturn<T>(path: string, init?: RequestInit): Promise<TopicSetApiResult<T>> {
   const res = await requestJson<unknown>(path, { cache: "no-store", ...(init ?? {}) });
-  if (!res.data) return { data: null, error: res.error };
+  if (!res.data) {
+    return {
+      data: null,
+      error: res.error,
+      errorDetails: res.errorDetails ?? null,
+      status: res.status,
+      etag: res.etag ?? null,
+    };
+  }
 
   if (isEnvelope<T>(res.data)) {
     if (!res.data.success) {
+      const details =
+        typeof res.data.error === "object" && res.data.error && isValidationDetails(res.data.error.details)
+          ? res.data.error.details
+          : null;
       return {
         data: null,
         error: normalizeError(res.data.error, "topicset request failed"),
+        errorDetails: details,
+        status: res.status,
+        etag: res.etag ?? null,
       };
     }
     if (res.data.data == null) {
-      return { data: null, error: "invalid topicset response" };
+      return {
+        data: null,
+        error: "invalid topicset response",
+        errorDetails: null,
+        status: res.status,
+        etag: res.etag ?? null,
+      };
     }
-    return { data: res.data.data, error: null };
+    return { data: res.data.data, error: null, errorDetails: null, status: res.status, etag: res.etag ?? null };
   }
 
-  return { data: res.data as T, error: null };
+  return { data: res.data as T, error: null, errorDetails: null, status: res.status, etag: res.etag ?? null };
 }
 
 export async function listTopicSets() {
-  return unwrapOrReturn<TopicSetSummaryList>(TOPICSETS_API_PROXY);
+  const result = await unwrapOrReturn<TopicSetSummaryList>(TOPICSETS_API_PROXY);
+  if (!result.data) return result;
+  return {
+    ...result,
+    data: result.data.map(normalizeTopicSetSummary),
+  };
 }
 
 export async function createTopicSet(payload: {
@@ -240,15 +359,25 @@ export async function createTopicSet(payload: {
   namespace?: string | null;
   description?: string | null;
 }) {
-  return unwrapOrReturn<TopicSetSummary>(TOPICSETS_API_PROXY, {
+  const result = await unwrapOrReturn<TopicSetSummary>(TOPICSETS_API_PROXY, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (!result.data) return result;
+  return {
+    ...result,
+    data: normalizeTopicSetSummary(result.data),
+  };
 }
 
 export async function getTopicSet(id: string) {
-  return unwrapOrReturn<TopicSetDetail>(`${TOPICSETS_API_PROXY}/${encodeURIComponent(id)}`);
+  const result = await unwrapOrReturn<TopicSetDetail>(`${TOPICSETS_API_PROXY}/${encodeURIComponent(id)}`);
+  if (!result.data) return result;
+  return {
+    ...result,
+    data: normalizeTopicSetDetail(result.data),
+  };
 }
 
 export async function getTopicSetTree(id: string): Promise<ApiResult<TopicSetNode[]>> {
@@ -340,42 +469,52 @@ export async function getTopicSetNodeDetail(params: {
 
 export async function createTopicSetNode(
   topicSetId: string,
-  payload: { parentId?: string | null; name: string; description?: string | null }
+  payload: { parentId?: string | null; name: string; description?: string | null },
+  etag?: string | null
 ) {
   const result = await unwrapOrReturn<CreateNodeResponse | TopicSetNodeItem>(
     `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/nodes`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify(payload),
     }
   );
-  if (!result.data) return { data: null, error: result.error };
+  if (!result.data) {
+    return {
+      data: null,
+      error: result.error,
+      etag: result.etag ?? null,
+      status: result.status,
+    };
+  }
   const node = "node" in result.data ? result.data.node : result.data;
-  return { data: node, error: null };
+  return { data: node, error: null, etag: result.etag ?? null, status: result.status };
 }
 
 export async function updateTopicSetNode(
   nodeId: string,
-  payload: { name: string; description?: string | null }
+  payload: { name: string; description?: string | null },
+  etag?: string | null
 ) {
   return unwrapOrReturn<{ id: string; name: string; description?: string | null; updatedAt: string }>(
     `${TOPICSETS_API_PROXY}/nodes/${encodeURIComponent(nodeId)}`,
     {
       method: "PATCH",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify(payload),
     }
   );
 }
 
-export async function deleteTopicSetNode(nodeId: string, cascade = true) {
+export async function deleteTopicSetNode(nodeId: string, cascade = true, etag?: string | null) {
   const query = new URLSearchParams();
   query.set("cascade", String(cascade));
   return requestJson<unknown>(
     `${TOPICSETS_API_PROXY}/nodes/${encodeURIComponent(nodeId)}?${query.toString()}`,
     {
       method: "DELETE",
+      headers: withIfMatch(etag),
       cache: "no-store",
     }
   );
@@ -383,13 +522,14 @@ export async function deleteTopicSetNode(nodeId: string, cascade = true) {
 
 export async function moveTopicSetNode(
   nodeId: string,
-  payload: { newParentId: string; index?: number | null }
+  payload: { newParentId: string; index?: number | null },
+  etag?: string | null
 ) {
   return unwrapOrReturn<{ id: string; newParentId: string }>(
     `${TOPICSETS_API_PROXY}/nodes/${encodeURIComponent(nodeId)}/move`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify(payload),
     }
   );
@@ -405,43 +545,122 @@ export async function listTopicSetNodeTopics(
   return { data: result.data.items ?? result.data.topics ?? [], error: null };
 }
 
-export async function bindTopicToNode(nodeId: string, topicId: string) {
+export async function bindTopicToNode(nodeId: string, topicId: string, etag?: string | null) {
   return unwrapOrReturn<NodeTopicView>(
     `${TOPICSETS_API_PROXY}/nodes/${encodeURIComponent(nodeId)}/topics`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify({ topicId }),
     }
   );
 }
 
-export async function unbindTopicFromNode(nodeId: string, topicId: string) {
+export async function unbindTopicFromNode(nodeId: string, topicId: string, etag?: string | null) {
   return requestJson<unknown>(
     `${TOPICSETS_API_PROXY}/nodes/${encodeURIComponent(nodeId)}/topics/${encodeURIComponent(topicId)}`,
     {
       method: "DELETE",
+      headers: withIfMatch(etag),
       cache: "no-store",
     }
   );
 }
 
-export async function publishTopicSet(topicSetId: string, comment?: string) {
+export async function publishTopicSet(topicSetId: string, comment?: string, etag?: string | null) {
   const result = await unwrapOrReturn<PublishResponse>(
     `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/publish`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify({ comment: comment || null }),
     }
   );
-  if (!result.data) return { data: null, error: result.error };
+  if (!result.data) {
+    return {
+      data: null,
+      error: result.error,
+      errorDetails: result.errorDetails ?? null,
+      status: result.status,
+      etag: result.etag ?? null,
+    };
+  }
   return {
     data: {
       version: result.data.publishedVersion ?? result.data.version ?? 0,
+      status: result.data.status,
     },
     error: null,
+    errorDetails: null,
+    status: result.status,
+    etag: result.etag ?? null,
   };
+}
+
+export async function submitTopicSetReview(topicSetId: string, comment?: string, etag?: string | null) {
+  return unwrapOrReturn<TopicSetLifecycleResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/submit-review`,
+    {
+      method: "POST",
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
+      body: JSON.stringify({ comment: comment || null }),
+    }
+  );
+}
+
+export async function approveTopicSet(topicSetId: string, comment?: string, etag?: string | null) {
+  return unwrapOrReturn<TopicSetLifecycleResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/approve`,
+    {
+      method: "POST",
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
+      body: JSON.stringify({ comment: comment || null }),
+    }
+  );
+}
+
+export async function rejectTopicSet(topicSetId: string, reason?: string, etag?: string | null) {
+  return unwrapOrReturn<TopicSetLifecycleResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/reject`,
+    {
+      method: "POST",
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
+      body: JSON.stringify({ reason: reason || null }),
+    }
+  );
+}
+
+export async function createTopicSetVersion(topicSetId: string, comment?: string, etag?: string | null) {
+  return unwrapOrReturn<TopicSetLifecycleResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/versions`,
+    {
+      method: "POST",
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
+      body: JSON.stringify({ comment: comment || null }),
+    }
+  );
+}
+
+export async function deprecateTopicSet(topicSetId: string, comment?: string, etag?: string | null) {
+  return unwrapOrReturn<TopicSetLifecycleResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/deprecate`,
+    {
+      method: "POST",
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
+      body: JSON.stringify({ comment: comment || null }),
+    }
+  );
+}
+
+export async function archiveTopicSet(topicSetId: string, comment?: string, etag?: string | null) {
+  return unwrapOrReturn<TopicSetLifecycleResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/archive`,
+    {
+      method: "POST",
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
+      body: JSON.stringify({ comment: comment || null }),
+    }
+  );
 }
 
 export async function listTopicSetVersions(
@@ -457,13 +676,14 @@ export async function listTopicSetVersions(
 export async function restoreTopicSetVersionAsDraft(
   topicSetId: string,
   version: number,
-  payload?: { mode?: string; comment?: string | null }
+  payload?: { mode?: string; comment?: string | null },
+  etag?: string | null
 ) {
   return unwrapOrReturn<RestoreTopicSetVersionResponse>(
     `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/versions/${version}/restore`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify({
         mode: payload?.mode ?? "DRAFT_COPY",
         comment: payload?.comment ?? null,
@@ -475,13 +695,14 @@ export async function restoreTopicSetVersionAsDraft(
 export async function rollbackTopicSetVersion(
   topicSetId: string,
   version: number,
-  payload?: { comment?: string | null }
+  payload?: { comment?: string | null },
+  etag?: string | null
 ) {
   return unwrapOrReturn<RollbackTopicSetVersionResponse>(
     `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/versions/${version}/rollback`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: withIfMatch(etag, { "content-type": "application/json" }),
       body: JSON.stringify({
         comment: payload?.comment ?? null,
       }),

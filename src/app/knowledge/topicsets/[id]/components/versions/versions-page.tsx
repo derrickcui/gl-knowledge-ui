@@ -27,11 +27,33 @@ export function VersionsPage({
   };
 
   const statusLabel = (status: string) =>
-    status?.toUpperCase().includes("DRAFT") ? t("topicSet.version.draft") : t("topicSet.version.published");
+    t(
+      `topicSet.lifecycle.status.${
+        status?.toUpperCase().includes("DRAFT")
+          ? "draft"
+          : status?.toUpperCase().includes("REVIEW")
+          ? "review"
+          : status?.toUpperCase().includes("APPROVED")
+          ? "approved"
+          : status?.toUpperCase().includes("DEPRECATED")
+          ? "deprecated"
+          : status?.toUpperCase().includes("ARCHIVED")
+          ? "archived"
+          : "published"
+      }` as Parameters<typeof t>[0]
+    );
 
   const statusClass = (status: string) =>
     status?.toUpperCase().includes("DRAFT")
       ? "border-amber-200 bg-amber-50 text-amber-700"
+      : status?.toUpperCase().includes("REVIEW")
+      ? "border-sky-200 bg-sky-50 text-sky-700"
+      : status?.toUpperCase().includes("APPROVED")
+      ? "border-violet-200 bg-violet-50 text-violet-700"
+      : status?.toUpperCase().includes("DEPRECATED")
+      ? "border-orange-200 bg-orange-50 text-orange-700"
+      : status?.toUpperCase().includes("ARCHIVED")
+      ? "border-slate-300 bg-slate-100 text-slate-600"
       : "border-emerald-200 bg-emerald-50 text-emerald-700";
 
   return (

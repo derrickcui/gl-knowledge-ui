@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { searchTopics, TopicDTO } from "@/lib/topic-api";
 import {
   NodeTopicView,
+  TopicSetValidationDetails,
   TopicSetDetail,
   TopicSetNode,
   TopicSetNodeItem,
@@ -94,6 +95,7 @@ type TopicSetStoreState = {
   topicSets: TopicSetSummary[];
   topicSetId: string | null;
   topicSetDetail: TopicSetDetail | null;
+  topicSetEtag: string | null;
   nodes: TopicSetNode[];
   nodeMap: Record<string, TopicSetNode>;
   childrenByParent: Record<string, string[]>;
@@ -111,6 +113,7 @@ type TopicSetStoreState = {
 type TopicSetStoreActions = {
   initialize: () => Promise<void>;
   setTopicSet: (topicSetId: string) => Promise<void>;
+  refreshTopicSetMeta: () => Promise<{ ok: boolean; error?: string; etag?: string | null }>;
   setVersion: (version: number | null) => Promise<void>;
   loadTree: () => Promise<void>;
   loadChildren: (parentId: string | null) => Promise<{ ok: boolean; error?: string }>;
@@ -120,20 +123,27 @@ type TopicSetStoreActions = {
     parentId?: string | null;
     name: string;
     description?: string | null;
-  }) => Promise<{ ok: boolean; error?: string; nodeId?: string }>;
+  }) => Promise<{ ok: boolean; error?: string; nodeId?: string; status?: number }>;
   renameNode: (nodeId: string, payload: { name: string; description?: string | null }) => Promise<{
     ok: boolean;
     error?: string;
+    status?: number;
   }>;
-  deleteNode: (nodeId: string) => Promise<{ ok: boolean; error?: string }>;
+  deleteNode: (nodeId: string) => Promise<{ ok: boolean; error?: string; status?: number }>;
   moveNode: (
     nodeId: string,
     parentId: string,
     index?: number | null
-  ) => Promise<{ ok: boolean; error?: string }>;
-  bindTopic: (nodeId: string, topicId: string) => Promise<{ ok: boolean; error?: string }>;
-  unbindTopic: (nodeId: string, topicId: string) => Promise<{ ok: boolean; error?: string }>;
-  publish: (comment?: string) => Promise<{ ok: boolean; error?: string; version?: number }>;
+  ) => Promise<{ ok: boolean; error?: string; status?: number }>;
+  bindTopic: (nodeId: string, topicId: string) => Promise<{ ok: boolean; error?: string; status?: number }>;
+  unbindTopic: (nodeId: string, topicId: string) => Promise<{ ok: boolean; error?: string; status?: number }>;
+  publish: (comment?: string) => Promise<{
+    ok: boolean;
+    error?: string;
+    version?: number;
+    errorDetails?: TopicSetValidationDetails | null;
+    status?: number;
+  }>;
   searchTopic: (keyword: string) => Promise<TopicDTO[]>;
   findNodeById: (nodeId: string | null) => TopicSetNode | null;
 };
@@ -142,6 +152,7 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
   topicSets: [],
   topicSetId: null,
   topicSetDetail: null,
+  topicSetEtag: null,
   nodes: [],
   nodeMap: {},
   childrenByParent: {},
@@ -193,12 +204,33 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
     }
     set({
       topicSetDetail: detailResult.data,
+      topicSetEtag: detailResult.etag ?? null,
       versions: versionResult.data ?? [],
       topics: {},
       topicsLoaded: {},
     });
     await get().loadTree();
     set({ loading: false });
+  },
+
+  refreshTopicSetMeta: async () => {
+    const { topicSetId } = get();
+    if (!topicSetId) {
+      return { ok: false, error: "TopicSet is not selected." };
+    }
+    const [detailResult, versionResult] = await Promise.all([
+      getTopicSet(topicSetId),
+      listTopicSetVersions(topicSetId),
+    ]);
+    if (!detailResult.data) {
+      return { ok: false, error: detailResult.error ?? "Unable to refresh TopicSet detail." };
+    }
+    set({
+      topicSetDetail: detailResult.data,
+      topicSetEtag: detailResult.etag ?? null,
+      versions: versionResult.data ?? get().versions,
+    });
+    return { ok: true, etag: detailResult.etag ?? null };
   },
 
   setVersion: async (version: number | null) => {
@@ -434,11 +466,14 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
   selectNode: (nodeId) => set({ selectedNode: nodeId }),
 
   createNode: async (payload) => {
-    const { topicSetId } = get();
+    const { topicSetId, topicSetEtag } = get();
     if (!topicSetId) return { ok: false, error: "TopicSet is not selected." };
-    const result = await createTopicSetNode(topicSetId, payload);
+    const result = await createTopicSetNode(topicSetId, payload, topicSetEtag);
     if (!result.data) {
-      return { ok: false, error: result.error ?? "Unable to create node." };
+      return { ok: false, error: result.error ?? "Unable to create node.", status: result.status };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
     await get().loadTree();
     const parentKey = payload.parentId ?? "__root__";
@@ -452,13 +487,17 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
         [parentKey]: true,
       },
     });
-    return { ok: true, nodeId: result.data.id };
+    return { ok: true, nodeId: result.data.id, status: result.status };
   },
 
   renameNode: async (nodeId, payload) => {
-    const result = await updateTopicSetNode(nodeId, payload);
+    const { topicSetEtag } = get();
+    const result = await updateTopicSetNode(nodeId, payload, topicSetEtag);
     if (!result.data) {
-      return { ok: false, error: result.error ?? "Unable to update node." };
+      return { ok: false, error: result.error ?? "Unable to update node.", status: result.status };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
 
     const current = get().nodeMap[nodeId];
@@ -474,19 +513,24 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
       });
     }
 
-    return { ok: true };
+    return { ok: true, status: result.status };
   },
 
   deleteNode: async (nodeId) => {
-    const result = await deleteTopicSetNode(nodeId, true);
+    const { topicSetEtag } = get();
+    const result = await deleteTopicSetNode(nodeId, true, topicSetEtag);
     if (result.error) {
-      return { ok: false, error: result.error };
+      return { ok: false, error: result.error, status: result.status };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
     await get().loadTree();
-    return { ok: true };
+    return { ok: true, status: result.status };
   },
 
   moveNode: async (nodeId, parentId, index) => {
+    const { topicSetEtag } = get();
     const prevChildrenByParent = get().childrenByParent;
     const nextChildrenByParent = applyOptimisticMove(prevChildrenByParent, nodeId, parentId, index ?? null);
     if (nextChildrenByParent !== prevChildrenByParent) {
@@ -499,7 +543,7 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
     const result = await moveTopicSetNode(nodeId, {
       newParentId: parentId,
       index: index ?? null,
-    });
+    }, topicSetEtag);
     if (!result.data) {
       if (nextChildrenByParent !== prevChildrenByParent) {
         set({
@@ -507,40 +551,64 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
           nodes: (get().rootNodeIds ?? []).map((id) => get().nodeMap[id]).filter(Boolean),
         });
       }
-      return { ok: false, error: result.error ?? "Unable to move node." };
+      return { ok: false, error: result.error ?? "Unable to move node.", status: result.status };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
     await get().loadTree();
-    return { ok: true };
+    return { ok: true, status: result.status };
   },
 
   bindTopic: async (nodeId, topicId) => {
-    const result = await bindTopicToNode(nodeId, topicId);
+    const { topicSetEtag } = get();
+    const result = await bindTopicToNode(nodeId, topicId, topicSetEtag);
     if (!result.data) {
-      return { ok: false, error: result.error ?? "Unable to bind topic." };
+      return { ok: false, error: result.error ?? "Unable to bind topic.", status: result.status };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
     await get().loadNodeTopics(nodeId, true);
-    return { ok: true };
+    return { ok: true, status: result.status };
   },
 
   unbindTopic: async (nodeId, topicId) => {
-    const result = await unbindTopicFromNode(nodeId, topicId);
+    const { topicSetEtag } = get();
+    const result = await unbindTopicFromNode(nodeId, topicId, topicSetEtag);
     if (result.error) {
-      return { ok: false, error: result.error };
+      return { ok: false, error: result.error, status: result.status };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
     await get().loadNodeTopics(nodeId, true);
-    return { ok: true };
+    return { ok: true, status: result.status };
   },
 
   publish: async (comment?: string) => {
     const { topicSetId } = get();
     if (!topicSetId) return { ok: false, error: "TopicSet is not selected." };
-    const result = await publishTopicSet(topicSetId, comment);
+    const refreshResult = await get().refreshTopicSetMeta();
+    if (!refreshResult.ok) {
+      return { ok: false, error: refreshResult.error };
+    }
+    const topicSetEtag = refreshResult.etag ?? get().topicSetEtag;
+    const result = await publishTopicSet(topicSetId, comment, topicSetEtag);
     if (!result.data) {
-      return { ok: false, error: result.error ?? "Unable to publish." };
+      return {
+        ok: false,
+        error: result.error ?? "Unable to publish.",
+        errorDetails: result.errorDetails ?? null,
+        status: result.status,
+      };
+    }
+    if (result.etag) {
+      set({ topicSetEtag: result.etag });
     }
     set({ version: null });
     await get().setTopicSet(topicSetId);
-    return { ok: true, version: result.data.version };
+    return { ok: true, version: result.data.version, status: result.status };
   },
 
   searchTopic: async (keyword: string) => {

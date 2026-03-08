@@ -13,13 +13,20 @@ import {
   refreshTopicSetRuntimeCache,
 } from "@/lib/topicset-search-api";
 import {
+  approveTopicSet,
+  archiveTopicSet,
+  createTopicSetVersion,
+  deprecateTopicSet,
   NodeTopicView,
   TopicSetNode,
   TopicSetNodeDetail,
+  TopicSetValidationDetails,
   getTopicSetDiff,
   getTopicSetNodeDetail,
+  rejectTopicSet,
   restoreTopicSetVersionAsDraft,
   rollbackTopicSetVersion,
+  submitTopicSetReview,
 } from "@/lib/topicset-api";
 import { useTopicSetStore } from "@/store/topicsetStore";
 import { t } from "@/i18n";
@@ -27,6 +34,7 @@ import { NodeDetailPanel } from "../components/node-detail-panel";
 import { PublishDialog } from "../components/publish-dialog";
 import { TaxonomyTree } from "../components/taxonomy-tree";
 import { TopicBindingPanel } from "../components/topic-binding-panel";
+import { LifecycleValidationPanel } from "../components/lifecycle-validation-panel";
 import { WorkspaceHeader } from "./components/workspace-header";
 import { TopicSetWorkspaceTab, WorkspaceTabs } from "./components/workspace-tabs";
 import { ImpactPage } from "./components/impact/impact-page";
@@ -42,6 +50,8 @@ type FeedbackState = {
   title: string;
   message?: string;
 } | null;
+
+const VERSION_CONFLICT_STATUS = 409;
 
 function isDescendant(
   childrenByParent: Record<string, string[]>,
@@ -75,6 +85,26 @@ type VersionActionDialogState = {
   version: number;
 } | null;
 
+type LifecycleStatus = "DRAFT" | "REVIEW" | "APPROVED" | "PUBLISHED" | "DEPRECATED" | "ARCHIVED";
+
+type SubmitReviewDialogState = {
+  open: boolean;
+  comment: string;
+  loading?: boolean;
+  errorMessage?: string | null;
+  validationDetails?: TopicSetValidationDetails | null;
+} | null;
+
+function normalizeLifecycleStatus(value?: string | null): LifecycleStatus {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized.includes("REVIEW")) return "REVIEW";
+  if (normalized.includes("APPROVED")) return "APPROVED";
+  if (normalized.includes("DEPRECATED")) return "DEPRECATED";
+  if (normalized.includes("ARCHIVED")) return "ARCHIVED";
+  if (normalized.includes("PUBLISHED")) return "PUBLISHED";
+  return "DRAFT";
+}
+
 const MAX_TAXONOMY_DEPTH = 6;
 
 export function TopicSetWorkspaceClient({
@@ -105,8 +135,10 @@ export function TopicSetWorkspaceClient({
     bindTopic,
     unbindTopic,
     publish,
+    refreshTopicSetMeta,
     searchTopic,
     findNodeById,
+    topicSetEtag,
   } = useTopicSetStore();
 
   const [feedback, setFeedback] = useState<FeedbackState>(null);
@@ -114,6 +146,8 @@ export function TopicSetWorkspaceClient({
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
+  const [publishErrorMessage, setPublishErrorMessage] = useState<string | null>(null);
+  const [publishValidationDetails, setPublishValidationDetails] = useState<TopicSetValidationDetails | null>(null);
   const [publishDiffLoading, setPublishDiffLoading] = useState(false);
   const [publishDiffSummary, setPublishDiffSummary] = useState<{
     nodesAdded: number;
@@ -138,6 +172,7 @@ export function TopicSetWorkspaceClient({
   const [versionActionDialog, setVersionActionDialog] = useState<VersionActionDialogState>(null);
   const [versionActionComment, setVersionActionComment] = useState("");
   const [versionActionLoading, setVersionActionLoading] = useState(false);
+  const [submitReviewDialog, setSubmitReviewDialog] = useState<SubmitReviewDialogState>(null);
 
   const [coverageRows, setCoverageRows] = useState<Array<{ nodeId?: string; name: string; hitDocs: number }>>([]);
   const [coverageDedup, setCoverageDedup] = useState(false);
@@ -194,6 +229,7 @@ export function TopicSetWorkspaceClient({
     nodesUpdated: number;
     topicBindingsChanged: number;
   } | null>(null);
+  const [baselineDiff, setBaselineDiff] = useState<Awaited<ReturnType<typeof getTopicSetDiff>>["data"] | null>(null);
 
   const refreshNodeDetail = useCallback(
     async (nodeId?: string | null) => {
@@ -231,16 +267,39 @@ export function TopicSetWorkspaceClient({
 
   const latestPublishedVersion = useMemo(() => {
     return versions
-      .filter((item) => !item.status?.toUpperCase().includes("DRAFT"))
+      .filter((item) => {
+        const status = normalizeLifecycleStatus(item.status);
+        return status === "PUBLISHED" || status === "DEPRECATED" || status === "ARCHIVED";
+      })
       .map((item) => item.version)
       .sort((a, b) => b - a)[0] ?? null;
   }, [versions]);
+
+  const currentWorkspaceVersion = topicSetDetail?.version ?? null;
+  const viewedVersion = version ?? currentWorkspaceVersion;
+  const versionStatusMap = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const item of versions) {
+      map.set(item.version, item.status);
+    }
+    return map;
+  }, [versions]);
+  const lifecycleStatus = useMemo<LifecycleStatus>(() => {
+    if (version == null || viewedVersion === currentWorkspaceVersion) {
+      return normalizeLifecycleStatus(topicSetDetail?.status);
+    }
+    if (viewedVersion != null && versionStatusMap.has(viewedVersion)) {
+      return normalizeLifecycleStatus(versionStatusMap.get(viewedVersion));
+    }
+    return normalizeLifecycleStatus(topicSetDetail?.status);
+  }, [currentWorkspaceVersion, topicSetDetail?.status, version, versionStatusMap, viewedVersion]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadHeaderDiff() {
       if (!topicSetId || !topicSetDetail?.version || !latestPublishedVersion) {
         setHeaderDiffSummary(null);
+        setBaselineDiff(null);
         return;
       }
       const result = await getTopicSetDiff({
@@ -250,6 +309,7 @@ export function TopicSetWorkspaceClient({
       });
       if (cancelled) return;
       setHeaderDiffSummary(result.data?.summary ?? null);
+      setBaselineDiff(result.data ?? null);
     }
     void loadHeaderDiff();
     return () => {
@@ -265,7 +325,10 @@ export function TopicSetWorkspaceClient({
         return;
       }
       const publishedVersions = versions
-        .filter((item) => !item.status?.toUpperCase().includes("DRAFT"))
+        .filter((item) => {
+          const status = normalizeLifecycleStatus(item.status);
+          return status === "PUBLISHED" || status === "DEPRECATED" || status === "ARCHIVED";
+        })
         .map((item) => item.version)
         .sort((a, b) => b - a);
       const baselineVersion = publishedVersions[0];
@@ -350,7 +413,16 @@ export function TopicSetWorkspaceClient({
     if (version == null) return true;
     return version === topicSetDetail.version;
   }, [topicSetDetail, version]);
-  const canEdit = Boolean(topicSetDetail) && editable;
+  const canEdit = Boolean(topicSetDetail) && editable && lifecycleStatus === "DRAFT";
+  const canUseAi = lifecycleStatus === "DRAFT" || lifecycleStatus === "REVIEW";
+  const canSubmitReview = Boolean(topicSetDetail) && editable && lifecycleStatus === "DRAFT";
+  const canApprove = Boolean(topicSetDetail) && editable && lifecycleStatus === "REVIEW";
+  const canReject = Boolean(topicSetDetail) && editable && lifecycleStatus === "REVIEW";
+  const canPublishLifecycle = Boolean(topicSetDetail) && editable && lifecycleStatus === "APPROVED";
+  const canCreateVersion = Boolean(topicSetDetail) && editable && lifecycleStatus === "PUBLISHED";
+  const canDeprecate = Boolean(topicSetDetail) && editable && lifecycleStatus === "PUBLISHED";
+  const canArchive =
+    Boolean(topicSetDetail) && editable && lifecycleStatus !== "ARCHIVED" && lifecycleStatus !== "DRAFT";
   const normalizedMoveSourceNode = findNodeById(moveSourceNodeId);
   const coverageByNodeId = useMemo(() => {
     const map: Record<string, number> = {};
@@ -414,6 +486,13 @@ export function TopicSetWorkspaceClient({
     }),
     [coverageRows, emptyLeafRows.length, topicDistributionRows.length]
   );
+  const lifecycleChanges = useMemo(() => {
+    const nodes = baselineDiff?.nodes ?? [];
+    const added = nodes.filter((item) => item.status === "ADDED").slice(0, 5);
+    const updated = nodes.filter((item) => item.status === "UPDATED").slice(0, 5);
+    const removed = nodes.filter((item) => item.status === "REMOVED").slice(0, 5);
+    return { added, updated, removed };
+  }, [baselineDiff]);
 
   const getNodeDepth = useCallback(
     (nodeId: string) => {
@@ -759,6 +838,156 @@ export function TopicSetWorkspaceClient({
     return { ok: true };
   }
 
+  async function handleVersionConflict(error?: string | null) {
+    if (topicSetId) {
+      await setTopicSet(topicSetId);
+      setVersion(null);
+    }
+    setFeedback({
+      type: "error",
+      title: t("topicSet.feedback.versionConflictTitle"),
+      message: error ?? t("topicSet.feedback.versionConflictMessage"),
+    });
+  }
+
+  async function prepareLifecycleWrite() {
+    const result = await refreshTopicSetMeta();
+    if (!result.ok) {
+      setFeedback({
+        type: "error",
+        title: t("topicSet.feedback.versionConflictTitle"),
+        message: result.error ?? t("topicSet.feedback.versionConflictMessage"),
+      });
+      return null;
+    }
+    return result.etag ?? topicSetEtag;
+  }
+
+  async function handleCreateNewVersion() {
+    if (!topicSetId) return;
+    const latestEtag = await prepareLifecycleWrite();
+    if (!latestEtag) return;
+    const result = await createTopicSetVersion(topicSetId, "Create new version from published", latestEtag);
+    if (!result.data) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
+      setFeedback({
+        type: "error",
+        title: t("topicSet.lifecycle.createVersionFailed"),
+        message: result.error ?? undefined,
+      });
+      return;
+    }
+    await setTopicSet(topicSetId);
+    setVersion(null);
+    setFeedback({
+      type: "success",
+      title: t("topicSet.lifecycle.createVersionSuccess", { version: `v${result.data.version}` }),
+    });
+  }
+
+  async function handleApprove() {
+    if (!topicSetId) return;
+    const latestEtag = await prepareLifecycleWrite();
+    if (!latestEtag) return;
+    const result = await approveTopicSet(topicSetId, undefined, latestEtag);
+    if (!result.data) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
+      setFeedback({
+        type: "error",
+        title: t("topicSet.lifecycle.approveFailed"),
+        message: result.error ?? undefined,
+      });
+      return;
+    }
+    await setTopicSet(topicSetId);
+    setVersion(null);
+    setFeedback({
+      type: "success",
+      title: t("topicSet.lifecycle.approved"),
+    });
+  }
+
+  async function handleReject() {
+    if (!topicSetId) return;
+    const latestEtag = await prepareLifecycleWrite();
+    if (!latestEtag) return;
+    const result = await rejectTopicSet(topicSetId, undefined, latestEtag);
+    if (!result.data) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
+      setFeedback({
+        type: "error",
+        title: t("topicSet.lifecycle.rejectFailed"),
+        message: result.error ?? undefined,
+      });
+      return;
+    }
+    await setTopicSet(topicSetId);
+    setVersion(null);
+    setFeedback({
+      type: "info",
+      title: t("topicSet.lifecycle.rejected"),
+    });
+  }
+
+  async function handleDeprecate() {
+    if (!topicSetId) return;
+    const latestEtag = await prepareLifecycleWrite();
+    if (!latestEtag) return;
+    const result = await deprecateTopicSet(topicSetId, undefined, latestEtag);
+    if (!result.data) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
+      setFeedback({
+        type: "error",
+        title: t("topicSet.lifecycle.deprecateFailed"),
+        message: result.error ?? undefined,
+      });
+      return;
+    }
+    await setTopicSet(topicSetId);
+    setVersion(null);
+    setFeedback({
+      type: "success",
+      title: t("topicSet.lifecycle.deprecated"),
+    });
+  }
+
+  async function handleArchive() {
+    if (!topicSetId) return;
+    const latestEtag = await prepareLifecycleWrite();
+    if (!latestEtag) return;
+    const result = await archiveTopicSet(topicSetId, undefined, latestEtag);
+    if (!result.data) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
+      setFeedback({
+        type: "error",
+        title: t("topicSet.lifecycle.archiveFailed"),
+        message: result.error ?? undefined,
+      });
+      return;
+    }
+    await setTopicSet(topicSetId);
+    setVersion(null);
+    setFeedback({
+      type: "success",
+      title: t("topicSet.lifecycle.archived"),
+    });
+  }
+
   async function handleCreateInlineNode(nextName?: string) {
     const resolvedName = (nextName ?? createName).trim();
     if (!resolvedName) return;
@@ -770,6 +999,10 @@ export function TopicSetWorkspaceClient({
     });
     setCreateLoading(false);
     if (!result.ok) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
       setFeedback({
         type: "error",
         title: t("topicSet.feedback.createFailed"),
@@ -791,6 +1024,10 @@ export function TopicSetWorkspaceClient({
     });
     setRenamingLoading(false);
     if (!result.ok) {
+      if (result.status === VERSION_CONFLICT_STATUS) {
+        await handleVersionConflict(result.error);
+        return;
+      }
       setFeedback({
         type: "error",
         title: t("topicSet.feedback.renameFailed"),
@@ -854,16 +1091,53 @@ export function TopicSetWorkspaceClient({
         version={version}
         versions={versions}
         editable={editable}
+        lifecycleStatus={lifecycleStatus}
+        canSubmitReview={canSubmitReview}
+        canApprove={canApprove}
+        canReject={canReject}
+        canPublish={canPublishLifecycle}
+        canCreateVersion={canCreateVersion}
+        canDeprecate={canDeprecate}
+        canArchive={canArchive}
         diffSummary={headerDiffSummary}
         diffBaselineVersion={latestPublishedVersion}
         onChangeVersion={setVersion}
+        onViewVersions={() => setActiveTab("versions")}
         onViewDiff={() => {
           if (!topicSetDetail?.version || !latestPublishedVersion) return;
           setDiffFromVersion(latestPublishedVersion);
           setDiffToVersion(topicSetDetail.version);
           setActiveTab("diff");
         }}
-        onPublish={() => setPublishOpen(true)}
+        onSubmitReview={() =>
+          setSubmitReviewDialog({
+            open: true,
+            comment: "taxonomy update",
+            loading: false,
+            errorMessage: null,
+            validationDetails: null,
+          })
+        }
+        onApprove={() => {
+          void handleApprove();
+        }}
+        onReject={() => {
+          void handleReject();
+        }}
+        onPublish={() => {
+          setPublishErrorMessage(null);
+          setPublishValidationDetails(null);
+          setPublishOpen(true);
+        }}
+        onCreateVersion={() => {
+          void handleCreateNewVersion();
+        }}
+        onDeprecate={() => {
+          void handleDeprecate();
+        }}
+        onArchive={() => {
+          void handleArchive();
+        }}
       />
 
       <WorkspaceTabs activeTab={activeTab} onChange={setActiveTab} />
@@ -908,7 +1182,10 @@ export function TopicSetWorkspaceClient({
               onExpandNode={(nodeId) => {
                 void loadChildren(nodeId);
               }}
-              onContextMenu={(nodeId, x, y) => setContextMenu({ nodeId, x, y })}
+              onContextMenu={(nodeId, x, y) => {
+                if (!canEdit) return;
+                setContextMenu({ nodeId, x, y });
+              }}
               onOpenImpact={async (nodeId) => {
                 selectNode(nodeId);
                 setImpactDrawerNodeId(nodeId);
@@ -969,6 +1246,10 @@ export function TopicSetWorkspaceClient({
                 }
                 const result = await moveNode(sourceNodeId, newParentId, index);
                 if (!result.ok) {
+                  if (result.status === VERSION_CONFLICT_STATUS) {
+                    await handleVersionConflict(result.error);
+                    return;
+                  }
                   setFeedback({
                     type: "error",
                     title: t("topicSet.feedback.moveFailed"),
@@ -1000,6 +1281,10 @@ export function TopicSetWorkspaceClient({
                 });
                 setNodeSaving(false);
                 if (!result.ok) {
+                  if (result.status === VERSION_CONFLICT_STATUS) {
+                    await handleVersionConflict(result.error);
+                    return;
+                  }
                   setFeedback({
                     type: "error",
                     title: t("topicSet.feedback.updateFailed"),
@@ -1032,6 +1317,10 @@ export function TopicSetWorkspaceClient({
                 if (!selectedNode) return;
                 const result = await bindTopic(selectedNode, topicId);
                 if (!result.ok) {
+                  if (result.status === VERSION_CONFLICT_STATUS) {
+                    await handleVersionConflict(result.error);
+                    return;
+                  }
                   setFeedback({
                     type: "error",
                     title: t("topicSet.feedback.bindFailed"),
@@ -1054,6 +1343,10 @@ export function TopicSetWorkspaceClient({
                 if (!selectedNode) return;
                 const result = await unbindTopic(selectedNode, topicId);
                 if (!result.ok) {
+                  if (result.status === VERSION_CONFLICT_STATUS) {
+                    await handleVersionConflict(result.error);
+                    return;
+                  }
                   setFeedback({
                     type: "error",
                     title: t("topicSet.feedback.unbindFailed"),
@@ -1522,6 +1815,11 @@ export function TopicSetWorkspaceClient({
                   const result = await moveNode(moveSourceNodeId, moveParentId, null);
                   setMoveLoading(false);
                   if (!result.ok) {
+                    if (result.status === VERSION_CONFLICT_STATUS) {
+                      await handleVersionConflict(result.error);
+                      setMoveOpen(false);
+                      return;
+                    }
                     setFeedback({
                       type: "error",
                       title: t("topicSet.feedback.moveFailed"),
@@ -1574,6 +1872,11 @@ export function TopicSetWorkspaceClient({
                   const result = await deleteNode(deleteDialog.nodeId);
                   setDeleteLoading(false);
                   if (!result.ok) {
+                    if (result.status === VERSION_CONFLICT_STATUS) {
+                      await handleVersionConflict(result.error);
+                      setDeleteDialog(null);
+                      return;
+                    }
                     setFeedback({
                       type: "error",
                       title: t("topicSet.feedback.deleteFailed"),
@@ -1585,6 +1888,110 @@ export function TopicSetWorkspaceClient({
                 }}
               >
                 {deleteLoading ? t("topicSet.delete.deleting") : t("topicSet.menu.delete")}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {submitReviewDialog && topicSetDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-[560px] rounded-lg bg-white p-5 shadow-xl">
+            <h3 className="text-base font-semibold">{t("topicSet.lifecycle.submitTitle")}</h3>
+            <div className="mt-4 rounded-lg border bg-slate-50 p-3 text-sm">
+              <div className="font-medium">{t("topicSet.publish.changes")}</div>
+              <div className="mt-2 space-y-1 text-xs">
+                {lifecycleChanges.added.map((item) => (
+                  <div key={`submit-added-${item.nodeId}`}>+ {t("topicSet.diff.summary.added")}: {item.newName ?? item.name ?? item.newPath ?? item.nodeId}</div>
+                ))}
+                {lifecycleChanges.updated.map((item) => (
+                  <div key={`submit-updated-${item.nodeId}`}>~ {t("topicSet.diff.summary.updated")}: {(item.oldName ?? item.name ?? item.oldPath ?? item.nodeId)} -&gt; {(item.newName ?? item.name ?? item.newPath ?? item.nodeId)}</div>
+                ))}
+                {lifecycleChanges.removed.map((item) => (
+                  <div key={`submit-removed-${item.nodeId}`}>- {t("topicSet.diff.summary.removed")}: {item.oldName ?? item.name ?? item.oldPath ?? item.nodeId}</div>
+                ))}
+                {lifecycleChanges.added.length === 0 &&
+                  lifecycleChanges.updated.length === 0 &&
+                  lifecycleChanges.removed.length === 0 && (
+                    <div className="text-muted-foreground">{t("topicSet.lifecycle.noChanges")}</div>
+                  )}
+              </div>
+            </div>
+            <label className="mt-4 block text-sm font-medium">{t("topicSet.publish.comment")}</label>
+            <textarea
+              className="mt-2 h-24 w-full rounded-md border px-3 py-2 text-sm"
+              value={submitReviewDialog.comment}
+              onChange={(event) =>
+                setSubmitReviewDialog((prev) => (prev ? { ...prev, comment: event.target.value } : prev))
+              }
+              placeholder={t("topicSet.publish.placeholder")}
+            />
+            {submitReviewDialog.errorMessage && (
+              <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {submitReviewDialog.errorMessage}
+              </div>
+            )}
+            <LifecycleValidationPanel details={submitReviewDialog.validationDetails} />
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1.5 text-sm"
+                onClick={() => setSubmitReviewDialog(null)}
+                disabled={submitReviewDialog.loading}
+              >
+                {t("common.cancel")}
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-black px-3 py-1.5 text-sm text-white disabled:opacity-50"
+                disabled={submitReviewDialog.loading}
+                onClick={async () => {
+                  if (!topicSetId) return;
+                  const latestEtag = await prepareLifecycleWrite();
+                  if (!latestEtag) return;
+                  setSubmitReviewDialog((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          loading: true,
+                          errorMessage: null,
+                          validationDetails: null,
+                        }
+                      : prev
+                  );
+                  const result = await submitTopicSetReview(
+                    topicSetId,
+                    submitReviewDialog.comment.trim(),
+                    latestEtag
+                  );
+                  if (!result.data) {
+                    if (result.status === VERSION_CONFLICT_STATUS) {
+                      await handleVersionConflict(result.error);
+                      setSubmitReviewDialog(null);
+                      return;
+                    }
+                    setSubmitReviewDialog((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            loading: false,
+                            errorMessage: result.error ?? t("topicSet.lifecycle.submitFailed"),
+                            validationDetails: result.errorDetails ?? null,
+                          }
+                        : prev
+                    );
+                    return;
+                  }
+                  await setTopicSet(topicSetId);
+                  setVersion(null);
+                  setSubmitReviewDialog(null);
+                  setFeedback({
+                    type: "success",
+                    title: t("topicSet.lifecycle.submitted"),
+                  });
+                }}
+              >
+                {submitReviewDialog.loading ? t("common.loading") : t("topicSet.workspace.submitReview")}
               </button>
             </div>
           </div>
@@ -1603,17 +2010,27 @@ export function TopicSetWorkspaceClient({
         loading={publishLoading}
         diffLoading={publishDiffLoading}
         diffSummary={publishDiffSummary}
-        onClose={() => setPublishOpen(false)}
+        errorMessage={publishErrorMessage}
+        validationDetails={publishValidationDetails}
+        onClose={() => {
+          setPublishOpen(false);
+          setPublishErrorMessage(null);
+          setPublishValidationDetails(null);
+        }}
         onPublish={async (comment) => {
           setPublishLoading(true);
+          setPublishErrorMessage(null);
+          setPublishValidationDetails(null);
           const result = await publish(comment);
           setPublishLoading(false);
           if (!result.ok) {
-            setFeedback({
-              type: "error",
-              title: t("topicSet.feedback.publishFailed"),
-              message: result.error,
-            });
+            if (result.status === VERSION_CONFLICT_STATUS) {
+              setPublishOpen(false);
+              await handleVersionConflict(result.error);
+              return;
+            }
+            setPublishErrorMessage(result.error ?? t("topicSet.feedback.publishFailed"));
+            setPublishValidationDetails(result.errorDetails ?? null);
             return;
           }
           if (topicSetId) {
@@ -1661,17 +2078,24 @@ export function TopicSetWorkspaceClient({
                 className="rounded-md bg-black px-3 py-1.5 text-sm text-white disabled:opacity-50"
                 disabled={versionActionLoading}
                 onClick={async () => {
+                  const latestEtag = await prepareLifecycleWrite();
+                  if (!latestEtag) return;
                   setVersionActionLoading(true);
                   const result =
                     versionActionDialog.mode === "restore"
                       ? await restoreTopicSetVersionAsDraft(topicSetId, versionActionDialog.version, {
                           comment: versionActionComment || null,
-                        })
+                        }, latestEtag)
                       : await rollbackTopicSetVersion(topicSetId, versionActionDialog.version, {
                           comment: versionActionComment || null,
-                        });
+                        }, latestEtag);
                   setVersionActionLoading(false);
                   if (!result.data) {
+                    if (result.status === VERSION_CONFLICT_STATUS) {
+                      await handleVersionConflict(result.error);
+                      setVersionActionDialog(null);
+                      return;
+                    }
                     setFeedback({
                       type: "error",
                       title:

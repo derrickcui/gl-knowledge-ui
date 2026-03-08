@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useDraggableDialog } from "@/lib/useDraggableDialog";
 import { t } from "@/i18n";
+import { TopicSetValidationDetails } from "@/lib/topicset-api";
+import { LifecycleValidationPanel } from "./lifecycle-validation-panel";
 
 type PublishDialogProps = {
   open: boolean;
@@ -16,6 +18,8 @@ type PublishDialogProps = {
     nodesUpdated: number;
     topicBindingsChanged: number;
   } | null;
+  errorMessage?: string | null;
+  validationDetails?: TopicSetValidationDetails | null;
   onClose: () => void;
   onPublish: (comment: string) => Promise<void>;
 };
@@ -26,6 +30,8 @@ export function PublishDialog({
   loading = false,
   diffLoading = false,
   diffSummary,
+  errorMessage,
+  validationDetails,
   onClose,
   onPublish,
 }: PublishDialogProps) {
@@ -76,6 +82,12 @@ export function PublishDialog({
           onChange={(event) => setComment(event.target.value)}
           placeholder={t("topicSet.publish.placeholder")}
         />
+        {errorMessage && (
+          <div className="mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {errorMessage}
+          </div>
+        )}
+        <LifecycleValidationPanel details={validationDetails} />
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"

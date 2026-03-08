@@ -6,6 +6,43 @@ const TOPICSETS_API_BASE =
   process.env.NEXT_PUBLIC_TOPICS_API ??
   "http://localhost:8080";
 
+function buildProxyRequestHeaders(
+  request: NextRequest,
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
+) {
+  const headers = new Headers();
+  const ifMatch = request.headers.get("if-match");
+  const ifNoneMatch = request.headers.get("if-none-match");
+
+  if (ifMatch) headers.set("if-match", ifMatch);
+  if (ifNoneMatch) headers.set("if-none-match", ifNoneMatch);
+
+  if (method === "POST" || method === "PUT" || method === "PATCH") {
+    headers.set(
+      "content-type",
+      request.headers.get("content-type") ?? "application/json"
+    );
+  }
+
+  return headers;
+}
+
+function buildProxyResponseHeaders(upstream: Response) {
+  const headers = new Headers();
+  headers.set("content-type", "application/json; charset=utf-8");
+
+  const etag = upstream.headers.get("etag");
+  if (etag) headers.set("etag", etag);
+
+  const cacheControl = upstream.headers.get("cache-control");
+  if (cacheControl) headers.set("cache-control", cacheControl);
+
+  const lastModified = upstream.headers.get("last-modified");
+  if (lastModified) headers.set("last-modified", lastModified);
+
+  return headers;
+}
+
 async function proxyTopicSetsPath(
   request: NextRequest,
   context: { params: Promise<{ path: string[] }> },
@@ -21,13 +58,7 @@ async function proxyTopicSetsPath(
 
     const upstream = await fetch(upstreamUrl.toString(), {
       method,
-      headers:
-        method === "POST" || method === "PUT" || method === "PATCH"
-          ? {
-              "content-type":
-                request.headers.get("content-type") ?? "application/json",
-            }
-          : undefined,
+      headers: buildProxyRequestHeaders(request, method),
       body:
         method === "POST" || method === "PUT" || method === "PATCH"
           ? await request.text()
@@ -37,7 +68,7 @@ async function proxyTopicSetsPath(
     const body = await readUpstreamJsonBody(upstream);
     return new NextResponse(body, {
       status: upstream.status,
-      headers: { "content-type": "application/json; charset=utf-8" },
+      headers: buildProxyResponseHeaders(upstream),
     });
   } catch {
     return NextResponse.json(

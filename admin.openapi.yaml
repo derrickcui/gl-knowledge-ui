@@ -1792,6 +1792,154 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
+    put:
+      tags: [TopicSet]
+      summary: Update TopicSet draft metadata
+      operationId: updateTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTopicSetRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetDetailResponse'
+        '409':
+          description: Version conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/submit-review:
+    post:
+      tags: [TopicSet]
+      summary: Submit TopicSet draft for review
+      operationId: submitTopicSetReview
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetLifecycleRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetLifecycleResponse'
+
+  /api/topicsets/{id}/approve:
+    post:
+      tags: [TopicSet]
+      summary: Approve TopicSet under review
+      operationId: approveTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetLifecycleRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetLifecycleResponse'
+
+  /api/topicsets/{id}/reject:
+    post:
+      tags: [TopicSet]
+      summary: Reject TopicSet under review back to draft
+      operationId: rejectTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectTopicSetRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetLifecycleResponse'
+
+  /api/topicsets/{id}/validate:
+    get:
+      tags: [TopicSet]
+      summary: Validate TopicSet structure and bindings
+      operationId: validateTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetValidationResponse'
 
   /api/topicsets/{id}/tree:
     get:
@@ -2269,7 +2417,7 @@ paths:
   /api/topicsets/{id}/publish:
     post:
       tags: [TopicSet]
-      summary: Publish TopicSet
+      summary: Publish approved TopicSet version
       operationId: publishTopicSet
       parameters:
         - name: id
@@ -2343,6 +2491,35 @@ paths:
                 $ref: '#/components/schemas/ApiResponseTopicLookupResponse'
 
   /api/topicsets/{id}/versions:
+    post:
+      tags: [TopicSet]
+      summary: Create new draft version from current published version
+      operationId: createTopicSetVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTopicSetVersionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetLifecycleResponse'
     get:
       tags: [TopicSet]
       summary: List TopicSet versions
@@ -2374,6 +2551,32 @@ paths:
                 $ref: '#/components/schemas/ApiResponseTopicSetVersionsResponse'
         '304':
           description: Not Modified
+
+  /api/topicsets/{id}/versions/{version}:
+    get:
+      tags: [TopicSet]
+      summary: Get TopicSet version detail
+      operationId: getTopicSetVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetVersionDetailResponse'
 
   /api/topicsets/{id}/versions/{version}/restore:
     post:
@@ -2417,6 +2620,37 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/restore:
+    post:
+      tags: [TopicSet]
+      summary: Restore historical version as new draft
+      operationId: restoreTopicSetVersion
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreTopicSetVersionRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRestoreTopicSetVersionResponse'
         '409':
           description: Version conflict
           content:
@@ -2485,18 +2719,18 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: fromVersion
+        - name: from
           in: query
           required: true
           schema:
             type: string
-            example: v4
-        - name: toVersion
+            example: '2'
+        - name: to
           in: query
           required: true
           schema:
             type: string
-            example: v5
+            example: '3'
       responses:
         '200':
           description: Success
@@ -2620,6 +2854,68 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topicsets/{id}/deprecate:
+    post:
+      tags: [TopicSet]
+      summary: Deprecate TopicSet
+      operationId: deprecateTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetLifecycleRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetLifecycleResponse'
+
+  /api/topicsets/{id}/archive:
+    post:
+      tags: [TopicSet]
+      summary: Archive TopicSet
+      operationId: archiveTopicSet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetLifecycleRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetLifecycleResponse'
 
   /api/topicsets/{id}/versions/{version}/nodes:
     get:
@@ -3600,6 +3896,121 @@ components:
           nullable: true
       required: [name]
 
+    UpdateTopicSetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        expectedHash:
+          type: string
+          nullable: true
+      required: [name]
+
+    TopicSetLifecycleRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+        expectedHash:
+          type: string
+          nullable: true
+
+    RejectTopicSetRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          nullable: true
+        expectedHash:
+          type: string
+          nullable: true
+
+    CreateTopicSetVersionRequest:
+      type: object
+      properties:
+        comment:
+          type: string
+          nullable: true
+        expectedHash:
+          type: string
+          nullable: true
+
+    TopicSetLifecycleResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [DRAFT, REVIEW, APPROVED, PUBLISHED, DEPRECATED, ARCHIVED]
+        version:
+          type: integer
+          format: int32
+      required: [status, version]
+
+    TopicSetValidationIssue:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+          nullable: true
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        path:
+          type: string
+          nullable: true
+        message:
+          type: string
+      required: [message]
+
+    TopicSetCoverageConflict:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+        path:
+          type: string
+        conflictingNodeId:
+          type: string
+          format: uuid
+        conflictingPath:
+          type: string
+        message:
+          type: string
+      required: [nodeId, path, conflictingNodeId, conflictingPath, message]
+
+    TopicSetValidationResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        valid:
+          type: boolean
+        cycleStructure:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetValidationIssue'
+        orphanNodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetValidationIssue'
+        unboundTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetValidationIssue'
+        coverageConflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetCoverageConflict'
+      required: [topicSetId, valid, cycleStructure, orphanNodes, unboundTopics, coverageConflicts]
+
     TopicSetSummaryResponse:
       type: object
       properties:
@@ -3613,10 +4024,13 @@ components:
           nullable: true
         status:
           type: string
-        version:
+        currentVersion:
           type: integer
           format: int32
-      required: [id, name, status, version]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, status, currentVersion, createdAt]
 
     TopicSetDetailResponse:
       type: object
@@ -3634,7 +4048,7 @@ components:
           nullable: true
         status:
           type: string
-        version:
+        currentVersion:
           type: integer
           format: int32
         nodeCount:
@@ -3643,7 +4057,10 @@ components:
         topicCount:
           type: integer
           format: int32
-      required: [id, name, status, version, nodeCount, topicCount]
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, status, currentVersion, nodeCount, topicCount, createdAt]
 
     CreateNodeRequest:
       type: object
@@ -3694,30 +4111,34 @@ components:
         comment:
           type: string
           nullable: true
+        expectedHash:
+          type: string
+          nullable: true
 
     PublishResponse:
       type: object
       properties:
-        publishedVersion:
-          type: integer
-          format: int32
-        previousPublishedVersion:
-          type: integer
-          format: int32
-        publishedAt:
+        status:
           type: string
-          format: date-time
-      required: [publishedVersion, previousPublishedVersion, publishedAt]
+          enum: [PUBLISHED]
+        version:
+          type: integer
+          format: int32
+      required: [status, version]
 
     RestoreTopicSetVersionRequest:
       type: object
       properties:
-        mode:
-          type: string
-          example: DRAFT_COPY
+        version:
+          type: integer
+          format: int32
         comment:
           type: string
           nullable: true
+        expectedHash:
+          type: string
+          nullable: true
+      required: [version]
 
     RestoreTopicSetVersionResponse:
       type: object
@@ -3889,16 +4310,42 @@ components:
         createdAt:
           type: string
           format: date-time
-      required: [version, status, createdAt]
+        current:
+          type: boolean
+      required: [version, status, createdAt, current]
 
     TopicSetVersionsResponse:
       type: object
       properties:
-        items:
+        versions:
           type: array
           items:
             $ref: '#/components/schemas/TopicSetVersionItem'
-      required: [items]
+      required: [versions]
+
+    TopicSetVersionDetailResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          format: int32
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicNodeResponse'
+        topicBindings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeNodeView'
+      required: [topicSetId, version, status, createdAt, nodes, topicBindings]
 
     NodeDiffStatus:
       type: string
@@ -3976,6 +4423,18 @@ components:
       properties:
         summary:
           $ref: '#/components/schemas/TopicSetDiffSummaryResponse'
+        addedNodes:
+          type: array
+          items:
+            type: string
+        removedNodes:
+          type: array
+          items:
+            type: string
+        updatedNodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/UpdatedNodeName'
         nodes:
           type: array
           items:
@@ -3984,7 +4443,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TopicBindingDiffItem'
-      required: [summary, nodes, topicBindings]
+      required: [summary, addedNodes, removedNodes, updatedNodes, nodes, topicBindings]
+
+    UpdatedNodeName:
+      type: object
+      properties:
+        oldName:
+          type: string
+          nullable: true
+        newName:
+          type: string
+          nullable: true
 
     ParentPatch:
       type: object
@@ -4171,6 +4640,8 @@ components:
           type: string
         message:
           type: string
+        details:
+          nullable: true
       required: [code, message]
 
     ApiResponseVoid:
@@ -4216,6 +4687,28 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicSetDetailResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetLifecycleResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetLifecycleResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetValidationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetValidationResponse'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
@@ -4403,6 +4896,17 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicSetVersionsResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetVersionDetailResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetVersionDetailResponse'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
