@@ -189,10 +189,25 @@ export type TopicSetRuntimeCacheRefreshResponse = {
 export type TopicSetDriftSummaryResponse = {
   topicSetId: string;
   version?: number;
+  totalDocs?: number;
   classifiedDocs: number;
   unmappedDocs: number;
   coverageRatio: number;
   overlapCount: number;
+};
+
+export type TopicSetDriftCoverageTopicView = {
+  topicId?: string | null;
+  topicName?: string | null;
+  currentDocs: number;
+  previousDocs: number;
+  changeRate?: number | null;
+};
+
+export type TopicSetDriftCoverageResponse = {
+  topicSetId: string;
+  version?: number;
+  topics: TopicSetDriftCoverageTopicView[];
 };
 
 export type TopicSetDriftOverlapItemView = {
@@ -223,6 +238,10 @@ export type TopicSetDriftKeywordsResponse = {
   sampleDocs: number;
   limit: number;
   keywords: TopicSetDriftKeywordView[];
+};
+
+export type TopicSetDriftUnmappedResponse = {
+  unmappedDocs: number;
 };
 
 function normalizeError(error: ApiEnvelope<unknown>["error"], fallback: string) {
@@ -533,6 +552,12 @@ export async function fetchTopicSetDriftSummary(topicSetId: string) {
   );
 }
 
+export async function fetchTopicSetDriftCoverage(topicSetId: string) {
+  return unwrapEnvelope<TopicSetDriftCoverageResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift/coverage`
+  );
+}
+
 export async function fetchTopicSetDriftOverlap(
   topicSetId: string,
   params?: { minOverlap?: number; limit?: number }
@@ -558,5 +583,11 @@ export async function fetchTopicSetDriftKeywords(
     `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift/keywords${
       query.toString() ? `?${query.toString()}` : ""
     }`
+  );
+}
+
+export async function fetchTopicSetDriftUnmapped(topicSetId: string) {
+  return unwrapEnvelope<TopicSetDriftUnmappedResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift/unmapped`
   );
 }

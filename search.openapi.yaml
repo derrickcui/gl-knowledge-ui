@@ -1274,7 +1274,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftSummary'
+                $ref: '#/components/schemas/ApiEnvelopeDriftSummary'
               examples:
                 driftSummary:
                   value:
@@ -1282,10 +1282,50 @@ paths:
                     data:
                       topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
                       version: 5
+                      totalDocs: 500
                       classifiedDocs: 329
                       unmappedDocs: 171
                       coverageRatio: 0.658
                       overlapCount: 2
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute drift query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/drift/unmapped:
+    get:
+      tags: [topicset-drift]
+      summary: Unmapped drift for one TopicSet
+      operationId: topicSetDriftUnmapped
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Drift unmapped loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeUnmappedDrift'
+              examples:
+                driftUnmapped:
+                  value:
+                    success: true
+                    data:
+                      unmappedDocs: 171
                     error: null
         "400":
           description: Invalid request or dataset mismatch
@@ -1318,7 +1358,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftCoverage'
+                $ref: '#/components/schemas/ApiEnvelopeCoverageDrift'
               examples:
                 coverage:
                   value:
@@ -1379,7 +1419,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftOverlap'
+                $ref: '#/components/schemas/ApiEnvelopeOverlapDrift'
               examples:
                 overlap:
                   value:
@@ -1391,9 +1431,9 @@ paths:
                       totalPairs: 1
                       overlaps:
                         - topicAId: topic-1
-                          topicA: 博士后政策
+                          topicAName: 博士后政策
                           topicBId: topic-2
-                          topicB: 博士后科研补贴
+                          topicBName: 博士后科研补贴
                           overlapDocs: 50
                     error: null
         "400":
@@ -1445,7 +1485,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftKeywords'
+                $ref: '#/components/schemas/ApiEnvelopeKeywordDrift'
               examples:
                 keywords:
                   value:
@@ -1521,6 +1561,7 @@ paths:
                       keywords:
                         - term: 科研资助
                           frequency: 80
+                          score: 20.45
                     error: null
         "400":
           description: Invalid analysis request
@@ -4478,7 +4519,7 @@ components:
           type: string
           format: date-time
 
-    TopicSetDriftSummaryResponse:
+    DriftSummary:
       type: object
       properties:
         topicSetId:
@@ -4486,6 +4527,9 @@ components:
         version:
           type: integer
           format: int32
+        totalDocs:
+          type: integer
+          format: int64
         classifiedDocs:
           type: integer
           format: int64
@@ -4499,7 +4543,14 @@ components:
           type: integer
           format: int64
 
-    TopicSetDriftCoverageResponse:
+    UnmappedDrift:
+      type: object
+      properties:
+        unmappedDocs:
+          type: integer
+          format: int64
+
+    CoverageDrift:
       type: object
       properties:
         topicSetId:
@@ -4510,9 +4561,9 @@ components:
         topics:
           type: array
           items:
-            $ref: '#/components/schemas/TopicSetDriftCoverageTopicView'
+            $ref: '#/components/schemas/CoverageDriftTopic'
 
-    TopicSetDriftCoverageTopicView:
+    CoverageDriftTopic:
       type: object
       properties:
         topicId:
@@ -4525,7 +4576,7 @@ components:
           type: integer
           format: int64
 
-    TopicSetDriftOverlapResponse:
+    OverlapDrift:
       type: object
       properties:
         topicSetId:
@@ -4542,28 +4593,28 @@ components:
         overlaps:
           type: array
           items:
-            $ref: '#/components/schemas/TopicSetDriftOverlapItemView'
+            $ref: '#/components/schemas/OverlapDriftItem'
 
-    TopicSetDriftOverlapItemView:
+    OverlapDriftItem:
       type: object
       properties:
         topicAId:
           type: string
           nullable: true
-        topicA:
+        topicAName:
           type: string
           nullable: true
         topicBId:
           type: string
           nullable: true
-        topicB:
+        topicBName:
           type: string
           nullable: true
         overlapDocs:
           type: integer
           format: int64
 
-    TopicSetDriftKeywordsResponse:
+    KeywordDrift:
       type: object
       properties:
         topicSetId:
@@ -4580,9 +4631,9 @@ components:
         keywords:
           type: array
           items:
-            $ref: '#/components/schemas/TopicSetDriftKeywordView'
+            $ref: '#/components/schemas/KeywordDriftItem'
 
-    TopicSetDriftKeywordView:
+    KeywordDriftItem:
       type: object
       properties:
         term:
@@ -4601,42 +4652,7 @@ components:
         topicSetId:
           type: string
         runtime:
-          $ref: '#/components/schemas/DriftRuntimeRequest'
-
-    DriftRuntimeRequest:
-      type: object
-      required: [nodes]
-      properties:
-        nodes:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/DriftRuntimeNodeRequest'
-
-    DriftRuntimeNodeRequest:
-      type: object
-      required: [nodeId, topics]
-      properties:
-        nodeId:
-          type: string
-        topics:
-          type: array
-          minItems: 1
-          items:
-            $ref: '#/components/schemas/DriftRuntimeTopicRequest'
-
-    DriftRuntimeTopicRequest:
-      type: object
-      required: [compiledGql]
-      properties:
-        topicId:
-          type: string
-          nullable: true
-        topicName:
-          type: string
-          nullable: true
-        compiledGql:
-          type: string
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
 
     DriftAnalyzeResponse:
       type: object
@@ -4686,6 +4702,9 @@ components:
         frequency:
           type: integer
           format: int64
+        score:
+          type: number
+          format: double
 
     SimulationRuleRequest:
       type: object
@@ -5247,52 +5266,65 @@ components:
             - type: object
             - type: string
 
-    ApiEnvelopeTopicSetDriftSummary:
+    ApiEnvelopeDriftSummary:
       type: object
       properties:
         success:
           type: boolean
         data:
-          $ref: '#/components/schemas/TopicSetDriftSummaryResponse'
+          $ref: '#/components/schemas/DriftSummary'
         error:
           nullable: true
           oneOf:
             - type: object
             - type: string
 
-    ApiEnvelopeTopicSetDriftCoverage:
+    ApiEnvelopeUnmappedDrift:
       type: object
       properties:
         success:
           type: boolean
         data:
-          $ref: '#/components/schemas/TopicSetDriftCoverageResponse'
+          $ref: '#/components/schemas/UnmappedDrift'
         error:
           nullable: true
           oneOf:
             - type: object
             - type: string
 
-    ApiEnvelopeTopicSetDriftOverlap:
+    ApiEnvelopeCoverageDrift:
       type: object
       properties:
         success:
           type: boolean
         data:
-          $ref: '#/components/schemas/TopicSetDriftOverlapResponse'
+          $ref: '#/components/schemas/CoverageDrift'
         error:
           nullable: true
           oneOf:
             - type: object
             - type: string
 
-    ApiEnvelopeTopicSetDriftKeywords:
+    ApiEnvelopeOverlapDrift:
       type: object
       properties:
         success:
           type: boolean
         data:
-          $ref: '#/components/schemas/TopicSetDriftKeywordsResponse'
+          $ref: '#/components/schemas/OverlapDrift'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeKeywordDrift:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/KeywordDrift'
         error:
           nullable: true
           oneOf:

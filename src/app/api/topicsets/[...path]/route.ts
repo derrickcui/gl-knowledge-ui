@@ -10,7 +10,9 @@ async function proxyTopicSetsPath(
   const { path } = await context.params;
   const tail = path.map(encodeURIComponent).join("/");
   const upstreamUrl = new URL(
-    `${resolveTopicSetServiceBase(path)}/api/topicsets/${tail}`
+    path[0] === "internal"
+      ? `${resolveTopicSetServiceBase(path)}/${tail}`
+      : `${resolveTopicSetServiceBase(path)}/api/topicsets/${tail}`
   );
   request.nextUrl.searchParams.forEach((value, key) => {
     upstreamUrl.searchParams.append(key, value);

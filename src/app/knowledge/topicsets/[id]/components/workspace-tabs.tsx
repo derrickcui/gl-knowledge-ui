@@ -3,7 +3,7 @@
 import { t } from "@/i18n";
 
 export type TopicSetWorkspaceTab =
-  | "dashboard"
+  | "drift"
   | "taxonomy"
   | "map"
   | "impact"
@@ -14,7 +14,7 @@ export type TopicSetWorkspaceTab =
 
 const TAB_KEYS: Record<TopicSetWorkspaceTab, Parameters<typeof t>[0]> = {
   taxonomy: "topicSet.tab.taxonomy",
-  dashboard: "topicSet.tab.dashboard",
+  drift: "topicSet.tab.dashboard",
   map: "topicSet.tab.map",
   impact: "topicSet.tab.impact",
   coverage: "topicSet.tab.coverage",
@@ -25,7 +25,7 @@ const TAB_KEYS: Record<TopicSetWorkspaceTab, Parameters<typeof t>[0]> = {
 
 const TAB_ORDER: TopicSetWorkspaceTab[] = [
   "taxonomy",
-  "dashboard",
+  "drift",
   "map",
   "coverage",
   "impact",

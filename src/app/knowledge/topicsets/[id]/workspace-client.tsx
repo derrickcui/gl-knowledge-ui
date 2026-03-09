@@ -10,6 +10,11 @@ import { readDefaultRuntimeSceneSelection } from "@/lib/runtime-default-scene";
 import { fetchRuntimeEnvironmentById, RuntimeEnvironment } from "@/lib/runtime-api";
 import {
   fetchTopicSetCoverage,
+  fetchTopicSetDriftCoverage,
+  fetchTopicSetDriftKeywords,
+  fetchTopicSetDriftOverlap,
+  fetchTopicSetDriftSummary,
+  fetchTopicSetDriftUnmapped,
   fetchTopicSetGovernanceDashboard,
   TopicSetDocumentPageResponse,
   fetchTopicSetNodeDistribution,
@@ -25,6 +30,10 @@ import {
 import {
   approveTopicSet,
   archiveTopicSet,
+  getTopicSetDriftDashboard,
+  getTopicSetDriftHealth,
+  getTopicSetDriftHistory,
+  runTopicSetDriftAnalyze,
   listTopicSetNodeTopics,
   createTopicSetVersion,
   deprecateTopicSet,
@@ -60,13 +69,14 @@ import { TopicBindingPanel } from "../components/topic-binding-panel";
 import { LifecycleValidationPanel } from "../components/lifecycle-validation-panel";
 import { WorkspaceHeader } from "./components/workspace-header";
 import { TopicSetWorkspaceTab, WorkspaceTabs } from "./components/workspace-tabs";
-import { GovernanceDashboardPage } from "./components/dashboard/governance-dashboard-page";
+import { DriftWorkspace } from "./components/drift/drift-workspace";
 import { ImpactPage } from "./components/impact/impact-page";
 import { CoveragePage } from "./components/coverage/coverage-page";
 import { UnmappedPage } from "./components/unmapped/unmapped-page";
 import { VersionsPage } from "./components/versions/versions-page";
 import { TaxonomyDiffPage } from "./components/diff/taxonomy-diff-page";
 import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
+import { searchDocuments } from "@/lib/search-api";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -383,6 +393,58 @@ export function TopicSetWorkspaceClient({
   const [unmappedPage, setUnmappedPage] = useState(0);
   const [unmappedSize, setUnmappedSize] = useState(20);
   const [unmappedSort, setUnmappedSort] = useState<"score" | "updatedAt" | "publishedAt">("score");
+  const [driftHealth, setDriftHealth] = useState<{
+    score?: number | null;
+    trend?: "UP" | "DOWN" | "FLAT" | null;
+    snapshotDate?: string | null;
+  } | null>(null);
+  const [driftHistory, setDriftHistory] = useState<
+    Array<{
+      snapshotDate: string;
+      coverageRatio: number;
+      unmappedDocs: number;
+      overlapDocCount: number;
+      healthScore: number;
+    }>
+  >([]);
+  const [driftSummary, setDriftSummary] = useState<{
+    totalDocs?: number;
+    classifiedDocs: number;
+    unmappedDocs: number;
+    coverageRatio: number;
+    overlapCount: number;
+  } | null>(null);
+  const [driftDashboard, setDriftDashboard] = useState<{
+    healthScore?: number | null;
+    coverageDrift: number;
+    overlapDrift: number;
+    unmappedIncrease: number;
+    lastAnalysis?: string | null;
+  } | null>(null);
+  const [driftCoverageRows, setDriftCoverageRows] = useState<
+    Array<{
+      topicId?: string | null;
+      topicName?: string | null;
+      currentDocs: number;
+      previousDocs: number;
+      changeRate?: number | null;
+    }>
+  >([]);
+  const [driftOverlapRows, setDriftOverlapRows] = useState<
+    Array<{
+      topicAId: string;
+      topicAName?: string | null;
+      topicBId: string;
+      topicBName?: string | null;
+      overlapDocs: number;
+    }>
+  >([]);
+  const [driftKeywords, setDriftKeywords] = useState<
+    Array<{ term: string; frequency: number; score?: number | null }>
+  >([]);
+  const [driftUnmappedTotal, setDriftUnmappedTotal] = useState(0);
+  const [driftAnalyzing, setDriftAnalyzing] = useState(false);
+  const [driftRefreshTick, setDriftRefreshTick] = useState(0);
 
   const [impactDocsLoading, setImpactDocsLoading] = useState(false);
   const [impactDocsError, setImpactDocsError] = useState<string | null>(null);
@@ -406,6 +468,7 @@ export function TopicSetWorkspaceClient({
   const [topicDocsContext, setTopicDocsContext] = useState<
     | { kind: "topic"; topicId: string }
     | { kind: "overlap"; topicAId: string; topicAName?: string | null; topicBId: string; topicBName?: string | null }
+    | { kind: "search"; query: string; mode: "coverage" | "overlap" | "keyword" | "unmapped" }
     | null
   >(null);
   const [topicDocsRows, setTopicDocsRows] = useState<
@@ -800,6 +863,67 @@ export function TopicSetWorkspaceClient({
     return Array.from(ids).sort();
   }, [topics]);
   const loadedTopicIdsKey = useMemo(() => loadedTopicIds.join("|"), [loadedTopicIds]);
+  const driftLastAnalysis = useMemo(
+    () => driftDashboard?.lastAnalysis ?? driftHealth?.snapshotDate ?? driftHistory[driftHistory.length - 1]?.snapshotDate ?? null,
+    [driftDashboard?.lastAnalysis, driftHealth?.snapshotDate, driftHistory]
+  );
+  const driftUnmappedGrowth = useMemo(() => {
+    if (driftHistory.length === 0) return null;
+    const current = driftHistory[driftHistory.length - 1];
+    const previous = driftHistory[driftHistory.length - 2] ?? null;
+    return {
+      previous: Number(previous?.unmappedDocs ?? 0),
+      current: Number(current?.unmappedDocs ?? 0),
+      change: Number(current?.unmappedDocs ?? 0) - Number(previous?.unmappedDocs ?? 0),
+    };
+  }, [driftHistory]);
+  const driftImpactRows = useMemo(() => {
+    const coverageItems = driftCoverageRows.slice(0, 5).map((row) => ({
+      id: `coverage:${row.topicId ?? row.topicName ?? "topic"}`,
+      type: "Coverage" as const,
+      item: row.topicName ?? row.topicId ?? "-",
+      impactScore: Math.min(100, Math.max(1, Math.round(Math.abs((row.changeRate ?? 0) * 100)) || row.currentDocs)),
+      actionLabel: "View Docs",
+      onAction: () => {
+        void openDriftCoverageTopic(row);
+      },
+    }));
+    const overlapItems = driftOverlapRows.slice(0, 5).map((row) => ({
+      id: `overlap:${row.topicAId}:${row.topicBId}`,
+      type: "Overlap" as const,
+      item: `${row.topicAName ?? row.topicAId}/${row.topicBName ?? row.topicBId}`,
+      impactScore: Math.min(100, Math.max(1, Math.round(row.overlapDocs))),
+      actionLabel: "View Overlap Docs",
+      onAction: () => {
+        void openDriftOverlapSearch(row);
+      },
+    }));
+    const keywordItems = driftKeywords.slice(0, 5).map((row) => ({
+      id: `keyword:${row.term}`,
+      type: "Keyword" as const,
+      item: row.term,
+      impactScore: Math.min(100, Math.max(1, Math.round((row.score ?? row.frequency) * 1))),
+      actionLabel: "Search Docs",
+      onAction: () => {
+        void openDriftKeywordSearch(row.term);
+      },
+    }));
+    return [...coverageItems, ...overlapItems, ...keywordItems]
+      .sort((a, b) => b.impactScore - a.impactScore)
+      .slice(0, 10);
+  }, [driftCoverageRows, driftOverlapRows, driftKeywords, openDriftCoverageTopic, openDriftKeywordSearch, openDriftOverlapSearch]);
+  const driftSuggestionRows = useMemo(() => {
+    const maxKeywordScore = Math.max(1, ...driftKeywords.map((item) => item.score ?? item.frequency ?? 0));
+    return driftKeywords.slice(0, 10).map((row) => ({
+      id: `suggestion:${row.term}`,
+      suggestedTopic: row.term,
+      docs: row.frequency,
+      confidence: Number(Math.min(0.99, Math.max(0.5, (row.score ?? row.frequency) / maxKeywordScore)).toFixed(2)),
+      onAction: () => {
+        void openDriftKeywordSearch(row.term);
+      },
+    }));
+  }, [driftKeywords, openDriftKeywordSearch]);
   const lifecycleChanges = useMemo(() => {
     const nodes = baselineDiff?.nodes ?? [];
     const added = nodes.filter((item) => item.status === "ADDED").slice(0, 5);
@@ -1292,6 +1416,110 @@ export function TopicSetWorkspaceClient({
     simulationTopicsReady,
     buildSimulationDraft,
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDriftDashboard() {
+      if (!topicSetId) return;
+      if (!usePublishedGovernanceApis) {
+        setDriftDashboard(null);
+        setDriftHealth(null);
+        setDriftHistory([]);
+        setDriftSummary(null);
+        setDriftCoverageRows([]);
+        setDriftOverlapRows([]);
+        setDriftKeywords([]);
+        setDriftUnmappedTotal(0);
+        return;
+      }
+
+      const [dashboardResult, healthResult, historyResult, summaryResult, coverageResult, overlapResult, unmappedResult, keywordsResult] =
+        await Promise.all([
+          getTopicSetDriftDashboard(topicSetId),
+          getTopicSetDriftHealth(topicSetId),
+          getTopicSetDriftHistory(topicSetId, { limit: 12 }),
+          fetchTopicSetDriftSummary(topicSetId),
+          fetchTopicSetDriftCoverage(topicSetId),
+          fetchTopicSetDriftOverlap(topicSetId, { minOverlap: 1, limit: 20 }),
+          fetchTopicSetDriftUnmapped(topicSetId),
+          fetchTopicSetDriftKeywords(topicSetId, { limit: 20, sampleDocs: 200 }),
+        ]);
+      if (cancelled) return;
+
+      setDriftDashboard(
+        dashboardResult.data
+          ? {
+              healthScore: dashboardResult.data.healthScore ?? null,
+              coverageDrift: Number(dashboardResult.data.coverageDrift ?? 0),
+              overlapDrift: Number(dashboardResult.data.overlapDrift ?? 0),
+              unmappedIncrease: Number(dashboardResult.data.unmappedIncrease ?? 0),
+              lastAnalysis: dashboardResult.data.lastAnalysis ?? null,
+            }
+          : null
+      );
+      setDriftHealth(
+        healthResult.data
+          ? {
+              score: healthResult.data.healthScore ?? null,
+              trend: healthResult.data.trend ?? null,
+              snapshotDate: healthResult.data.snapshotDate ?? null,
+            }
+          : null
+      );
+      setDriftHistory(
+        (historyResult.data?.history ?? []).map((item) => ({
+          snapshotDate: item.snapshotDate,
+          coverageRatio: Number(item.coverageRatio ?? 0),
+          unmappedDocs: Number(item.unmappedDocs ?? 0),
+          overlapDocCount: Number(item.overlapDocCount ?? 0),
+          healthScore: Number(item.healthScore ?? 0),
+        }))
+      );
+      setDriftSummary(
+        summaryResult.data
+          ? {
+              totalDocs: Number(summaryResult.data.totalDocs ?? 0),
+              classifiedDocs: Number(summaryResult.data.classifiedDocs ?? 0),
+              unmappedDocs: Number(summaryResult.data.unmappedDocs ?? 0),
+              coverageRatio: Number(summaryResult.data.coverageRatio ?? 0),
+              overlapCount: Number(summaryResult.data.overlapCount ?? 0),
+            }
+          : null
+      );
+      setDriftCoverageRows(
+        (coverageResult.data?.topics ?? [])
+          .map((item) => ({
+            topicId: item.topicId ?? null,
+            topicName: item.topicName ?? item.topicId ?? null,
+            currentDocs: Number(item.currentDocs ?? 0),
+            previousDocs: Number(item.previousDocs ?? 0),
+            changeRate: item.changeRate ?? null,
+          }))
+          .sort((a, b) => b.currentDocs - a.currentDocs)
+      );
+      setDriftOverlapRows(
+        (overlapResult.data?.overlaps ?? []).map((item) => ({
+          topicAId: item.topicAId,
+          topicAName: item.topicAName ?? (item as { topicA?: string | null }).topicA ?? null,
+          topicBId: item.topicBId,
+          topicBName: item.topicBName ?? (item as { topicB?: string | null }).topicB ?? null,
+          overlapDocs: Number(item.overlapDocs ?? 0),
+        }))
+      );
+      setDriftKeywords(
+        (keywordsResult.data?.keywords ?? []).map((item) => ({
+          term: item.term,
+          frequency: Number(item.frequency ?? 0),
+          score: item.score ?? null,
+        }))
+      );
+      setDriftUnmappedTotal(Number(unmappedResult.data?.unmappedDocs ?? summaryResult.data?.unmappedDocs ?? 0));
+    }
+    void loadDriftDashboard();
+    return () => {
+      cancelled = true;
+    };
+  }, [topicSetId, usePublishedGovernanceApis, driftRefreshTick]);
 
   const loadNodeDistribution = useCallback(
     async (nodeId: string) => {
@@ -1813,6 +2041,127 @@ export function TopicSetWorkspaceClient({
       ...prev,
       [topicId]: Number(result.data?.total ?? 0),
     }));
+  }
+
+  async function ensureCompiledTopicGql(topicId: string) {
+    const cached = compiledTopicGqlCacheRef.current[topicId];
+    if (cached) return cached;
+    const draftResult = await fetchTopicDraft(topicId);
+    const draftRule = draftResult.data?.rule;
+    if (!draftRule) return null;
+    const previewResult = await previewTopicRule(topicId, {
+      rule: draftRule,
+      runtimeEnvironmentId: simulationRuntimeEnvironment?.id ?? undefined,
+    });
+    const gql = previewResult.data?.gql?.trim();
+    if (!gql) return null;
+    const mapped = applyRuntimeFieldMappings(gql, simulationRuntimeEnvironment);
+    compiledTopicGqlCacheRef.current[topicId] = mapped;
+    return mapped;
+  }
+
+  async function openSearchDocs(
+    title: string,
+    query: string,
+    mode: "coverage" | "overlap" | "keyword" | "unmapped"
+  ) {
+    setTopicDocsOpen(true);
+    setTopicDocsLoading(true);
+    setTopicDocsError(null);
+    setTopicDocsContext({ kind: "search", query, mode });
+    setTopicDocsTitle(title);
+    const result = await searchDocuments({ q: query, page: 1, size: 20 });
+    setTopicDocsLoading(false);
+    if (!result.data) {
+      setTopicDocsRows([]);
+      setTopicDocsTotal(0);
+      setTopicDocsError(result.error ?? t("topicSet.feedback.loadDocsFailed"));
+      return;
+    }
+    const hits = result.data.hits ?? result.data.items ?? [];
+    setTopicDocsTotal(Number(result.data.totalHits ?? result.data.total ?? hits.length));
+    setTopicDocsRows(
+      hits.map((item) => ({
+        docId: item.docId ?? item.id ?? "",
+        title: item.title ?? item.docId ?? item.id ?? "-",
+        secondary: item.summary ?? item.snippet ?? null,
+        metric: item.score != null ? Number(item.score).toFixed(2) : null,
+      }))
+    );
+  }
+
+  async function openDriftCoverageTopic(row: {
+    topicId?: string | null;
+    topicName?: string | null;
+    currentDocs: number;
+    previousDocs: number;
+    changeRate?: number | null;
+  }) {
+    if (!row.topicId) {
+      setFeedback({ type: "error", title: t("topicSet.feedback.loadDocsFailed"), message: "Missing topic id" });
+      return;
+    }
+    const gql = await ensureCompiledTopicGql(row.topicId);
+    if (!gql) {
+      setFeedback({ type: "error", title: t("topicSet.feedback.loadDocsFailed"), message: "Failed to compile topic GQL" });
+      return;
+    }
+    await openSearchDocs(row.topicName ?? row.topicId, `{!geelink}${gql}`, "coverage");
+  }
+
+  async function openDriftOverlapSearch(row: {
+    topicAId: string;
+    topicAName?: string | null;
+    topicBId: string;
+    topicBName?: string | null;
+    overlapDocs: number;
+  }) {
+    const [topicAGql, topicBGql] = await Promise.all([
+      ensureCompiledTopicGql(row.topicAId),
+      ensureCompiledTopicGql(row.topicBId),
+    ]);
+    if (!topicAGql || !topicBGql) {
+      setFeedback({ type: "error", title: t("topicSet.feedback.loadDocsFailed"), message: "Failed to compile overlap topics" });
+      return;
+    }
+    await openSearchDocs(
+      `${row.topicAName ?? row.topicAId} / ${row.topicBName ?? row.topicBId}`,
+      `{!geelink}<and>(${topicAGql},${topicBGql})`,
+      "overlap"
+    );
+  }
+
+  async function openDriftUnmappedSearch() {
+    const gqlList = (
+      await Promise.all(loadedTopicIds.map((topicId) => ensureCompiledTopicGql(topicId)))
+    ).filter((item): item is string => Boolean(item));
+    const query = gqlList.length > 0 ? `{!geelink}NOT(<or>(${gqlList.join(",")}))` : "*:*";
+    await openSearchDocs("Unmapped Documents", query, "unmapped");
+  }
+
+  async function openDriftKeywordSearch(keyword: string) {
+    await openSearchDocs(keyword, keyword, "keyword");
+  }
+
+  async function runDriftAnalysis() {
+    if (!topicSetId) return;
+    setDriftAnalyzing(true);
+    const result = await runTopicSetDriftAnalyze(topicSetId);
+    setDriftAnalyzing(false);
+    if (!result.data) {
+      setFeedback({
+        type: "error",
+        title: "Drift analysis failed",
+        message: result.error ?? "Failed to run drift analysis",
+      });
+      return;
+    }
+    setDriftRefreshTick((prev) => prev + 1);
+    setFeedback({
+      type: "success",
+      title: "Drift analysis completed",
+      message: result.data.snapshotDate ?? undefined,
+    });
   }
 
   async function openOverlapDocs(row: {
@@ -2575,12 +2924,22 @@ export function TopicSetWorkspaceClient({
         />
       )}
 
-      {activeTab === "dashboard" && (
-        <GovernanceDashboardPage
+      {activeTab === "drift" && (
+        <DriftWorkspace
           topicSetName={topicSetDetail?.name}
-          health={null}
+          datasetName={simulationRuntimeEnvironment?.datasetName ?? null}
+          lastAnalysis={driftLastAnalysis}
+          health={driftHealth}
           liveSummary={
-            coverageDashboard
+            driftSummary
+              ? {
+                  totalDocs: driftSummary.totalDocs,
+                  classifiedDocs: driftSummary.classifiedDocs,
+                  unmappedDocs: driftSummary.unmappedDocs,
+                  coverageRatio: driftSummary.coverageRatio,
+                  overlapCount: driftSummary.overlapCount,
+                }
+              : coverageDashboard
               ? {
                   classifiedDocs: coverageDashboard.classifiedDocs,
                   unmappedDocs: coverageDashboard.unmappedDocs,
@@ -2593,14 +2952,29 @@ export function TopicSetWorkspaceClient({
                 }
               : null
           }
-          history={[]}
-          overlapRows={overlapRows}
-          keywords={[]}
-          isDraftRuntime={!usePublishedGovernanceApis}
-          onOpenOverlapDocs={(row: { topicAId: string; topicAName?: string | null; topicBId: string; topicBName?: string | null; overlapDocs: number }) => {
-            void openOverlapDocs(row);
+          coverageRows={driftCoverageRows}
+          overlapRows={driftOverlapRows}
+          unmappedTotal={driftUnmappedTotal || driftSummary?.unmappedDocs || 0}
+          keywords={driftKeywords}
+          impactRows={driftImpactRows}
+          suggestionRows={driftSuggestionRows}
+          history={driftHistory}
+          analyzing={driftAnalyzing}
+          onAnalyze={() => {
+            void runDriftAnalysis();
           }}
-          onOpenUnmapped={() => setActiveTab("unmapped")}
+          onOpenCoverageTopic={(row) => {
+            void openDriftCoverageTopic(row);
+          }}
+          onOpenOverlap={(row) => {
+            void openDriftOverlapSearch(row);
+          }}
+          onOpenUnmapped={() => {
+            void openDriftUnmappedSearch();
+          }}
+          onOpenKeyword={(keyword) => {
+            void openDriftKeywordSearch(keyword);
+          }}
         />
       )}
 

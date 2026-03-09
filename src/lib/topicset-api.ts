@@ -190,6 +190,15 @@ export type TopicSetDriftHealthResponse = {
   overlapDocCount?: number | null;
 };
 
+export type TopicSetDriftDashboardResponse = {
+  topicSetId: string;
+  healthScore?: number | null;
+  coverageDrift: number;
+  overlapDrift: number;
+  unmappedIncrease: number;
+  lastAnalysis?: string | null;
+};
+
 export type NodeTopicView = {
   topicId: string;
   topicName?: string | null;
@@ -796,4 +805,27 @@ export async function getTopicSetDriftHealth(
   );
   if (!result.data) return { data: null, error: result.error };
   return { data: result.data, error: null };
+}
+
+export async function getTopicSetDriftDashboard(
+  topicSetId: string
+): Promise<ApiResult<TopicSetDriftDashboardResponse>> {
+  const result = await unwrapOrReturn<TopicSetDriftDashboardResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/drift-dashboard`
+  );
+  if (!result.data) return { data: null, error: result.error };
+  return { data: result.data, error: null };
+}
+
+export async function runTopicSetDriftAnalyze(
+  topicSetId: string
+): Promise<TopicSetApiResult<TopicSetDriftHistoryItem>> {
+  return unwrapOrReturn<TopicSetDriftHistoryItem>(
+    `${TOPICSETS_API_PROXY}/internal/topicsets/${encodeURIComponent(topicSetId)}/drift/analyze`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    }
+  );
 }
