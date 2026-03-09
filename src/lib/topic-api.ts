@@ -161,6 +161,8 @@ type TopicDraftBusinessApiResponse = {
 
 type RulePreviewBusinessRequest = {
   rule: unknown;
+  dataset?: string;
+  runtimeEnvironmentId?: number | string | null;
 };
 
 type RulePreviewBusinessResult = {

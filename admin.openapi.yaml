@@ -34,6 +34,8 @@ tags:
     description: Semantic analytics APIs
   - name: TopicSet
     description: TopicSet governance APIs
+  - name: TopicSimulation
+    description: Topic rule compile and simulation APIs
 
 paths:
   /api/runtime/active:
@@ -72,6 +74,256 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseRuntimeDeployValidateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/preview-rule:
+    post:
+      tags: [TopicSimulation]
+      summary: Compile topic rule with runtime field mapping
+      operationId: previewTopicRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSimulationRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicPreviewRuleResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/simulate:
+    post:
+      tags: [TopicSimulation]
+      summary: Simulate topic rule through search service
+      operationId: simulateTopicRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSimulationRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSimulateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/simulate-impact:
+    post:
+      tags: [TopicSimulation]
+      summary: Simulate topic impact through search service
+      operationId: simulateTopicRuleImpact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSimulationRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSimulateImpactResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/simulation/topic:
+    post:
+      tags: [TopicSimulation]
+      summary: Simulate topic rule
+      operationId: simulateTopic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationTopicRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSimulateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/simulation/topic/{topicId}:
+    post:
+      tags: [TopicSimulation]
+      summary: Simulate topic rule by topic id
+      operationId: simulateTopicById
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationTopicRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSimulateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/simulation/topic/preview:
+    post:
+      tags: [TopicSimulation]
+      summary: Preview compiled topic rule
+      operationId: previewSimulationTopic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationTopicRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicPreviewRuleResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/simulation/topic/{topicId}/preview:
+    post:
+      tags: [TopicSimulation]
+      summary: Preview compiled topic rule by topic id
+      operationId: previewSimulationTopicById
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationTopicRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicPreviewRuleResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/simulation/topic/{topicId}/impact:
+    post:
+      tags: [TopicSimulation]
+      summary: Simulate topic impact by topic id
+      operationId: simulateTopicImpactById
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationTopicRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSimulateImpactResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/simulation/topicset/{topicSetId}:
+    post:
+      tags: [TopicSimulation]
+      summary: Simulate topicset coverage
+      operationId: simulateTopicSet
+      parameters:
+        - name: topicSetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SimulationTopicSetRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetSimulationResponse'
         '400':
           description: Validation error
           content:
@@ -1941,6 +2193,19 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseTopicSetValidationResponse'
 
+  /api/topicsets/binding-scope:
+    get:
+      tags: [TopicSet]
+      summary: Check TopicSet topic binding uniqueness scope migration state
+      operationId: getTopicSetBindingScopeHealth
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetBindingScopeHealthResponse'
+
   /api/topicsets/{id}/tree:
     get:
       tags: [TopicSet]
@@ -2406,6 +2671,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: topicSetId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
       responses:
         '200':
           description: Success
@@ -4011,6 +4282,21 @@ components:
             $ref: '#/components/schemas/TopicSetCoverageConflict'
       required: [topicSetId, valid, cycleStructure, orphanNodes, unboundTopics, coverageConflicts]
 
+    TopicSetBindingScopeHealthResponse:
+      type: object
+      properties:
+        topicSetIdColumnPresent:
+          type: boolean
+        globalTopicUniqueIndexPresent:
+          type: boolean
+        topicSetScopedUniqueIndexPresent:
+          type: boolean
+        indexes:
+          type: array
+          items:
+            type: string
+      required: [topicSetIdColumnPresent, globalTopicUniqueIndexPresent, topicSetScopedUniqueIndexPresent, indexes]
+
     TopicSetSummaryResponse:
       type: object
       properties:
@@ -4713,6 +4999,17 @@ components:
           $ref: '#/components/schemas/ApiError'
       required: [success]
 
+    ApiResponseTopicSetBindingScopeHealthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetBindingScopeHealthResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     ApiResponseCreateNodeResponse:
       type: object
       properties:
@@ -5182,6 +5479,50 @@ components:
           $ref: '#/components/schemas/ApiError'
       required: [success]
 
+    ApiResponseTopicPreviewRuleResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicPreviewRuleResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSimulateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSimulateResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSimulateImpactResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSimulateImpactResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetSimulationResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     ApiResponseRuntimeDeployValidateResponse:
       type: object
       properties:
@@ -5289,6 +5630,122 @@ components:
           type: string
           format: date-time
       required: [id, contentHash, rule, capability, explain, updatedAt]
+
+    TopicSimulationRequest:
+      type: object
+      properties:
+        topicId:
+          type: string
+        dataset:
+          type: string
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        sampleSize:
+          type: integer
+          format: int32
+        rule:
+          $ref: '#/components/schemas/TopicSimulationRulePayload'
+      required: [topicId, dataset, runtimeEnvironmentId, rule]
+
+    TopicSimulationRulePayload:
+      type: object
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        compiledGql:
+          type: string
+          nullable: true
+        root:
+          $ref: '#/components/schemas/UiExpressionNode'
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/UiRuleReference'
+
+    TopicPreviewRuleResponse:
+      type: object
+      properties:
+        compiledGql:
+          type: string
+      required: [compiledGql]
+
+    TopicSimulateResponse:
+      type: object
+      properties:
+        docCount:
+          type: integer
+          format: int64
+      required: [docCount]
+
+    TopicSimulateImpactResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/RulePreviewItem'
+      required: [total, documents]
+
+    SimulationTopicRequest:
+      type: object
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+        sampleSize:
+          type: integer
+          format: int32
+          nullable: true
+        rule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+      required: [dataset, runtimeEnvironmentId, rule]
+
+    SimulationTopicSetRequest:
+      type: object
+      properties:
+        dataset:
+          type: string
+        sampleSize:
+          type: integer
+          format: int32
+          nullable: true
+      required: [dataset]
+
+    TopicSetSimulationResponse:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+        classifiedDocs:
+          type: integer
+          format: int64
+        unmappedDocs:
+          type: integer
+          format: int64
+        coverageRatio:
+          type: number
+          format: double
+        overlapDocCount:
+          type: integer
+          format: int64
+        overlapRatio:
+          type: number
+          format: double
+      required: [totalDocs, classifiedDocs, unmappedDocs, coverageRatio, overlapDocCount, overlapRatio]
 
     TopicCapabilityViewModel:
       type: object

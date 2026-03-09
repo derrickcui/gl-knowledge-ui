@@ -1,64 +1,18 @@
-import { NextResponse } from "next/server";
-import { readUpstreamJsonBody } from "../../topics/proxyUtils";
-
-const RUNTIME_API_BASE =
-  process.env.NEXT_PUBLIC_RUNTIME_API ??
-  process.env.NEXT_PUBLIC_TEMPLATE_API ??
-  "http://localhost:8080";
+import { RUNTIME_SERVICE_BASE as RUNTIME_API_BASE } from "@/lib/api/serverServiceConfig";
+import { proxyGetJson, proxyJsonRoute, proxyMutationJson, withRequestSearch } from "@/lib/api/serverProxy";
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.text();
-    const upstream = await fetch(`${RUNTIME_API_BASE}/api/runtime/environments`, {
-      method: "POST",
-      headers: {
-        "Content-Type":
-          request.headers.get("content-type") ?? "application/json",
-      },
-      body,
+  return proxyMutationJson(`${RUNTIME_API_BASE}/api/runtime/environments`, "POST", request, {
+      success: false,
+      data: null,
+      error: "runtime-service unreachable",
     });
-    const responseBody = await readUpstreamJsonBody(upstream);
-    return new NextResponse(responseBody, {
-      status: upstream.status,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-      },
-    });
-  } catch {
-    return NextResponse.json(
-      {
-        success: false,
-        data: null,
-        error: "runtime-service unreachable",
-      },
-      { status: 502 }
-    );
-  }
 }
 
 export async function GET(request: Request) {
-  try {
-    const reqUrl = new URL(request.url);
-    const search = reqUrl.search || "";
-    const upstream = await fetch(
-      `${RUNTIME_API_BASE}/api/runtime/environments${search}`,
-      { cache: "no-store" }
-    );
-    const body = await readUpstreamJsonBody(upstream);
-    return new NextResponse(body, {
-      status: upstream.status,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-      },
+  return proxyGetJson(withRequestSearch(`${RUNTIME_API_BASE}/api/runtime/environments`, request), {
+      success: false,
+      data: null,
+      error: "runtime-service unreachable",
     });
-  } catch {
-    return NextResponse.json(
-      {
-        success: false,
-        data: null,
-        error: "runtime-service unreachable",
-      },
-      { status: 502 }
-    );
-  }
 }

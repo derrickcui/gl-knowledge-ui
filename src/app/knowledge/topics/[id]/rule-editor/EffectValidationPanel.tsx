@@ -7,7 +7,7 @@ import type {
   RuntimeExecuteNodeResponse,
   RuntimeImpactCondition,
 } from "@/lib/api/ruleRuntime";
-import type { ConditionImpactItem } from "@/lib/rule-preview-api";
+import type { ConditionImpactItem, RulePreviewResponse } from "@/lib/rule-preview-api";
 import type { HitDistribution, OptimizationSuggestion, TemplateRecommendation } from "./rule-intelligence";
 import type { RuleAbTestResult } from "./ab-test";
 import type { GeneratedRuleCandidate } from "./rule-auto-generate";
@@ -31,10 +31,13 @@ type EffectValidationPanelProps = {
   busy: boolean;
   error: string | null;
   compiledGql?: string | null;
-  compiledGqlSource?: "local-compiler" | "server" | null;
+  compiledGqlSource?: "server" | "local-compiler" | null;
   gqlPreviewEnabled?: boolean;
   activeNodeLabel?: string | null;
   impactRanking?: ConditionImpactItem[];
+  previewResult?: RulePreviewResponse | null;
+  previewPage?: number;
+  previewPageSize?: number;
   fullRuntimeResult?: RuntimeExecuteFullResponse | null;
   impactRuntimeResult?: RuntimeExecuteImpactResponse | null;
   nodeRuntimeResults?: Record<string, RuntimeExecuteNodeResponse>;
@@ -78,6 +81,9 @@ export function EffectValidationPanel({
   gqlPreviewEnabled = true,
   activeNodeLabel = null,
   impactRanking = [],
+  previewResult = null,
+  previewPage = 1,
+  previewPageSize = 20,
   fullRuntimeResult = null,
   impactRuntimeResult = null,
   nodeRuntimeResults = {},
@@ -110,7 +116,7 @@ export function EffectValidationPanel({
   const [searchText, setSearchText] = useState("");
   const [intelTab, setIntelTab] = useState<IntelTab>("DISTRIBUTION");
 
-  const fullTotal = fullRuntimeResult?.total ?? impactRuntimeResult?.fullTotal ?? 0;
+  const fullTotal = previewResult?.total ?? fullRuntimeResult?.total ?? impactRuntimeResult?.fullTotal ?? 0;
   const conditionCount = impactRuntimeResult?.conditionCount ?? impactRanking.length;
 
   const impactAnalysis: RuntimeImpactCondition[] = useMemo(() => {
@@ -124,10 +130,10 @@ export function EffectValidationPanel({
         item.contributionRate > 0.5
           ? "HIGH"
           : item.contributionRate >= 0.1
-          ? "MEDIUM"
-          : item.contributionRate > 0
-          ? "LOW"
-          : "NONE",
+            ? "MEDIUM"
+            : item.contributionRate > 0
+              ? "LOW"
+              : "NONE",
     }));
   }, [impactRuntimeResult, impactRanking]);
 
@@ -146,11 +152,10 @@ export function EffectValidationPanel({
     activeTab?.kind === "NODE" && activeTab.nodeId
       ? nodeRuntimeResults[activeTab.nodeId] ?? null
       : null;
-
   return (
     <div className="flex h-full min-h-0 flex-col rounded-lg border bg-white">
       <div className="border-b px-3 py-2">
-        <div className="text-sm font-semibold text-slate-800">🔍 分析工作台（可折叠）</div>
+        <div className="text-sm font-semibold text-slate-800">{t("ruleEditor.execution.title")}</div>
       </div>
 
       <div className="border-b px-3 py-2">
@@ -178,9 +183,7 @@ export function EffectValidationPanel({
             onClick={onGenerate}
             disabled={busy || !onGenerate || !gqlPreviewEnabled}
           >
-            {busy
-              ? t("ruleEditor.execution.executing")
-              : t("ruleEditor.execution.execute")}
+            {busy ? t("ruleEditor.execution.executing") : t("ruleEditor.execution.execute")}
           </button>
         </div>
       </div>
@@ -190,7 +193,7 @@ export function EffectValidationPanel({
         {compiledGql ? (
           <div className="mt-2 rounded border border-slate-200 bg-slate-50 p-2">
             <div className="mb-1 text-[11px] font-semibold text-slate-600">
-              GQL ({compiledGqlSource === "local-compiler" ? "local-compiler" : "server"})
+              GQL ({compiledGqlSource ?? "server"})
             </div>
             <code className="block overflow-x-auto whitespace-pre text-xs text-slate-800">{compiledGql}</code>
           </div>
@@ -239,7 +242,7 @@ export function EffectValidationPanel({
             className="ml-auto rounded border px-2 py-0.5 text-xs hover:bg-slate-100"
             onClick={onToggleAnalysisCollapsed}
           >
-            {analysisCollapsed ? "⊕ 展开" : "⊕ 收起"}
+            {analysisCollapsed ? "Expand" : "Collapse"}
           </button>
         </div>
 
@@ -248,15 +251,22 @@ export function EffectValidationPanel({
             <div className="min-h-0 flex-1 overflow-auto">
               {activeTab?.kind === "FULL" ? (
                 <FullResultPanel
-                  result={fullRuntimeResult}
+                  result={previewResult ?? fullRuntimeResult}
+                  page={previewResult ? previewPage : undefined}
+                  size={previewResult ? previewPageSize : undefined}
+                  modeLabel="FULL"
                   searchText={searchText}
                   onSearchChange={setSearchText}
                   onTriggerNodeByReason={(keyword) => {
                     const hit = impactAnalysis.find((item) => item.label.includes(keyword));
                     if (hit) onRunNodeById?.(hit.nodeId);
                   }}
-                  onPrevPage={() => onChangeFullPage?.((fullRuntimeResult?.page ?? 1) - 1)}
-                  onNextPage={() => onChangeFullPage?.((fullRuntimeResult?.page ?? 1) + 1)}
+                  onPrevPage={() =>
+                    onChangeFullPage?.(((previewResult ? previewPage : fullRuntimeResult?.page) ?? 1) - 1)
+                  }
+                  onNextPage={() =>
+                    onChangeFullPage?.(((previewResult ? previewPage : fullRuntimeResult?.page) ?? 1) + 1)
+                  }
                 />
               ) : activeTab?.kind === "IMPACT" ? (
                 <ImpactPanel analysis={impactAnalysis} onSelectNode={(nodeId) => onRunNodeById?.(nodeId)} />
@@ -380,7 +390,7 @@ function AutoGeneratedCandidatesPanel({
           >
             {t("ruleEditor.intel.autogen.generateDraftB")}
           </button>
-          {draftBPreview && draftBPreview.candidateId === item.id && (
+          {draftBPreview && draftBPreview.candidateId === item.id ? (
             <div className="mt-2 rounded border border-indigo-200 bg-indigo-50 p-2 text-[11px] text-indigo-800">
               <div>
                 +{draftBPreview.added} / -{draftBPreview.removed} / ~{draftBPreview.changed}
@@ -393,7 +403,7 @@ function AutoGeneratedCandidatesPanel({
                 {t("ruleEditor.intel.autogen.applyDraftB")}
               </button>
             </div>
-          )}
+          ) : null}
         </div>
       ))}
     </div>
@@ -517,9 +527,7 @@ function AbTestPanel({
         onClick={onRun}
         disabled={!onRun || busy}
       >
-        {busy
-          ? t("ruleEditor.intel.abtest.running")
-          : t("ruleEditor.intel.abtest.run")}
+        {busy ? t("ruleEditor.intel.abtest.running") : t("ruleEditor.intel.abtest.run")}
       </button>
       {!result ? (
         <div className="text-slate-400">{t("ruleEditor.intel.empty")}</div>

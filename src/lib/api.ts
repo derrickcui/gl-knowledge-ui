@@ -1,9 +1,6 @@
 
 import { AuditRecord } from "@/types/audit";
-
-const API_BASE =
-  process.env.NEXT_PUBLIC_GLOSSARY_API ??
-  "http://localhost:8000";
+import { GLOSSARY_API_BASE as API_BASE } from "@/lib/api/clientServiceConfig";
 
 
 export const SERVICE_DOWN_MESSAGE =

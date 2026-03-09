@@ -1,221 +1,317 @@
 "use client";
 
 import { t } from "@/i18n";
+import type { ReactNode } from "react";
 
-type CoverageRow = { nodeId?: string; name: string; hitDocs: number; topics?: number };
-type LowCoverageRow = { nodeId: string; name: string; hitDocs: number; topicCount: number };
-type OverlapRow = {
+type DriftHistoryRow = {
+  snapshotDate: string;
+  coverageRatio: number;
+  unmappedDocs: number;
+  healthScore: number;
+};
+
+type DriftOverlapRow = {
   topicAId: string;
   topicAName?: string | null;
   topicBId: string;
   topicBName?: string | null;
   overlapDocs: number;
-  docsPath?: string | null;
-  explainPathTemplate?: string | null;
 };
+
+type DriftKeywordRow = {
+  term: string;
+  frequency: number;
+  score: number;
+};
+
+type HealthSummary = {
+  score: number | null;
+  trend?: "UP" | "DOWN" | "FLAT" | null;
+  snapshotDate?: string | null;
+};
+
+type LiveSummary = {
+  classifiedDocs: number;
+  unmappedDocs: number;
+  coverageRatio: number;
+  overlapCount: number;
+} | null;
 
 export function GovernanceDashboardPage({
   topicSetName,
-  coverage,
-  coverageRows,
-  lowCoverageRows,
+  health,
+  liveSummary,
+  history,
   overlapRows,
-  unmapped,
-  onOpenCoverageNode,
-  onOpenLowCoverageNode,
+  keywords,
+  isDraftRuntime,
   onOpenOverlapDocs,
   onOpenUnmapped,
 }: {
   topicSetName?: string | null;
-  coverage: {
-    totalDocs: number;
-    classifiedDocs: number;
-    unmappedDocs: number;
-    nodes: number;
-    topics: number;
-  } | null;
-  coverageRows: CoverageRow[];
-  lowCoverageRows: LowCoverageRow[];
-  overlapRows: OverlapRow[];
-  unmapped: {
-    unmappedDocs: number;
-    sampleDocuments: Array<{ docId: string; title?: string | null }>;
-  } | null;
-  onOpenCoverageNode: (row: CoverageRow) => void;
-  onOpenLowCoverageNode: (nodeId: string) => void;
-  onOpenOverlapDocs: (row: OverlapRow) => void;
+  health: HealthSummary | null;
+  liveSummary: LiveSummary;
+  history: DriftHistoryRow[];
+  overlapRows: DriftOverlapRow[];
+  keywords: DriftKeywordRow[];
+  isDraftRuntime: boolean;
+  onOpenOverlapDocs: (row: DriftOverlapRow) => void;
   onOpenUnmapped: () => void;
 }) {
-  const maxDocs = Math.max(1, ...coverageRows.map((row) => row.hitDocs));
+  const recentHistory = history.slice(0, 6).reverse();
+  const maxCoverage = Math.max(0.01, ...recentHistory.map((item) => item.coverageRatio || 0));
+  const maxUnmapped = Math.max(1, ...recentHistory.map((item) => item.unmappedDocs || 0));
+  const trendTone =
+    health?.trend === "UP" ? "text-emerald-700" : health?.trend === "DOWN" ? "text-rose-700" : "text-slate-600";
 
   return (
-    <section className="space-y-4">
-      <section className="rounded-lg border bg-white p-4">
-        <div className="text-lg font-semibold">{t("topicSet.dashboard.title")}</div>
-        <div className="mt-1 text-sm text-muted-foreground">
-          {t("topicSet.dashboard.topicSet")}: {topicSetName || "-"}
+    <section className="space-y-5">
+      <section className="rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#f7f4ea_0%,#ffffff_42%,#eef6ff_100%)] p-6 shadow-[0_24px_60px_rgba(15,23,42,0.08)]">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+              {t("topicSet.ruleHealth.eyebrow")}
+            </div>
+            <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">
+              {t("topicSet.ruleHealth.title")}
+            </h2>
+            <div className="mt-2 text-sm text-slate-600">
+              {t("topicSet.dashboard.topicSet")}: {topicSetName || "-"}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <ScoreCard
+              label={t("topicSet.ruleHealth.healthScore")}
+              value={health?.score != null ? `${health.score} / 100` : "--"}
+              hint={
+                health?.snapshotDate
+                  ? `${t("topicSet.ruleHealth.snapshotDate")} ${formatDateLabel(health.snapshotDate)}`
+                  : isDraftRuntime
+                  ? t("topicSet.ruleHealth.draftOnlyHint")
+                  : t("topicSet.ruleHealth.noHealthData")
+              }
+              accentClass={trendTone}
+            />
+            <ScoreCard
+              label={t("topicSet.ruleHealth.liveCoverage")}
+              value={formatPercent(liveSummary?.coverageRatio)}
+              hint={`${liveSummary?.classifiedDocs ?? 0} / ${Math.max(
+                (liveSummary?.classifiedDocs ?? 0) + (liveSummary?.unmappedDocs ?? 0),
+                0
+              )} ${t("topicSet.coverage.docsUnit")}`}
+            />
+            <ScoreCard
+              label={t("topicSet.ruleHealth.liveUnmapped")}
+              value={String(liveSummary?.unmappedDocs ?? 0)}
+              hint={t("topicSet.analytics.unmapped", { count: liveSummary?.unmappedDocs ?? 0 })}
+            />
+          </div>
         </div>
       </section>
 
-      <section className="rounded-lg border bg-white p-4">
-        <div className="mb-3 text-sm font-semibold">{t("topicSet.coverage.dashboard")}</div>
-        <div className="grid grid-cols-2 gap-3 xl:grid-cols-5">
-          <MetricCard label={t("topicSet.analytics.kpiTotalDocs")} value={coverage?.totalDocs ?? 0} />
-          <MetricCard label={t("topicSet.analytics.kpiCoveredDocs")} value={coverage?.classifiedDocs ?? 0} />
-          <MetricCard label={t("topicSet.analytics.kpiUnmappedDocs")} value={coverage?.unmappedDocs ?? 0} />
-          <MetricCard label={t("topicSet.analytics.kpiCoveredNodes")} value={coverage?.nodes ?? 0} />
-          <MetricCard label={t("topicSet.analytics.kpiTrackedTopics")} value={coverage?.topics ?? 0} />
-        </div>
-      </section>
-
-      <section className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-        <section className="rounded-lg border bg-white p-4">
-          <div className="mb-3 text-sm font-semibold">{t("topicSet.dashboard.coverageDistribution")}</div>
+      <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+        <Panel title={t("topicSet.ruleHealth.coverageTrend")}>
           <div className="space-y-3">
-            {coverageRows.slice(0, 8).map((row) => {
-              const width = Math.max(8, Math.min(100, (row.hitDocs / maxDocs) * 100));
-              return (
-                <button
-                  key={`${row.nodeId ?? row.name}`}
-                  type="button"
-                  className="w-full rounded-md border px-3 py-3 text-left hover:bg-muted/20"
-                  onClick={() => onOpenCoverageNode(row)}
-                >
-                  <div className="mb-1 flex items-center justify-between gap-3 text-xs">
-                    <span>{row.name}</span>
-                    <span className="shrink-0">
-                      {row.hitDocs} {t("topicSet.coverage.docsUnit")} ({row.topics ?? 0} {t("topicSet.coverage.topicsUnit")})
-                    </span>
-                  </div>
-                  <div className="h-2 rounded bg-muted">
-                    <div className="h-2 rounded bg-black" style={{ width: `${width}%` }} />
-                  </div>
-                </button>
-              );
-            })}
-            {coverageRows.length === 0 && (
-              <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
-                {t("topicSet.analytics.empty")}
-              </div>
+            {recentHistory.length > 0 ? (
+              recentHistory.map((item) => (
+                <TrendBar
+                  key={`coverage-${item.snapshotDate}`}
+                  label={formatMonthLabel(item.snapshotDate)}
+                  value={item.coverageRatio}
+                  max={maxCoverage}
+                  valueText={formatPercent(item.coverageRatio)}
+                  fillClass="bg-slate-900"
+                  trackClass="bg-slate-200"
+                />
+              ))
+            ) : (
+              <EmptyState text={isDraftRuntime ? t("topicSet.ruleHealth.draftTrendHint") : t("topicSet.ruleHealth.noTrendData")} />
             )}
           </div>
-        </section>
+        </Panel>
 
-        <section className="rounded-lg border bg-white p-4">
-          <div className="mb-3 text-sm font-semibold">{t("topicSet.analytics.lowCoverageTitle", { threshold: 3 })}</div>
-          <div className="overflow-hidden rounded-md border">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b text-left text-xs text-muted-foreground">
-                  <th className="px-3 py-2">{t("topicSet.coverage.columnNode")}</th>
-                  <th className="px-3 py-2">{t("topicSet.coverage.documents")}</th>
-                  <th className="px-3 py-2">{t("topicSet.unmapped.actions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lowCoverageRows.slice(0, 8).map((row) => (
-                  <tr key={row.nodeId} className="border-b">
-                    <td className="px-3 py-2">{row.name}</td>
-                    <td className="px-3 py-2">{row.hitDocs}</td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        className="rounded border px-2 py-1 text-xs"
-                        onClick={() => onOpenLowCoverageNode(row.nodeId)}
-                      >
-                        {t("topicSet.coverage.openNode")}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {lowCoverageRows.length === 0 && (
-                  <tr>
-                    <td className="px-3 py-4 text-muted-foreground" colSpan={3}>
-                      {t("topicSet.analytics.noLowCoverage")}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        <Panel title={t("topicSet.ruleHealth.unmappedGrowth")}>
+          <div className="space-y-3">
+            {recentHistory.length > 0 ? (
+              recentHistory.map((item) => (
+                <TrendBar
+                  key={`unmapped-${item.snapshotDate}`}
+                  label={formatMonthLabel(item.snapshotDate)}
+                  value={item.unmappedDocs}
+                  max={maxUnmapped}
+                  valueText={String(item.unmappedDocs)}
+                  fillClass="bg-amber-500"
+                  trackClass="bg-amber-100"
+                />
+              ))
+            ) : (
+              <EmptyState text={isDraftRuntime ? t("topicSet.ruleHealth.draftTrendHint") : t("topicSet.ruleHealth.noTrendData")} />
+            )}
           </div>
-        </section>
+        </Panel>
       </section>
 
-      <section className="rounded-lg border bg-white p-4">
-        <div className="mb-3 text-sm font-semibold">{t("topicSet.analytics.overlapTitle")}</div>
-        <div className="overflow-hidden rounded-md border">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="border-b text-left text-xs text-muted-foreground">
-                <th className="px-3 py-2">{t("topicSet.dashboard.topicA")}</th>
-                <th className="px-3 py-2">{t("topicSet.dashboard.topicB")}</th>
-                <th className="px-3 py-2">{t("topicSet.analytics.columnOverlapDocs")}</th>
-                <th className="px-3 py-2">{t("topicSet.unmapped.actions")}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {overlapRows.slice(0, 8).map((row) => (
-                <tr key={`${row.topicAId}:${row.topicBId}`} className="border-b">
-                  <td className="px-3 py-2">{row.topicAName ?? row.topicAId}</td>
-                  <td className="px-3 py-2">{row.topicBName ?? row.topicBId}</td>
-                  <td className="px-3 py-2">{row.overlapDocs}</td>
-                  <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="rounded border px-2 py-1 text-xs"
-                      onClick={() => onOpenOverlapDocs(row)}
-                    >
-                      {t("topicSet.coverage.viewDocs")}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {overlapRows.length === 0 && (
-                <tr>
-                  <td className="px-3 py-4 text-muted-foreground" colSpan={4}>
-                    {t("topicSet.analytics.noOverlap")}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="rounded-lg border bg-white p-4">
-        <div className="mb-2 text-sm font-semibold">{t("topicSet.unmapped.title")}</div>
-        <div className="text-sm text-muted-foreground">
-          {t("topicSet.unmapped.total", { count: unmapped?.unmappedDocs ?? 0 })}
-        </div>
-        <div className="mt-3 space-y-2">
-          {(unmapped?.sampleDocuments ?? []).slice(0, 10).map((doc) => (
-            <div key={doc.docId} className="rounded-md border px-3 py-2 text-sm">
-              {doc.title || doc.docId}
-            </div>
-          ))}
-          {(unmapped?.sampleDocuments ?? []).length === 0 && (
-            <div className="rounded-md border border-dashed px-3 py-3 text-xs text-muted-foreground">
-              {t("topicSet.unmapped.empty")}
-            </div>
-          )}
-        </div>
-        <button
-          type="button"
-          className="mt-4 rounded-md border px-3 py-1.5 text-sm"
-          onClick={onOpenUnmapped}
+      <section className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+        <Panel
+          title={t("topicSet.analytics.overlapTitle")}
+          action={
+            <span className="text-xs text-slate-500">
+              {t("topicSet.ruleHealth.liveOverlapCount", { count: liveSummary?.overlapCount ?? overlapRows.length })}
+            </span>
+          }
         >
-          {t("topicSet.dashboard.openUnmapped")}
-        </button>
+          <div className="space-y-3">
+            {overlapRows.length > 0 ? (
+              overlapRows.slice(0, 6).map((row) => (
+                <button
+                  key={`${row.topicAId}:${row.topicBId}`}
+                  type="button"
+                  onClick={() => onOpenOverlapDocs(row)}
+                  className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition hover:border-slate-900 hover:bg-slate-50"
+                >
+                  <div className="min-w-0 pr-4 text-sm text-slate-700">
+                    <span className="font-medium text-slate-950">{row.topicAName ?? row.topicAId}</span>
+                    <span className="mx-2 text-slate-400">↔</span>
+                    <span className="font-medium text-slate-950">{row.topicBName ?? row.topicBId}</span>
+                  </div>
+                  <div className="shrink-0 rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold text-white">
+                    {row.overlapDocs} {t("topicSet.coverage.docsUnit")}
+                  </div>
+                </button>
+              ))
+            ) : (
+              <EmptyState text={t("topicSet.analytics.noOverlap")} />
+            )}
+          </div>
+        </Panel>
+
+        <Panel
+          title={t("topicSet.ruleHealth.keywordDrift")}
+          action={
+            <button
+              type="button"
+              className="rounded-full border border-slate-300 px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              onClick={onOpenUnmapped}
+            >
+              {t("topicSet.dashboard.openUnmapped")}
+            </button>
+          }
+        >
+          <div className="space-y-2">
+            {keywords.length > 0 ? (
+              keywords.slice(0, 6).map((keyword) => (
+                <div
+                  key={keyword.term}
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,#fffef7_0%,#ffffff_100%)] px-4 py-3"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-slate-950">{keyword.term}</div>
+                    <div className="mt-1 text-xs text-slate-500">
+                      {t("topicSet.ruleHealth.keywordFrequency", { count: keyword.frequency })}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-slate-500">{t("topicSet.ruleHealth.keywordScore")}</div>
+                    <div className="text-sm font-semibold text-amber-700">{keyword.score.toFixed(2)}</div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <EmptyState text={t("topicSet.ruleHealth.noKeywords")} />
+            )}
+          </div>
+        </Panel>
       </section>
     </section>
   );
 }
 
-function MetricCard({ label, value }: { label: string; value: number }) {
+function Panel({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <div className="rounded-xl border bg-slate-50/60 p-4">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="mt-1 text-2xl font-semibold">{value}</div>
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500">{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function ScoreCard({
+  label,
+  value,
+  hint,
+  accentClass,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  accentClass?: string;
+}) {
+  return (
+    <div className="min-w-[180px] rounded-[22px] border border-white/70 bg-white/80 px-4 py-4 backdrop-blur">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</div>
+      <div className={`mt-2 text-3xl font-semibold tracking-tight text-slate-950 ${accentClass ?? ""}`}>{value}</div>
+      <div className="mt-1 text-xs text-slate-500">{hint}</div>
     </div>
   );
+}
+
+function TrendBar({
+  label,
+  value,
+  max,
+  valueText,
+  fillClass,
+  trackClass,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  valueText: string;
+  fillClass: string;
+  trackClass: string;
+}) {
+  const width = `${Math.max(10, Math.min(100, (value / Math.max(max, 0.0001)) * 100))}%`;
+
+  return (
+    <div className="grid grid-cols-[56px_1fr_auto] items-center gap-3">
+      <div className="text-sm font-medium text-slate-600">{label}</div>
+      <div className={`h-3 rounded-full ${trackClass}`}>
+        <div className={`h-3 rounded-full ${fillClass}`} style={{ width }} />
+      </div>
+      <div className="text-sm font-semibold text-slate-900">{valueText}</div>
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500">{text}</div>;
+}
+
+function formatPercent(value?: number | null) {
+  if (value == null || Number.isNaN(value)) return "--";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatMonthLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { month: "short" });
+}
+
+function formatDateLabel(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }

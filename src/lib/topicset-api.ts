@@ -160,6 +160,36 @@ export type TopicSetDiffResponse = {
   topicBindings: TopicSetTopicBindingDiffItem[];
 };
 
+export type TopicSetDriftHistoryItem = {
+  snapshotDate: string;
+  publishedVersion: number;
+  totalDocs: number;
+  classifiedDocs: number;
+  unmappedDocs: number;
+  coverageRatio: number;
+  overlapDocCount: number;
+  overlapRatio: number;
+  healthScore: number;
+};
+
+export type TopicSetDriftHistoryResponse = {
+  topicSetId: string;
+  history: TopicSetDriftHistoryItem[];
+};
+
+export type TopicSetDriftHealthTrend = "UP" | "DOWN" | "FLAT";
+
+export type TopicSetDriftHealthResponse = {
+  topicSetId: string;
+  snapshotDate?: string | null;
+  publishedVersion?: number | null;
+  healthScore?: number | null;
+  trend: TopicSetDriftHealthTrend;
+  coverageRatio?: number | null;
+  unmappedDocs?: number | null;
+  overlapDocCount?: number | null;
+};
+
 export type NodeTopicView = {
   topicId: string;
   topicName?: string | null;
@@ -736,6 +766,33 @@ export async function getTopicSetDiff(params: {
   });
   const result = await unwrapOrReturn<TopicSetDiffResponse>(
     `${TOPICSETS_API_PROXY}/${encodeURIComponent(params.topicSetId)}/diff?${query.toString()}`
+  );
+  if (!result.data) return { data: null, error: result.error };
+  return { data: result.data, error: null };
+}
+
+export async function getTopicSetDriftHistory(
+  topicSetId: string,
+  params?: { from?: string; to?: string; limit?: number }
+): Promise<ApiResult<TopicSetDriftHistoryResponse>> {
+  const query = new URLSearchParams();
+  if (params?.from) query.set("from", params.from);
+  if (params?.to) query.set("to", params.to);
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  const result = await unwrapOrReturn<TopicSetDriftHistoryResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/drift-history${
+      query.toString() ? `?${query.toString()}` : ""
+    }`
+  );
+  if (!result.data) return { data: null, error: result.error };
+  return { data: result.data, error: null };
+}
+
+export async function getTopicSetDriftHealth(
+  topicSetId: string
+): Promise<ApiResult<TopicSetDriftHealthResponse>> {
+  const result = await unwrapOrReturn<TopicSetDriftHealthResponse>(
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/drift-health`
   );
   if (!result.data) return { data: null, error: result.error };
   return { data: result.data, error: null };

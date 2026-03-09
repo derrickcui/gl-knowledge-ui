@@ -1,34 +1,14 @@
-import { NextResponse } from "next/server";
-import { readUpstreamJsonBody } from "../../topics/proxyUtils";
-
-const GLOSSARY_API_BASE =
-  process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+import { GLOSSARY_SERVICE_BASE as GLOSSARY_API_BASE } from "@/lib/api/serverServiceConfig";
+import { proxyGetJson, proxyJsonRoute } from "@/lib/api/serverProxy";
 
 export async function GET(
   _request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const { id } = await context.params;
-    const upstream = await fetch(
-      `${GLOSSARY_API_BASE}/v1/glossary/concepts/${id}`,
-      { cache: "no-store" }
-    );
-    const body = await readUpstreamJsonBody(upstream);
-    return new NextResponse(body, {
-      status: upstream.status,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-      },
+  const { id } = await context.params;
+  return proxyGetJson(`${GLOSSARY_API_BASE}/v1/glossary/concepts/${id}`, {
+      success: false,
+      data: null,
+      error: "glossary-service unreachable",
     });
-  } catch {
-    return NextResponse.json(
-      {
-        success: false,
-        data: null,
-        error: "glossary-service unreachable",
-      },
-      { status: 502 }
-    );
-  }
 }

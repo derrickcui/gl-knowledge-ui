@@ -25,6 +25,14 @@ import {
   updateTopicSetNode,
 } from "@/lib/topicset-api";
 
+const TOPIC_LOAD_BURST_CACHE_MS = 1000;
+const topicLoadPromises = new Map<string, Promise<void>>();
+const topicLoadRecentValues = new Map<string, { expiresAt: number; topics: NodeTopicView[] }>();
+
+function getTopicLoadKey(topicSetId: string | null, version: number | null, nodeId: string) {
+  return `${topicSetId ?? "no-topic-set"}::${version ?? "draft"}::${nodeId}`;
+}
+
 function toLegacyNode(item: TopicSetNodeItem): TopicSetNode {
   return {
     id: item.id,
@@ -438,29 +446,73 @@ export const useTopicSetStore = create<TopicSetStoreState & TopicSetStoreActions
   },
 
   loadNodeTopics: async (nodeId, force = false) => {
+    const { topicSetId, version } = get();
+    const requestKey = getTopicLoadKey(topicSetId, version, nodeId);
+    const recentValue = topicLoadRecentValues.get(requestKey);
     if (!force && get().topicsLoaded[nodeId]) return;
-    const result = await listTopicSetNodeTopics(nodeId);
-    const nextTopics = result.data ?? [];
-    const currentNode = get().nodeMap[nodeId];
-    set({
-      topics: {
-        ...get().topics,
-        [nodeId]: nextTopics,
-      },
-      topicsLoaded: {
-        ...get().topicsLoaded,
-        [nodeId]: true,
-      },
-      nodeMap: currentNode
-        ? {
-            ...get().nodeMap,
-            [nodeId]: {
-              ...currentNode,
-              topicCount: nextTopics.length,
-            },
-          }
-        : get().nodeMap,
-    });
+    if (recentValue && recentValue.expiresAt > Date.now()) {
+      const currentNode = get().nodeMap[nodeId];
+      set({
+        topics: {
+          ...get().topics,
+          [nodeId]: recentValue.topics,
+        },
+        topicsLoaded: {
+          ...get().topicsLoaded,
+          [nodeId]: true,
+        },
+        nodeMap: currentNode
+          ? {
+              ...get().nodeMap,
+              [nodeId]: {
+                ...currentNode,
+                topicCount: recentValue.topics.length,
+              },
+            }
+          : get().nodeMap,
+      });
+      return;
+    }
+    if (topicLoadPromises.has(requestKey)) {
+      await topicLoadPromises.get(requestKey);
+      return;
+    }
+
+    const promise = (async () => {
+      const result = await listTopicSetNodeTopics(nodeId);
+      const nextTopics = result.data ?? [];
+      topicLoadRecentValues.set(requestKey, {
+        expiresAt: Date.now() + TOPIC_LOAD_BURST_CACHE_MS,
+        topics: nextTopics,
+      });
+      const currentNode = get().nodeMap[nodeId];
+      set({
+        topics: {
+          ...get().topics,
+          [nodeId]: nextTopics,
+        },
+        topicsLoaded: {
+          ...get().topicsLoaded,
+          [nodeId]: true,
+        },
+        nodeMap: currentNode
+          ? {
+              ...get().nodeMap,
+              [nodeId]: {
+                ...currentNode,
+                topicCount: nextTopics.length,
+              },
+            }
+          : get().nodeMap,
+      });
+    })();
+
+    topicLoadPromises.set(requestKey, promise);
+    try {
+      await promise;
+    } finally {
+      topicLoadPromises.delete(requestKey);
+    }
   },
 
   selectNode: (nodeId) => set({ selectedNode: nodeId }),

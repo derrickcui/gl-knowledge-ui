@@ -19,6 +19,10 @@ tags:
     description: Search endpoints
   - name: topicset-search
     description: Search-side TopicSet runtime endpoints
+  - name: topicset-drift
+    description: Search-side TopicSet drift endpoints
+  - name: topicset-drift-internal
+    description: Internal TopicSet drift calculation endpoints
   - name: topic
     description: Topic rule evaluation endpoints
   - name: suggest
@@ -1252,6 +1256,285 @@ paths:
                     status: 502
                     detail: failed to fetch topicset runtime
 
+  /api/topicsets/{id}/drift:
+    get:
+      tags: [topicset-drift]
+      summary: Rule drift summary for one TopicSet
+      operationId: topicSetDriftSummary
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Drift summary loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftSummary'
+              examples:
+                driftSummary:
+                  value:
+                    success: true
+                    data:
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      version: 5
+                      classifiedDocs: 329
+                      unmappedDocs: 171
+                      coverageRatio: 0.658
+                      overlapCount: 2
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute drift query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/drift/coverage:
+    get:
+      tags: [topicset-drift]
+      summary: Topic coverage drift for one TopicSet
+      operationId: topicSetDriftCoverage
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Drift coverage loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftCoverage'
+              examples:
+                coverage:
+                  value:
+                    success: true
+                    data:
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      version: 5
+                      topics:
+                        - topicId: topic-1
+                          topicName: 博士后政策
+                          docCount: 40
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute drift query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/drift/overlap:
+    get:
+      tags: [topicset-drift]
+      summary: Topic overlap drift for one TopicSet
+      operationId: topicSetDriftOverlap
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: minOverlap
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 1
+            minimum: 1
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+            minimum: 1
+            maximum: 200
+      responses:
+        "200":
+          description: Drift overlap loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftOverlap'
+              examples:
+                overlap:
+                  value:
+                    success: true
+                    data:
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      version: 5
+                      minOverlap: 1
+                      totalPairs: 1
+                      overlaps:
+                        - topicAId: topic-1
+                          topicA: 博士后政策
+                          topicBId: topic-2
+                          topicB: 博士后科研补贴
+                          overlapDocs: 50
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute drift query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/{id}/drift/keywords:
+    get:
+      tags: [topicset-drift]
+      summary: Keyword drift from unmapped documents for one TopicSet
+      operationId: topicSetDriftKeywords
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: sampleDocs
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 200
+            minimum: 1
+            maximum: 500
+      responses:
+        "200":
+          description: Drift keywords loaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetDriftKeywords'
+              examples:
+                keywords:
+                  value:
+                    success: true
+                    data:
+                      topicSetId: 4257e57e-a1c9-4b76-b880-e487560f382c
+                      version: 5
+                      sampleDocs: 50
+                      limit: 10
+                      keywords:
+                        - term: 科研资助
+                          frequency: 80
+                          score: 20.45
+                    error: null
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to fetch runtime or execute drift query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /internal/drift/topicsets/analyze:
+    post:
+      tags: [topicset-drift-internal]
+      summary: Analyze one TopicSet runtime draft for rule drift
+      operationId: analyzeTopicSetDriftDraft
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriftAnalyzeRequest'
+            examples:
+              basic:
+                value:
+                  topicSetId: policy
+                  runtime:
+                    nodes:
+                      - nodeId: node-1
+                        topics:
+                          - topicId: topic-1
+                            topicName: 博士后政策
+                            compiledGql: "<and>(博士后, 补贴)"
+                          - topicId: topic-2
+                            topicName: 博士后科研补贴
+                            compiledGql: "<and>(博士后, 科研补贴)"
+      responses:
+        "200":
+          description: Drift analysis completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeDriftAnalyze'
+              examples:
+                analyzed:
+                  value:
+                    success: true
+                    data:
+                      coverage:
+                        classifiedDocs: 329
+                        unmappedDocs: 171
+                        coverageRatio: 0.66
+                      overlap:
+                        - topicA: 博士后政策
+                          topicB: 博士后科研补贴
+                          overlapDocs: 50
+                      keywords:
+                        - term: 科研资助
+                          frequency: 80
+                    error: null
+        "400":
+          description: Invalid analysis request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute Solr-backed drift analysis
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/topic/evaluate-doc:
     post:
       tags: [topic]
@@ -1324,6 +1607,309 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "404":
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topics/simulate:
+    post:
+      tags: [topic]
+      summary: Simulate draft topic rule
+      operationId: simulateTopicRule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSimulationRequest'
+      responses:
+        "200":
+          description: Simulation success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSimulation'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topics/simulate-impact:
+    post:
+      tags: [topic]
+      summary: Simulate draft topic impact
+      operationId: simulateTopicImpact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSimulationImpactRequest'
+      responses:
+        "200":
+          description: Simulation impact success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSimulationImpact'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-coverage:
+    post:
+      tags: [topicset-search]
+      summary: Simulate draft TopicSet coverage
+      operationId: simulateTopicSetCoverage
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationCoverageRequest'
+      responses:
+        "200":
+          description: TopicSet simulation coverage success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationCoverage'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-impact:
+    post:
+      tags: [topicset-search]
+      summary: Simulate draft TopicSet node impact
+      operationId: simulateTopicSetImpact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationImpactRequest'
+      responses:
+        "200":
+          description: TopicSet simulation impact success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationImpact'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Draft node not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-overlap:
+    post:
+      tags: [topicset-search]
+      summary: Simulate draft TopicSet overlap
+      operationId: simulateTopicSetOverlap
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationOverlapRequest'
+      responses:
+        "200":
+          description: TopicSet simulation overlap success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationOverlap'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-overlap-docs:
+    post:
+      tags: [topicset-search]
+      summary: Simulate draft TopicSet overlap documents
+      operationId: simulateTopicSetOverlapDocs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationOverlapDocsRequest'
+      responses:
+        "200":
+          description: TopicSet simulation overlap documents success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationOverlapDocs'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Draft topic not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-overlap-docs/{docId}/explain:
+    post:
+      tags: [topicset-search]
+      summary: Explain why one document overlaps two draft TopicSet topics
+      operationId: simulateTopicSetOverlapDocExplain
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationOverlapDocExplainRequest'
+      responses:
+        "200":
+          description: TopicSet simulation overlap explain success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationOverlapDocExplain'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Draft topic or document not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-unmapped:
+    post:
+      tags: [topicset-search]
+      summary: Simulate draft TopicSet unmapped documents
+      operationId: simulateTopicSetUnmapped
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationUnmappedRequest'
+      responses:
+        "200":
+          description: TopicSet simulation unmapped success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationUnmapped'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/topicsets/simulate-dashboard:
+    post:
+      tags: [topicset-search]
+      summary: Simulate draft TopicSet dashboard
+      operationId: simulateTopicSetDashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetSimulationDashboardRequest'
+      responses:
+        "200":
+          description: TopicSet simulation dashboard success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelopeTopicSetSimulationDashboard'
+        "400":
+          description: Invalid request or dataset mismatch
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "502":
+          description: Failed to execute simulation query
           content:
             application/json:
               schema:
@@ -3892,6 +4478,619 @@ components:
           type: string
           format: date-time
 
+    TopicSetDriftSummaryResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+        version:
+          type: integer
+          format: int32
+        classifiedDocs:
+          type: integer
+          format: int64
+        unmappedDocs:
+          type: integer
+          format: int64
+        coverageRatio:
+          type: number
+          format: double
+        overlapCount:
+          type: integer
+          format: int64
+
+    TopicSetDriftCoverageResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+        version:
+          type: integer
+          format: int32
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDriftCoverageTopicView'
+
+    TopicSetDriftCoverageTopicView:
+      type: object
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        docCount:
+          type: integer
+          format: int64
+
+    TopicSetDriftOverlapResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+        version:
+          type: integer
+          format: int32
+        minOverlap:
+          type: integer
+          format: int64
+        totalPairs:
+          type: integer
+          format: int32
+        overlaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDriftOverlapItemView'
+
+    TopicSetDriftOverlapItemView:
+      type: object
+      properties:
+        topicAId:
+          type: string
+          nullable: true
+        topicA:
+          type: string
+          nullable: true
+        topicBId:
+          type: string
+          nullable: true
+        topicB:
+          type: string
+          nullable: true
+        overlapDocs:
+          type: integer
+          format: int64
+
+    TopicSetDriftKeywordsResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+        version:
+          type: integer
+          format: int32
+        sampleDocs:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
+        keywords:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDriftKeywordView'
+
+    TopicSetDriftKeywordView:
+      type: object
+      properties:
+        term:
+          type: string
+        frequency:
+          type: integer
+          format: int64
+        score:
+          type: number
+          format: double
+
+    DriftAnalyzeRequest:
+      type: object
+      required: [topicSetId, runtime]
+      properties:
+        topicSetId:
+          type: string
+        runtime:
+          $ref: '#/components/schemas/DriftRuntimeRequest'
+
+    DriftRuntimeRequest:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/DriftRuntimeNodeRequest'
+
+    DriftRuntimeNodeRequest:
+      type: object
+      required: [nodeId, topics]
+      properties:
+        nodeId:
+          type: string
+        topics:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/DriftRuntimeTopicRequest'
+
+    DriftRuntimeTopicRequest:
+      type: object
+      required: [compiledGql]
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        compiledGql:
+          type: string
+
+    DriftAnalyzeResponse:
+      type: object
+      properties:
+        coverage:
+          $ref: '#/components/schemas/DriftCoverageResult'
+        overlap:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriftOverlapResult'
+        keywords:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriftKeywordResult'
+
+    DriftCoverageResult:
+      type: object
+      properties:
+        classifiedDocs:
+          type: integer
+          format: int64
+        unmappedDocs:
+          type: integer
+          format: int64
+        coverageRatio:
+          type: number
+          format: double
+
+    DriftOverlapResult:
+      type: object
+      properties:
+        topicA:
+          type: string
+          nullable: true
+        topicB:
+          type: string
+          nullable: true
+        overlapDocs:
+          type: integer
+          format: int64
+
+    DriftKeywordResult:
+      type: object
+      properties:
+        term:
+          type: string
+        frequency:
+          type: integer
+          format: int64
+
+    SimulationRuleRequest:
+      type: object
+      required: [compiledGql]
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        compiledGql:
+          type: string
+
+    TopicSimulationRequest:
+      type: object
+      required: [rule]
+      properties:
+        dataset:
+          type: string
+          nullable: true
+        rule:
+          $ref: '#/components/schemas/SimulationRuleRequest'
+        sampleSize:
+          type: integer
+          format: int32
+
+    TopicSimulationImpactRequest:
+      type: object
+      required: [rule]
+      properties:
+        dataset:
+          type: string
+          nullable: true
+        rule:
+          $ref: '#/components/schemas/SimulationRuleRequest'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        sort:
+          type: string
+
+    TopicSimulationResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        compiledGql:
+          type: string
+        docCount:
+          type: integer
+          format: int64
+        sampleDocs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
+    TopicSimulationImpactResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        compiledGql:
+          type: string
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
+    TopicSetSimulationTopicRequest:
+      type: object
+      required: [compiledGql]
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        compiledGql:
+          type: string
+
+    TopicSetSimulationNodeRequest:
+      type: object
+      required: [nodeId, topics]
+      properties:
+        nodeId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetSimulationTopicRequest'
+
+    TopicSetSimulationDraftRequest:
+      type: object
+      required: [nodes]
+      properties:
+        dataset:
+          type: string
+          nullable: true
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetSimulationNodeRequest'
+
+    TopicSetSimulationCoverageRequest:
+      type: object
+      required: [topicSetDraft]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        dedup:
+          type: boolean
+
+    TopicSetSimulationImpactRequest:
+      type: object
+      required: [topicSetDraft, nodeId]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        nodeId:
+          type: string
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        sort:
+          type: string
+
+    TopicSetSimulationCoverageNodeView:
+      type: object
+      properties:
+        nodeId:
+          type: string
+        name:
+          type: string
+        docCount:
+          type: integer
+          format: int64
+        topics:
+          type: integer
+          format: int32
+
+    TopicSetSimulationCoverageResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        dedup:
+          type: boolean
+        totalDocs:
+          type: integer
+          format: int64
+        classifiedDocs:
+          type: integer
+          format: int64
+        unmappedDocs:
+          type: integer
+          format: int64
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetSimulationCoverageNodeView'
+
+    TopicSetSimulationImpactResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        nodeId:
+          type: string
+        nodeName:
+          type: string
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
+    TopicSetSimulationOverlapRequest:
+      type: object
+      required: [topicSetDraft]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        minOverlap:
+          type: integer
+          format: int32
+        limit:
+          type: integer
+          format: int32
+
+    TopicSetSimulationOverlapDocsRequest:
+      type: object
+      required: [topicSetDraft, topicAId, topicBId]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        topicAId:
+          type: string
+        topicBId:
+          type: string
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        sort:
+          type: string
+
+    TopicSetSimulationOverlapDocExplainRequest:
+      type: object
+      required: [topicSetDraft, topicAId, topicBId]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        topicAId:
+          type: string
+        topicBId:
+          type: string
+
+    TopicSetSimulationOverlapItemView:
+      type: object
+      properties:
+        topicAId:
+          type: string
+        topicAName:
+          type: string
+        topicBId:
+          type: string
+        topicBName:
+          type: string
+        overlapDocs:
+          type: integer
+          format: int64
+
+    TopicSetSimulationOverlapResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        minOverlap:
+          type: integer
+          format: int64
+        totalPairs:
+          type: integer
+          format: int32
+        overlaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetSimulationOverlapItemView'
+
+    TopicSetSimulationOverlapDocsResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        topicAId:
+          type: string
+        topicAName:
+          type: string
+        topicBId:
+          type: string
+        topicBName:
+          type: string
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
+    TopicSetSimulationOverlapDocExplainResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        docId:
+          type: string
+        topicA:
+          $ref: '#/components/schemas/TopicSetOverlapTopicExplainView'
+        topicB:
+          $ref: '#/components/schemas/TopicSetOverlapTopicExplainView'
+
+    TopicSetSimulationUnmappedRequest:
+      type: object
+      required: [topicSetDraft]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        sort:
+          type: string
+
+    TopicSetSimulationUnmappedResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
+    TopicSetSimulationDashboardRequest:
+      type: object
+      required: [topicSetDraft]
+      properties:
+        topicSetDraft:
+          $ref: '#/components/schemas/TopicSetSimulationDraftRequest'
+        dedup:
+          type: boolean
+        overlapMinOverlap:
+          type: integer
+          format: int32
+        overlapLimit:
+          type: integer
+          format: int32
+        unmappedSampleSize:
+          type: integer
+          format: int32
+        unmappedSort:
+          type: string
+
+    TopicSetSimulationDashboardResponse:
+      type: object
+      properties:
+        dataset:
+          type: string
+        coverage:
+          $ref: '#/components/schemas/TopicSetSimulationCoverageResponse'
+        overlap:
+          $ref: '#/components/schemas/TopicSetSimulationOverlapResponse'
+        unmappedDocs:
+          type: integer
+          format: int64
+        unmappedSampleSize:
+          type: integer
+          format: int32
+        unmappedSampleSort:
+          type: string
+        unmappedSampleDocs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetDocumentItemView'
+
     ApiEnvelopeTopicSetCoverage:
       type: object
       properties:
@@ -4042,6 +5241,188 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicSetRuntimeCacheRefreshResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetDriftSummary:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDriftSummaryResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetDriftCoverage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDriftCoverageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetDriftOverlap:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDriftOverlapResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetDriftKeywords:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetDriftKeywordsResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeDriftAnalyze:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/DriftAnalyzeResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSimulation:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSimulationResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSimulationImpact:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSimulationImpactResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationCoverage:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationCoverageResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationImpact:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationImpactResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationOverlap:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationOverlapResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationOverlapDocs:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationOverlapDocsResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationOverlapDocExplain:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationOverlapDocExplainResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationUnmapped:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationUnmappedResponse'
+        error:
+          nullable: true
+          oneOf:
+            - type: object
+            - type: string
+
+    ApiEnvelopeTopicSetSimulationDashboard:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetSimulationDashboardResponse'
         error:
           nullable: true
           oneOf:

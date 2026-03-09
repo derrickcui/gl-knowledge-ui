@@ -1,0 +1,5 @@
+const DEFAULT_GLOSSARY_API_BASE = "http://localhost:8000";
+
+export const GLOSSARY_API_BASE =
+  process.env.NEXT_PUBLIC_GLOSSARY_API ??
+  DEFAULT_GLOSSARY_API_BASE;

@@ -1,52 +1,27 @@
-import { NextResponse } from "next/server";
-import { readUpstreamJsonBody } from "../proxyUtils";
-
-const TEMPLATE_API_BASE =
-  process.env.NEXT_PUBLIC_TEMPLATE_API ??
-  "http://localhost:8080";
+import { TEMPLATE_SERVICE_BASE as TEMPLATE_API_BASE } from "@/lib/api/serverServiceConfig";
+import { proxyGetJson, proxyMutationJson } from "@/lib/api/serverProxy";
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  try {
-    const upstream = await fetch(
-      `${TEMPLATE_API_BASE}/api/templates/${id}`,
-      { cache: "no-store" }
-    );
-    const body = await readUpstreamJsonBody(upstream);
-    return new NextResponse(body, {
-      status: upstream.status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
-  } catch {
-    return NextResponse.json(
-      { success: false, data: null, error: "template-service unreachable" },
-      { status: 502 }
-    );
-  }
+  return proxyGetJson(`${TEMPLATE_API_BASE}/api/templates/${id}`, {
+    success: false,
+    data: null,
+    error: "template-service unreachable",
+  });
 }
 
 export async function DELETE(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  try {
-    const upstream = await fetch(
-      `${TEMPLATE_API_BASE}/api/templates/${id}`,
-      { method: "DELETE" }
-    );
-    const body = await readUpstreamJsonBody(upstream);
-    return new NextResponse(body, {
-      status: upstream.status,
-      headers: { "content-type": "application/json; charset=utf-8" },
-    });
-  } catch {
-    return NextResponse.json(
-      { success: false, data: null, error: "template-service unreachable" },
-      { status: 502 }
-    );
-  }
+  return proxyMutationJson(
+    `${TEMPLATE_API_BASE}/api/templates/${id}`,
+    "DELETE",
+    undefined,
+    { success: false, data: null, error: "template-service unreachable" }
+  );
 }

@@ -1,12 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { fetchGovernanceTopicDocs } from "@/lib/governance-topic-detail-api";
 import { fetchCoverageTopics } from "@/lib/governance-coverage-api";
+import { fetchTopicDraft, previewTopicRule } from "@/lib/topic-api";
+import { readDefaultRuntimeSceneSelection } from "@/lib/runtime-default-scene";
+import { fetchRuntimeEnvironmentById, RuntimeEnvironment } from "@/lib/runtime-api";
 import {
   fetchTopicSetCoverage,
   fetchTopicSetGovernanceDashboard,
+  TopicSetDocumentPageResponse,
   fetchTopicSetNodeDistribution,
   fetchTopicSetNodeImpact,
   fetchTopicSetOverlapDashboard,
@@ -20,6 +25,7 @@ import {
 import {
   approveTopicSet,
   archiveTopicSet,
+  listTopicSetNodeTopics,
   createTopicSetVersion,
   deprecateTopicSet,
   NodeTopicView,
@@ -33,6 +39,18 @@ import {
   rollbackTopicSetVersion,
   submitTopicSetReview,
 } from "@/lib/topicset-api";
+import {
+  simulateTopicSetCoverage,
+  simulateTopicSetDashboard,
+  TopicSetSimulateImpactResponse,
+  simulateTopicSetImpact,
+  simulateTopicSetOverlap,
+  TopicSetSimulateOverlapDocsResponse,
+  simulateTopicSetOverlapDocs,
+  simulateTopicSetOverlapExplain,
+  simulateTopicSetUnmapped,
+  TopicSetDraftPayload,
+} from "@/lib/topicset-simulation-api";
 import { useTopicSetStore } from "@/store/topicsetStore";
 import { t } from "@/i18n";
 import { NodeDetailPanel } from "../components/node-detail-panel";
@@ -57,6 +75,9 @@ type FeedbackState = {
 } | null;
 
 const VERSION_CONFLICT_STATUS = 409;
+const LOW_COVERAGE_THRESHOLD = 3;
+const governanceTopicDocCountPromiseCache = new Map<string, Promise<number>>();
+const governanceTopicDocCountValueCache = new Map<string, number>();
 
 function isDescendant(
   childrenByParent: Record<string, string[]>,
@@ -170,6 +191,94 @@ function normalizeLifecycleStatus(value?: string | null): LifecycleStatus {
   return "DRAFT";
 }
 
+function isPublishedLifecycleStatus(status: LifecycleStatus) {
+  return status === "PUBLISHED" || status === "DEPRECATED" || status === "ARCHIVED";
+}
+
+function getImpactDocuments(
+  data: TopicSetDocumentPageResponse | TopicSetSimulateImpactResponse
+) {
+  return "items" in data ? data.items ?? [] : data.documents ?? [];
+}
+
+function getOverlapDocuments(
+  data: TopicSetDocumentPageResponse | TopicSetSimulateOverlapDocsResponse
+) {
+  return "items" in data ? data.items ?? [] : data.documents ?? [];
+}
+
+function getDocumentId(item: { docId?: string | null } | { docId: string }) {
+  if ("docId" in item && item.docId) return item.docId;
+  if ("id" in item && typeof item.id === "string" && item.id) return item.id;
+  return "";
+}
+
+function getDocumentTitle(item: { title?: string | null; docId?: string | null } | { title?: string | null; docId: string }) {
+  return item.title ?? getDocumentId(item);
+}
+
+function buildFieldMappingMap(environment?: RuntimeEnvironment | null) {
+  const map: Record<string, string> = {};
+  for (const row of environment?.fieldMappings ?? []) {
+    const logicalField = String(row.logicalField ?? "").trim().toUpperCase();
+    const physicalField = String(row.physicalField ?? "").trim();
+    if (!logicalField || !physicalField) continue;
+    map[logicalField] = physicalField;
+  }
+  return map;
+}
+
+function applyRuntimeFieldMappings(gql: string, environment?: RuntimeEnvironment | null) {
+  const fieldMappings = buildFieldMappingMap(environment);
+  let next = gql;
+  for (const [logicalField, physicalField] of Object.entries(fieldMappings)) {
+    next = next.replaceAll(`/${logicalField}>`, `/${physicalField}>`);
+  }
+  return next;
+}
+
+function getSimulationRuntimeMissingMessage() {
+  return t("topicSet.simulation.runtimeRequiredMessage");
+}
+
+function getSimulationDraftUnavailableMessage() {
+  return "No valid compiled topics available for simulation.";
+}
+
+function getSimulationNodeUnavailableMessage() {
+  return "Selected node has no valid compiled topics for simulation.";
+}
+
+async function loadGovernanceTopicDocCount(topicId: string, runtimeRefreshTick: number) {
+  const cacheKey = `${runtimeRefreshTick}:${topicId}`;
+  if (governanceTopicDocCountValueCache.has(cacheKey)) {
+    return governanceTopicDocCountValueCache.get(cacheKey) ?? 0;
+  }
+  if (governanceTopicDocCountPromiseCache.has(cacheKey)) {
+    return governanceTopicDocCountPromiseCache.get(cacheKey) as Promise<number>;
+  }
+
+  const promise = (async () => {
+    const result = await fetchGovernanceTopicDocs(topicId, {
+      matchMode: "REALTIME",
+      page: 0,
+      size: 1,
+      sortBy: "WEIGHT",
+      sortOrder: "DESC",
+    });
+    const total = Number(result.data?.total ?? 0);
+    governanceTopicDocCountValueCache.set(cacheKey, total);
+    return total;
+  })();
+
+  governanceTopicDocCountPromiseCache.set(cacheKey, promise);
+  try {
+    return await promise;
+  } finally {
+    governanceTopicDocCountPromiseCache.delete(cacheKey);
+  }
+}
+
 const MAX_TAXONOMY_DEPTH = 6;
 
 export function TopicSetWorkspaceClient({
@@ -186,6 +295,7 @@ export function TopicSetWorkspaceClient({
     rootNodeIds,
     selectedNode,
     topics,
+    topicsLoaded,
     version,
     versions,
     setTopicSet,
@@ -349,6 +459,34 @@ export function TopicSetWorkspaceClient({
     topicBindingsChanged: number;
   } | null>(null);
   const [baselineDiff, setBaselineDiff] = useState<Awaited<ReturnType<typeof getTopicSetDiff>>["data"] | null>(null);
+  const [simulationRuntimeEnvironment, setSimulationRuntimeEnvironment] = useState<RuntimeEnvironment | null>(null);
+  const [simulationRuntimeLoading, setSimulationRuntimeLoading] = useState(true);
+  const [simulationTopicsPriming, setSimulationTopicsPriming] = useState(false);
+  const compiledTopicGqlCacheRef = useRef<Record<string, string>>({});
+  const simulationDraftCacheRef = useRef<{
+    key: string;
+    draft: TopicSetDraftPayload;
+  } | null>(null);
+  const simulationDraftPromiseRef = useRef<{
+    key: string;
+    promise: Promise<TopicSetDraftPayload | null>;
+  } | null>(null);
+  const simulationCoverageBundleCacheRef = useRef<{
+    key: string;
+    data: {
+      coverageResult: Awaited<ReturnType<typeof simulateTopicSetCoverage>>;
+      dashboardResult: Awaited<ReturnType<typeof simulateTopicSetDashboard>>;
+      overlapResult: Awaited<ReturnType<typeof simulateTopicSetOverlap>>;
+    };
+  } | null>(null);
+  const simulationCoverageBundlePromiseRef = useRef<{
+    key: string;
+    promise: Promise<{
+      coverageResult: Awaited<ReturnType<typeof simulateTopicSetCoverage>>;
+      dashboardResult: Awaited<ReturnType<typeof simulateTopicSetDashboard>>;
+      overlapResult: Awaited<ReturnType<typeof simulateTopicSetOverlap>>;
+    }>;
+  } | null>(null);
 
   const refreshNodeDetail = useCallback(
     async (nodeId?: string | null) => {
@@ -404,14 +542,17 @@ export function TopicSetWorkspaceClient({
     return map;
   }, [versions]);
   const lifecycleStatus = useMemo<LifecycleStatus>(() => {
-    if (version == null || viewedVersion === currentWorkspaceVersion) {
-      return normalizeLifecycleStatus(topicSetDetail?.status);
-    }
     if (viewedVersion != null && versionStatusMap.has(viewedVersion)) {
       return normalizeLifecycleStatus(versionStatusMap.get(viewedVersion));
     }
     return normalizeLifecycleStatus(topicSetDetail?.status);
-  }, [currentWorkspaceVersion, topicSetDetail?.status, version, versionStatusMap, viewedVersion]);
+  }, [topicSetDetail?.status, versionStatusMap, viewedVersion]);
+  const usePublishedGovernanceApis = isPublishedLifecycleStatus(lifecycleStatus);
+  const simulationRuntimeReady = Boolean(
+    simulationRuntimeEnvironment?.id && simulationRuntimeEnvironment?.datasetName
+  );
+  const showSimulationRuntimeWarning =
+    !usePublishedGovernanceApis && !simulationRuntimeLoading && !simulationRuntimeReady;
 
   useEffect(() => {
     let cancelled = false;
@@ -435,6 +576,35 @@ export function TopicSetWorkspaceClient({
       cancelled = true;
     };
   }, [latestPublishedVersion, topicSetDetail?.version, topicSetId]);
+
+  useEffect(() => {
+    compiledTopicGqlCacheRef.current = {};
+    simulationDraftCacheRef.current = null;
+    simulationDraftPromiseRef.current = null;
+    simulationCoverageBundleCacheRef.current = null;
+    simulationCoverageBundlePromiseRef.current = null;
+  }, [runtimeRefreshTick, simulationRuntimeEnvironment?.id, topicSetId, viewedVersion]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSimulationRuntimeEnvironment() {
+      setSimulationRuntimeLoading(true);
+      const selection = readDefaultRuntimeSceneSelection();
+      if (!selection?.id) {
+        setSimulationRuntimeEnvironment(null);
+        setSimulationRuntimeLoading(false);
+        return;
+      }
+      const result = await fetchRuntimeEnvironmentById(selection.id);
+      if (cancelled) return;
+      setSimulationRuntimeEnvironment(result.data ?? null);
+      setSimulationRuntimeLoading(false);
+    }
+    void loadSimulationRuntimeEnvironment();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -473,7 +643,7 @@ export function TopicSetWorkspaceClient({
 
   useEffect(() => {
     if (!selectedNode) return;
-    loadNodeTopics(selectedNode);
+    void loadNodeTopics(selectedNode);
   }, [selectedNode, loadNodeTopics]);
 
   useEffect(() => {
@@ -522,6 +692,55 @@ export function TopicSetWorkspaceClient({
   const flatNodes = useMemo(
     () => Object.values(nodeMap).sort((a, b) => a.path.localeCompare(b.path)),
     [nodeMap]
+  );
+  const simulationTopicsReady = useMemo(
+    () => flatNodes.every((node) => topicsLoaded[node.id]),
+    [flatNodes, topicsLoaded]
+  );
+  const simulationDraftKey = useMemo(() => {
+    if (!topicSetId || !simulationRuntimeEnvironment?.id || !simulationRuntimeEnvironment?.datasetName) {
+      return null;
+    }
+    return [
+      topicSetId,
+      simulationRuntimeEnvironment.id,
+      simulationRuntimeEnvironment.datasetName,
+      flatNodes.map((node) => `${node.id}:${node.topicCount ?? 0}`).join("|"),
+      Object.keys(topicsLoaded)
+        .filter((nodeId) => topicsLoaded[nodeId])
+        .sort()
+        .map((nodeId) => `${nodeId}:${(topics[nodeId] ?? []).map((topic) => topic.topicId).sort().join(",")}`)
+        .join("|"),
+    ].join("::");
+  }, [flatNodes, simulationRuntimeEnvironment, topicSetId, topics, topicsLoaded]);
+  useEffect(() => {
+    let cancelled = false;
+    async function primeNodeTopics() {
+      const canPrimeTopics = usePublishedGovernanceApis || simulationRuntimeReady;
+      if (!canPrimeTopics || flatNodes.length === 0) {
+        setSimulationTopicsPriming(false);
+        return;
+      }
+      const missingNodeIds = flatNodes
+        .map((node) => node.id)
+        .filter((nodeId) => !topicsLoaded[nodeId]);
+      if (missingNodeIds.length === 0) {
+        setSimulationTopicsPriming(false);
+        return;
+      }
+      setSimulationTopicsPriming(true);
+      await Promise.all(missingNodeIds.map((nodeId) => loadNodeTopics(nodeId)));
+      if (cancelled) return;
+      setSimulationTopicsPriming(false);
+    }
+    void primeNodeTopics();
+    return () => {
+      cancelled = true;
+    };
+  }, [flatNodes, loadNodeTopics, simulationRuntimeReady, topicsLoaded, usePublishedGovernanceApis]);
+  const totalBoundTopics = useMemo(
+    () => flatNodes.reduce((sum, node) => sum + Number(node.topicCount ?? 0), 0),
+    [flatNodes]
   );
   const maxDocCount = useMemo(
     () => Math.max(1, ...Object.values(nodeMap).map((node) => node.docCount ?? 0)),
@@ -630,118 +849,448 @@ export function TopicSetWorkspaceClient({
     return exceedsDepthLimit(moveSourceNodeId, moveParentId);
   }, [moveParentId, moveSourceNodeId, exceedsDepthLimit]);
 
+  const buildSimulationDraft = useCallback(async (): Promise<TopicSetDraftPayload | null> => {
+    if (!simulationDraftKey || !topicSetId || !simulationRuntimeEnvironment?.id || !simulationRuntimeEnvironment?.datasetName) {
+      return null;
+    }
+
+    if (simulationDraftCacheRef.current?.key === simulationDraftKey) {
+      return simulationDraftCacheRef.current.draft;
+    }
+
+    if (simulationDraftPromiseRef.current?.key === simulationDraftKey) {
+      return simulationDraftPromiseRef.current.promise;
+    }
+
+    if (!flatNodes.every((node) => topicsLoaded[node.id])) {
+      return null;
+    }
+
+    const promise = (async () => {
+      const nodeTopicEntries = flatNodes.map(
+        (node) => [node.id, topics[node.id] ?? []] as const
+      );
+
+      const topicsByNodeId = new Map<string, NodeTopicView[]>(
+        nodeTopicEntries.map(([nodeId, nodeTopics]) => [nodeId, nodeTopics])
+      );
+      const topicIds = Array.from(
+        new Set(
+          nodeTopicEntries.flatMap(([, nodeTopics]) => nodeTopics.map((topic) => topic.topicId))
+        )
+      );
+
+      await Promise.all(
+        topicIds.map(async (topicId) => {
+          if (compiledTopicGqlCacheRef.current[topicId]) return;
+          const draftResult = await fetchTopicDraft(topicId);
+          const draftRule = draftResult.data?.rule;
+          if (!draftRule) return;
+          const previewResult = await previewTopicRule(topicId, {
+            rule: draftRule,
+            runtimeEnvironmentId: simulationRuntimeEnvironment?.id ?? undefined,
+          });
+          const gql = previewResult.data?.gql?.trim();
+          if (gql) {
+            compiledTopicGqlCacheRef.current[topicId] = applyRuntimeFieldMappings(
+              gql,
+              simulationRuntimeEnvironment
+            );
+          }
+        })
+      );
+
+      const nodes = flatNodes
+        .map((node) => ({
+          nodeId: node.id,
+          name: node.name,
+          topics: (topicsByNodeId.get(node.id) ?? [])
+            .map((topic) => {
+              const compiledGql = compiledTopicGqlCacheRef.current[topic.topicId];
+              if (!compiledGql) return null;
+              return {
+                topicId: topic.topicId,
+                topicName: topic.topicName ?? null,
+                compiledGql,
+              };
+            })
+            .filter((topic): topic is NonNullable<typeof topic> => Boolean(topic)),
+        }))
+        .filter((node) => node.topics.length > 0);
+
+      if (nodes.length === 0) {
+        return null;
+      }
+
+      const draft = {
+        dataset: simulationRuntimeEnvironment?.datasetName,
+        nodes,
+      };
+      simulationDraftCacheRef.current = { key: simulationDraftKey, draft };
+      return draft;
+    })();
+
+    simulationDraftPromiseRef.current = { key: simulationDraftKey, promise };
+    try {
+      return await promise;
+    } finally {
+      if (simulationDraftPromiseRef.current?.key === simulationDraftKey) {
+        simulationDraftPromiseRef.current = null;
+      }
+    }
+  }, [flatNodes, simulationDraftKey, simulationRuntimeEnvironment, topicSetId, topics, topicsLoaded]);
+
+  const hasSimulationNode = useCallback((draft: TopicSetDraftPayload | null, nodeId: string) => {
+    if (!draft) return false;
+    return draft.nodes.some((node) => node.nodeId === nodeId);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     async function loadCoverage() {
       if (!topicSetId) return;
-      const [coverageResult, governanceResult, overlapDashboardResult, unmappedDashboardResult, unmappedResult, topicsResult] = await Promise.all([
-        fetchTopicSetCoverage(topicSetId, { dedup: coverageDedup }),
-        fetchTopicSetGovernanceDashboard(topicSetId, {
-          lowCoverageThreshold: 3,
-          overlapMinOverlap: 1,
-          overlapLimit: 20,
-        }),
-        fetchTopicSetOverlapDashboard(topicSetId, {
-          minOverlap: 1,
-          limit: 20,
-        }),
-        fetchTopicSetUnmappedDashboard(topicSetId, { sampleSize: 10 }),
-        fetchTopicSetUnmapped(topicSetId, { page: unmappedPage, size: unmappedSize, sort: unmappedSort }),
-        fetchCoverageTopics(),
-      ]);
+      if (usePublishedGovernanceApis) {
+        const [
+          coverageResult,
+          governanceResult,
+          overlapDashboardResult,
+          unmappedDashboardResult,
+          topicsResult,
+        ] = await Promise.all([
+          fetchTopicSetCoverage(topicSetId, { dedup: coverageDedup }),
+          fetchTopicSetGovernanceDashboard(topicSetId, {
+            lowCoverageThreshold: LOW_COVERAGE_THRESHOLD,
+            overlapMinOverlap: 1,
+            overlapLimit: 20,
+          }),
+          fetchTopicSetOverlapDashboard(topicSetId, {
+            minOverlap: 1,
+            limit: 20,
+          }),
+          fetchTopicSetUnmappedDashboard(topicSetId, { sampleSize: 10 }),
+          fetchCoverageTopics(),
+        ]);
+        if (cancelled) return;
+
+        const {
+          nodeMap: latestNodeMap,
+          rootNodeIds: latestRootNodeIds,
+          childrenByParent: latestChildrenByParent,
+        } = useTopicSetStore.getState();
+
+        const coverageNodes = coverageResult.data?.nodes ?? [];
+        const rows = coverageNodes
+          .map((item) => ({
+            nodeId: item.nodeId,
+            name: latestNodeMap[item.nodeId]?.name || item.name || item.nodeId,
+            hitDocs: Number(item.docCount ?? 0),
+            topics: Number(item.topics ?? latestNodeMap[item.nodeId]?.topicCount ?? 0),
+          }))
+          .filter((item) => {
+            if (!item.nodeId) return true;
+            const isRoot = latestRootNodeIds.includes(item.nodeId);
+            const hasChildren = (latestChildrenByParent[item.nodeId]?.length ?? 0) > 0;
+            return !(isRoot && hasChildren);
+          })
+          .sort((a, b) => b.hitDocs - a.hitDocs);
+        setCoverageRows(rows);
+        setCoverageDashboard(
+          governanceResult.data?.coverage
+            ? {
+                totalDocs: Number(governanceResult.data.coverage.totalDocs ?? 0),
+                classifiedDocs: Number(governanceResult.data.coverage.classifiedDocs ?? 0),
+                unmappedDocs: Number(governanceResult.data.coverage.unmappedDocs ?? 0),
+                nodes: Number(governanceResult.data.coverage.nodes ?? 0),
+                topics: Number(governanceResult.data.coverage.topics ?? 0),
+              }
+            : null
+        );
+        setLowCoverageRows(
+          (governanceResult.data?.lowCoverage?.nodes ?? []).map((item) => ({
+            nodeId: item.nodeId,
+            name: latestNodeMap[item.nodeId]?.name || item.name || item.nodeId,
+            hitDocs: Number(item.docCount ?? 0),
+            topicCount: Number(item.topicCount ?? 0),
+          }))
+        );
+        setOverlapRows(
+          (overlapDashboardResult.data?.items ?? []).map((item) => ({
+            topicAId: item.topicAId,
+            topicAName: item.topicAName,
+            topicBId: item.topicBId,
+            topicBName: item.topicBName,
+            overlapDocs: Number(item.overlapDocs ?? 0),
+            docsPath: item.docsPath ?? null,
+            explainPathTemplate: item.explainPathTemplate ?? null,
+          }))
+        );
+        setUnmappedDashboard(
+          unmappedDashboardResult.data
+            ? {
+                totalDocs: Number(unmappedDashboardResult.data.totalDocs ?? 0),
+                classifiedDocs: Number(unmappedDashboardResult.data.classifiedDocs ?? 0),
+                unmappedDocs: Number(unmappedDashboardResult.data.unmappedDocs ?? 0),
+                sampleDocuments: (unmappedDashboardResult.data.sampleDocuments ?? []).map((item) => ({
+                  docId: item.docId,
+                  title: item.title ?? null,
+                })),
+              }
+            : null
+        );
+
+        if (topicsResult.data) {
+          const nextTopicHits: Record<string, number> = {};
+          for (const item of topicsResult.data.topics ?? []) {
+            nextTopicHits[item.topicId] = item.hitDocs ?? 0;
+          }
+          setTopicHitDocsMap(nextTopicHits);
+        }
+        return;
+      }
+
+      if (!simulationRuntimeReady) {
+        setCoverageRows([]);
+        setCoverageDashboard(null);
+        setLowCoverageRows([]);
+        setOverlapRows([]);
+        setUnmappedDashboard(null);
+        setUnmappedTotal(0);
+        setUnmappedDocs([]);
+        setTopicHitDocsMap({});
+        return;
+      }
+      if (!simulationTopicsReady || simulationTopicsPriming) {
+        return;
+      }
+
+      const simulationDraft = await buildSimulationDraft();
+      if (!simulationDraft) {
+        setCoverageRows([]);
+        setCoverageDashboard(null);
+        setLowCoverageRows([]);
+        setOverlapRows([]);
+        setUnmappedDashboard(null);
+        setUnmappedTotal(0);
+        setUnmappedDocs([]);
+        setTopicHitDocsMap({});
+        return;
+      }
+      const bundleKey = [
+        simulationDraftKey ?? "no-draft",
+        `dedup=${coverageDedup}`,
+        `page=${unmappedPage}`,
+        `size=${unmappedSize}`,
+        `sort=${unmappedSort}`,
+      ].join("::");
+      let bundle = simulationCoverageBundleCacheRef.current?.key === bundleKey
+        ? simulationCoverageBundleCacheRef.current.data
+        : null;
+      if (!bundle) {
+        const existingPromise =
+          simulationCoverageBundlePromiseRef.current?.key === bundleKey
+            ? simulationCoverageBundlePromiseRef.current.promise
+            : null;
+        const promise =
+          existingPromise ??
+          Promise.all([
+            simulateTopicSetCoverage({ dedup: coverageDedup, topicSetDraft: simulationDraft }),
+            simulateTopicSetDashboard({
+              dedup: coverageDedup,
+              overlapMinOverlap: 1,
+              overlapLimit: 20,
+              unmappedSampleSize: 10,
+              unmappedSort,
+              topicSetDraft: simulationDraft,
+            }),
+            simulateTopicSetOverlap({
+              minOverlap: 1,
+              limit: 20,
+              topicSetDraft: simulationDraft,
+            }),
+          ]).then(([coverageResult, dashboardResult, overlapResult]) => ({
+            coverageResult,
+            dashboardResult,
+            overlapResult,
+          }));
+        if (!existingPromise) {
+          simulationCoverageBundlePromiseRef.current = { key: bundleKey, promise };
+        }
+        try {
+          bundle = await promise;
+          simulationCoverageBundleCacheRef.current = { key: bundleKey, data: bundle };
+        } finally {
+          if (simulationCoverageBundlePromiseRef.current?.key === bundleKey) {
+            simulationCoverageBundlePromiseRef.current = null;
+          }
+        }
+      }
       if (cancelled) return;
+      const { coverageResult, dashboardResult, overlapResult } = bundle;
+      const {
+        nodeMap: latestNodeMap,
+        rootNodeIds: latestRootNodeIds,
+        childrenByParent: latestChildrenByParent,
+        nodeMap: latestNodeMapAll,
+      } = useTopicSetStore.getState();
+      const latestTotalBoundTopics = Object.values(latestNodeMapAll).reduce(
+        (sum, node) => sum + Number(node.topicCount ?? 0),
+        0
+      );
 
       const coverageNodes = coverageResult.data?.nodes ?? [];
       const rows = coverageNodes
         .map((item) => ({
           nodeId: item.nodeId,
-          name: nodeMap[item.nodeId]?.name || item.name || item.nodeId,
+          name: latestNodeMap[item.nodeId]?.name || item.name || item.nodeId,
           hitDocs: Number(item.docCount ?? 0),
-          topics: Number(item.topics ?? nodeMap[item.nodeId]?.topicCount ?? 0),
+          topics: Number(latestNodeMap[item.nodeId]?.topicCount ?? 0),
         }))
         .filter((item) => {
           if (!item.nodeId) return true;
-          const isRoot = rootNodeIds.includes(item.nodeId);
-          const hasChildren = (childrenByParent[item.nodeId]?.length ?? 0) > 0;
+          const isRoot = latestRootNodeIds.includes(item.nodeId);
+          const hasChildren = (latestChildrenByParent[item.nodeId]?.length ?? 0) > 0;
           return !(isRoot && hasChildren);
         })
         .sort((a, b) => b.hitDocs - a.hitDocs);
+
       setCoverageRows(rows);
-      setCoverageDashboard(
-        governanceResult.data?.coverage
-          ? {
-              totalDocs: Number(governanceResult.data.coverage.totalDocs ?? 0),
-              classifiedDocs: Number(governanceResult.data.coverage.classifiedDocs ?? 0),
-              unmappedDocs: Number(governanceResult.data.coverage.unmappedDocs ?? 0),
-              nodes: Number(governanceResult.data.coverage.nodes ?? 0),
-              topics: Number(governanceResult.data.coverage.topics ?? 0),
-            }
-          : null
-      );
+      setCoverageDashboard({
+        totalDocs: Number(
+          dashboardResult.data?.coverage?.totalDocs ?? coverageResult.data?.totalDocs ?? 0
+        ),
+        classifiedDocs: Number(
+          dashboardResult.data?.coverage?.classifiedDocs ?? coverageResult.data?.classifiedDocs ?? 0
+        ),
+        unmappedDocs: Number(
+          dashboardResult.data?.coverage?.unmappedDocs ?? coverageResult.data?.unmappedDocs ?? 0
+        ),
+        nodes: rows.length,
+        topics: latestTotalBoundTopics,
+      });
       setLowCoverageRows(
-        (governanceResult.data?.lowCoverage?.nodes ?? []).map((item) => ({
-          nodeId: item.nodeId,
-          name: nodeMap[item.nodeId]?.name || item.name || item.nodeId,
-          hitDocs: Number(item.docCount ?? 0),
-          topicCount: Number(item.topicCount ?? 0),
-        }))
+        rows
+          .filter(
+            (item) =>
+              item.nodeId &&
+              Number(item.topics ?? 0) > 0 &&
+              Number(item.hitDocs ?? 0) < LOW_COVERAGE_THRESHOLD
+          )
+          .map((item) => ({
+            nodeId: item.nodeId ?? "",
+            name: item.name,
+            hitDocs: item.hitDocs,
+            topicCount: Number(item.topics ?? 0),
+          }))
       );
       setOverlapRows(
-        (overlapDashboardResult.data?.items ?? []).map((item) => ({
+        (overlapResult.data?.overlaps ?? []).map((item) => ({
           topicAId: item.topicAId,
           topicAName: item.topicAName,
           topicBId: item.topicBId,
           topicBName: item.topicBName,
           overlapDocs: Number(item.overlapDocs ?? 0),
-          docsPath: item.docsPath ?? null,
-          explainPathTemplate: item.explainPathTemplate ?? null,
+          docsPath: null,
+          explainPathTemplate: null,
         }))
       );
-      setUnmappedDashboard(
-        unmappedDashboardResult.data
-          ? {
-              totalDocs: Number(unmappedDashboardResult.data.totalDocs ?? 0),
-              classifiedDocs: Number(unmappedDashboardResult.data.classifiedDocs ?? 0),
-              unmappedDocs: Number(unmappedDashboardResult.data.unmappedDocs ?? 0),
-              sampleDocuments: (unmappedDashboardResult.data.sampleDocuments ?? []).map((item) => ({
-                docId: item.docId,
-                title: item.title ?? null,
-              })),
-            }
-          : null
-      );
-
-      const unmappedItems = unmappedResult.data?.items ?? [];
-      setUnmappedTotal(Number(unmappedResult.data?.total ?? unmappedItems.length));
-      setUnmappedDocs(
-        unmappedItems.map((item) => ({
-          docId: item.docId,
+      setUnmappedDashboard({
+        totalDocs: Number(dashboardResult.data?.unmappedDocs ?? coverageResult.data?.totalDocs ?? 0),
+        classifiedDocs: Number(
+          dashboardResult.data?.coverage?.classifiedDocs ?? coverageResult.data?.classifiedDocs ?? 0
+        ),
+        unmappedDocs: Number(
+          dashboardResult.data?.unmappedDocs ?? coverageResult.data?.unmappedDocs ?? 0
+        ),
+        sampleDocuments: (dashboardResult.data?.unmappedSampleDocs ?? []).map((item) => ({
+          docId: item.docId ?? item.id ?? "",
           title: item.title ?? null,
-        }))
-      );
-
-      if (topicsResult.data) {
-        const nextTopicHits: Record<string, number> = {};
-        for (const item of topicsResult.data.topics ?? []) {
-          nextTopicHits[item.topicId] = item.hitDocs ?? 0;
-        }
-        setTopicHitDocsMap(nextTopicHits);
-      }
+        })),
+      });
+      setTopicHitDocsMap({});
     }
     void loadCoverage();
     return () => {
       cancelled = true;
     };
   }, [
-    childrenByParent,
     coverageDedup,
-    nodeMap,
-    rootNodeIds,
+    topicSetId,
+    runtimeRefreshTick,
+    usePublishedGovernanceApis,
+    simulationRuntimeReady,
+    simulationTopicsPriming,
+    simulationTopicsReady,
+    buildSimulationDraft,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadUnmappedList() {
+      if (!topicSetId) return;
+      if (usePublishedGovernanceApis) {
+        const result = await fetchTopicSetUnmapped(topicSetId, {
+          page: unmappedPage,
+          size: unmappedSize,
+          sort: unmappedSort,
+        });
+        if (cancelled) return;
+        const items = result.data?.items ?? [];
+        setUnmappedTotal(Number(result.data?.total ?? items.length));
+        setUnmappedDocs(
+          items.map((item) => ({
+            docId: item.docId,
+            title: item.title ?? null,
+          }))
+        );
+        return;
+      }
+
+      if (!simulationRuntimeReady) {
+        setUnmappedTotal(0);
+        setUnmappedDocs([]);
+        return;
+      }
+      if (!simulationTopicsReady || simulationTopicsPriming) {
+        return;
+      }
+
+      const simulationDraft = await buildSimulationDraft();
+      if (!simulationDraft) {
+        setUnmappedTotal(0);
+        setUnmappedDocs([]);
+        return;
+      }
+      const result = await simulateTopicSetUnmapped({
+        page: unmappedPage,
+        size: unmappedSize,
+        sort: unmappedSort,
+        topicSetDraft: simulationDraft,
+      });
+      if (cancelled) return;
+      const items = result.data?.documents ?? [];
+      setUnmappedTotal(Number(result.data?.total ?? items.length));
+      setUnmappedDocs(
+        items.map((item) => ({
+          docId: item.docId ?? item.id ?? "",
+          title: item.title ?? null,
+        }))
+      );
+    }
+    void loadUnmappedList();
+    return () => {
+      cancelled = true;
+    };
+  }, [
     topicSetId,
     unmappedPage,
     unmappedSize,
     unmappedSort,
     runtimeRefreshTick,
+    usePublishedGovernanceApis,
+    simulationRuntimeReady,
+    simulationTopicsPriming,
+    simulationTopicsReady,
+    buildSimulationDraft,
   ]);
 
   const loadNodeDistribution = useCallback(
@@ -749,6 +1298,21 @@ export function TopicSetWorkspaceClient({
       if (!topicSetId) return;
       setNodeDistributionLoadingByNode((prev) => ({ ...prev, [nodeId]: true }));
       setNodeDistributionErrorByNode((prev) => ({ ...prev, [nodeId]: null }));
+      if (!usePublishedGovernanceApis) {
+        await loadNodeTopics(nodeId);
+        const nextTopics = useTopicSetStore.getState().topics[nodeId] ?? [];
+        setNodeDistributionCache((prev) => ({
+          ...prev,
+          [nodeId]: nextTopics.map((topic) => ({
+            topicId: topic.topicId,
+            topicName: topic.topicName ?? topic.topicId,
+            hitDocs: topicDocCountMap[topic.topicId] ?? topicHitDocsMap[topic.topicId] ?? 0,
+          })),
+        }));
+        setNodeDistributionLoadingByNode((prev) => ({ ...prev, [nodeId]: false }));
+        setNodeDistributionErrorByNode((prev) => ({ ...prev, [nodeId]: null }));
+        return;
+      }
       const result = await fetchTopicSetNodeDistribution(topicSetId, nodeId, {
         dedup: coverageDedup,
         limit: 50,
@@ -774,7 +1338,7 @@ export function TopicSetWorkspaceClient({
       }));
       setNodeDistributionErrorByNode((prev) => ({ ...prev, [nodeId]: null }));
     },
-    [coverageDedup, topicSetId]
+    [coverageDedup, loadNodeTopics, topicDocCountMap, topicHitDocsMap, topicSetId, usePublishedGovernanceApis]
   );
 
   useEffect(() => {
@@ -797,14 +1361,8 @@ export function TopicSetWorkspaceClient({
       }
       const entries = await Promise.all(
         missingTopicIds.map(async (topicId) => {
-          const result = await fetchGovernanceTopicDocs(topicId, {
-            matchMode: "REALTIME",
-            page: 0,
-            size: 1,
-            sortBy: "WEIGHT",
-            sortOrder: "DESC",
-          });
-          return [topicId, Number(result.data?.total ?? 0)] as const;
+          const total = await loadGovernanceTopicDocCount(topicId, runtimeRefreshTick);
+          return [topicId, total] as const;
         })
       );
       if (cancelled) return;
@@ -834,23 +1392,49 @@ export function TopicSetWorkspaceClient({
         setImpactDocsError(null);
         return;
       }
+      if (!usePublishedGovernanceApis && !simulationRuntimeReady) {
+        setImpactDocs([]);
+        setImpactDocsError(getSimulationRuntimeMissingMessage());
+        return;
+      }
+      if (!usePublishedGovernanceApis && (!simulationTopicsReady || simulationTopicsPriming)) {
+        setImpactDocs([]);
+        setImpactDocsError(null);
+        return;
+      }
       setImpactDocsLoading(true);
       setImpactDocsError(null);
-      const result = await fetchTopicSetNodeImpact(topicSetId, selectedNode, {
-        page: impactPage,
-        size: impactSize,
-        sort: impactSort,
-      });
+      const result = usePublishedGovernanceApis
+        ? await fetchTopicSetNodeImpact(topicSetId, selectedNode, {
+            page: impactPage,
+            size: impactSize,
+            sort: impactSort,
+          })
+        : await (async () => {
+            const simulationDraft = await buildSimulationDraft();
+            if (!simulationDraft) return { data: null, error: getSimulationDraftUnavailableMessage() };
+            if (!hasSimulationNode(simulationDraft, selectedNode)) {
+              return { data: null, error: getSimulationNodeUnavailableMessage() };
+            }
+            return simulateTopicSetImpact({
+              nodeId: selectedNode,
+              page: impactPage,
+              size: impactSize,
+              sort: impactSort,
+              topicSetDraft: simulationDraft,
+            });
+          })();
       if (cancelled) return;
       setImpactDocsLoading(false);
       if (!result.data) {
         setImpactDocsError(result.error ?? t("topicSet.feedback.loadDocsFailed"));
         return;
       }
+      const documents = getImpactDocuments(result.data);
       setImpactDocs(
-        (result.data.items ?? []).map((item) => ({
-          docId: item.docId,
-          title: item.title ?? item.docId,
+        documents.map((item) => ({
+          docId: getDocumentId(item),
+          title: getDocumentTitle(item),
           summary: item.summary ?? null,
         }))
       );
@@ -860,35 +1444,63 @@ export function TopicSetWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [impactPage, impactSize, impactSort, selectedNode, topicSetId, runtimeRefreshTick]);
+  }, [buildSimulationDraft, impactPage, impactSize, impactSort, selectedNode, topicSetId, runtimeRefreshTick, simulationRuntimeReady, simulationTopicsPriming, simulationTopicsReady, usePublishedGovernanceApis]);
 
   const prefetchImpactForNode = useCallback(
     async (nodeId: string) => {
       if (!topicSetId) return;
+      if (!usePublishedGovernanceApis && !simulationRuntimeReady) return;
+      if (!usePublishedGovernanceApis && (!simulationTopicsReady || simulationTopicsPriming)) return;
       await loadNodeTopics(nodeId, true);
       if (impactDrawerDocsCache[nodeId]) return;
-      const result = await fetchTopicSetNodeImpact(topicSetId, nodeId, {
-        page: 0,
-        size: 12,
-        sort: "score",
-      });
+      const result = usePublishedGovernanceApis
+        ? await fetchTopicSetNodeImpact(topicSetId, nodeId, {
+            page: 0,
+            size: 12,
+            sort: "score",
+          })
+        : await (async () => {
+            const simulationDraft = await buildSimulationDraft();
+            if (!simulationDraft) return { data: null, error: getSimulationDraftUnavailableMessage() };
+            if (!hasSimulationNode(simulationDraft, nodeId)) {
+              return { data: null, error: getSimulationNodeUnavailableMessage() };
+            }
+            return simulateTopicSetImpact({
+              nodeId,
+              page: 0,
+              size: 12,
+              sort: "score",
+              topicSetDraft: simulationDraft,
+            });
+          })();
       if (!result.data) return;
+      const documents = getImpactDocuments(result.data);
       setImpactDrawerDocsCache((prev) => ({
         ...prev,
-        [nodeId]: (result.data?.items ?? []).map((item) => ({
-          docId: item.docId,
-          title: item.title ?? item.docId,
+        [nodeId]: documents.map((item) => ({
+          docId: getDocumentId(item),
+          title: getDocumentTitle(item),
           weight: 0,
         })),
       }));
     },
-    [impactDrawerDocsCache, loadNodeTopics, topicSetId]
+    [buildSimulationDraft, hasSimulationNode, impactDrawerDocsCache, loadNodeTopics, topicSetId, simulationRuntimeReady, simulationTopicsPriming, simulationTopicsReady, usePublishedGovernanceApis]
   );
 
   useEffect(() => {
     let cancelled = false;
     async function loadDrawerDocs() {
       if (!impactDrawerOpen || !impactDrawerNodeId || !topicSetId) {
+        setImpactDrawerDocs([]);
+        setImpactDrawerDocsError(null);
+        return;
+      }
+      if (!usePublishedGovernanceApis && !simulationRuntimeReady) {
+        setImpactDrawerDocs([]);
+        setImpactDrawerDocsError(getSimulationRuntimeMissingMessage());
+        return;
+      }
+      if (!usePublishedGovernanceApis && (!simulationTopicsReady || simulationTopicsPriming)) {
         setImpactDrawerDocs([]);
         setImpactDrawerDocsError(null);
         return;
@@ -900,29 +1512,45 @@ export function TopicSetWorkspaceClient({
         setImpactDrawerDocsLoading(false);
         return;
       }
-      const result = await fetchTopicSetNodeImpact(topicSetId, impactDrawerNodeId, {
-        page: 0,
-        size: 12,
-        sort: "score",
-      });
+      const result = usePublishedGovernanceApis
+        ? await fetchTopicSetNodeImpact(topicSetId, impactDrawerNodeId, {
+            page: 0,
+            size: 12,
+            sort: "score",
+          })
+        : await (async () => {
+            const simulationDraft = await buildSimulationDraft();
+            if (!simulationDraft) return { data: null, error: getSimulationDraftUnavailableMessage() };
+            if (!hasSimulationNode(simulationDraft, impactDrawerNodeId)) {
+              return { data: null, error: getSimulationNodeUnavailableMessage() };
+            }
+            return simulateTopicSetImpact({
+              nodeId: impactDrawerNodeId,
+              page: 0,
+              size: 12,
+              sort: "score",
+              topicSetDraft: simulationDraft,
+            });
+          })();
       if (cancelled) return;
       setImpactDrawerDocsLoading(false);
       if (!result.data) {
         setImpactDrawerDocsError(result.error ?? t("topicSet.feedback.loadDocsFailed"));
         return;
       }
+      const documents = getImpactDocuments(result.data);
       setImpactDrawerDocs(
-        (result.data.items ?? []).map((item) => ({
-          docId: item.docId,
-          title: item.title ?? item.docId,
+        documents.map((item) => ({
+          docId: getDocumentId(item),
+          title: getDocumentTitle(item),
           weight: 0,
         }))
       );
       setImpactDrawerDocsCache((prev) => ({
         ...prev,
-        [impactDrawerNodeId]: (result.data?.items ?? []).map((item) => ({
-          docId: item.docId,
-          title: item.title ?? item.docId,
+        [impactDrawerNodeId]: documents.map((item) => ({
+          docId: getDocumentId(item),
+          title: getDocumentTitle(item),
           weight: 0,
         })),
       }));
@@ -931,13 +1559,15 @@ export function TopicSetWorkspaceClient({
     return () => {
       cancelled = true;
     };
-  }, [impactDrawerDocsCache, impactDrawerNodeId, impactDrawerOpen, topicSetId, runtimeRefreshTick]);
+  }, [buildSimulationDraft, hasSimulationNode, impactDrawerDocsCache, impactDrawerNodeId, impactDrawerOpen, topicSetId, runtimeRefreshTick, simulationRuntimeReady, simulationTopicsPriming, simulationTopicsReady, usePublishedGovernanceApis]);
 
   async function refreshRuntimeViews() {
     if (!topicSetId) return { ok: false, error: "TopicSet is not selected." };
-    const result = await refreshTopicSetRuntimeCache(topicSetId);
-    if (!result.data) {
-      return { ok: false, error: result.error ?? t("topicSet.feedback.runtimeRefreshFailed") };
+    if (usePublishedGovernanceApis) {
+      const result = await refreshTopicSetRuntimeCache(topicSetId);
+      if (!result.data) {
+        return { ok: false, error: result.error ?? t("topicSet.feedback.runtimeRefreshFailed") };
+      }
     }
     setImpactDrawerDocsCache({});
     setNodeDistributionCache({});
@@ -1195,6 +1825,22 @@ export function TopicSetWorkspaceClient({
     explainPathTemplate?: string | null;
   }) {
     if (!topicSetId) return;
+    if (!usePublishedGovernanceApis && !simulationRuntimeReady) {
+      setTopicDocsOpen(true);
+      setTopicDocsLoading(false);
+      setTopicDocsRows([]);
+      setTopicDocsTotal(0);
+      setTopicDocsError(getSimulationRuntimeMissingMessage());
+      return;
+    }
+    if (!usePublishedGovernanceApis && (!simulationTopicsReady || simulationTopicsPriming)) {
+      setTopicDocsOpen(true);
+      setTopicDocsLoading(true);
+      setTopicDocsRows([]);
+      setTopicDocsTotal(0);
+      setTopicDocsError(null);
+      return;
+    }
     setTopicDocsOpen(true);
     setTopicDocsLoading(true);
     setTopicDocsError(null);
@@ -1206,25 +1852,38 @@ export function TopicSetWorkspaceClient({
       topicBName: row.topicBName,
     });
     setTopicDocsTitle(`${row.topicAName ?? row.topicAId} / ${row.topicBName ?? row.topicBId}`);
-    const result = row.docsPath
-      ? await fetchTopicSetSearchEnvelopeByPath<{
-          page: number;
-          size: number;
-          total: number;
-          items: Array<{
-            docId: string;
-            title?: string | null;
-            summary?: string | null;
-            highlightFragments?: string[];
-          }>;
-        }>(row.docsPath)
-      : await fetchTopicSetOverlapDocs(topicSetId, {
-          topicAId: row.topicAId,
-          topicBId: row.topicBId,
-          page: 0,
-          size: 20,
-          sort: "score",
-        });
+    const result = usePublishedGovernanceApis
+      ? row.docsPath
+        ? await fetchTopicSetSearchEnvelopeByPath<{
+            page: number;
+            size: number;
+            total: number;
+            items: Array<{
+              docId: string;
+              title?: string | null;
+              summary?: string | null;
+              highlightFragments?: string[];
+            }>;
+          }>(row.docsPath)
+        : await fetchTopicSetOverlapDocs(topicSetId, {
+            topicAId: row.topicAId,
+            topicBId: row.topicBId,
+            page: 0,
+            size: 20,
+            sort: "score",
+          })
+      : await (async () => {
+          const simulationDraft = await buildSimulationDraft();
+          if (!simulationDraft) return { data: null, error: getSimulationDraftUnavailableMessage() };
+          return simulateTopicSetOverlapDocs({
+            topicAId: row.topicAId,
+            topicBId: row.topicBId,
+            page: 0,
+            size: 20,
+            sort: "score",
+            topicSetDraft: simulationDraft,
+          });
+        })();
     setTopicDocsLoading(false);
     if (!result.data) {
       setTopicDocsRows([]);
@@ -1233,10 +1892,11 @@ export function TopicSetWorkspaceClient({
       return;
     }
     setTopicDocsTotal(Number(result.data.total ?? 0));
+    const documents = getOverlapDocuments(result.data);
     setTopicDocsRows(
-      (result.data.items ?? []).map((item) => ({
-        docId: item.docId,
-        title: item.title || item.docId,
+      documents.map((item) => ({
+        docId: getDocumentId(item),
+        title: getDocumentTitle(item),
         secondary: item.highlightFragments?.[0] ?? item.summary ?? null,
         metric: null,
       }))
@@ -1245,6 +1905,20 @@ export function TopicSetWorkspaceClient({
 
   async function openOverlapExplain(docId: string) {
     if (!topicSetId || topicDocsContext?.kind !== "overlap") return;
+    if (!usePublishedGovernanceApis && !simulationRuntimeReady) {
+      setOverlapExplainOpen(true);
+      setOverlapExplainLoading(false);
+      setOverlapExplainData(null);
+      setOverlapExplainError(getSimulationRuntimeMissingMessage());
+      return;
+    }
+    if (!usePublishedGovernanceApis && (!simulationTopicsReady || simulationTopicsPriming)) {
+      setOverlapExplainOpen(true);
+      setOverlapExplainLoading(true);
+      setOverlapExplainData(null);
+      setOverlapExplainError(null);
+      return;
+    }
     setOverlapExplainOpen(true);
     setOverlapExplainLoading(true);
     setOverlapExplainError(null);
@@ -1254,37 +1928,47 @@ export function TopicSetWorkspaceClient({
         row.topicBId === topicDocsContext.topicBId
     );
     const explainPath = overlapRow?.explainPathTemplate?.replace("{docId}", encodeURIComponent(docId));
-    const result = explainPath
-      ? await fetchTopicSetSearchEnvelopeByPath<{
-          version?: number;
-          topicSetId: string;
-          docId: string;
-          topicA: {
-            topicId: string;
-            topicName: string;
-            matched: boolean;
-            matchedNodeIds: string[];
-            matchedTerms: string[];
-            appliedModes?: string[];
-            reason?: string | null;
-            explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
-          };
-          topicB: {
-            topicId: string;
-            topicName: string;
-            matched: boolean;
-            matchedNodeIds: string[];
-            matchedTerms: string[];
-            appliedModes?: string[];
-            reason?: string | null;
-            explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
-          };
-        }>(explainPath)
-      : await fetchTopicSetOverlapDocExplain(topicSetId, {
-          docId,
-          topicAId: topicDocsContext.topicAId,
-          topicBId: topicDocsContext.topicBId,
-        });
+    const result = usePublishedGovernanceApis
+      ? explainPath
+        ? await fetchTopicSetSearchEnvelopeByPath<{
+            version?: number;
+            topicSetId: string;
+            docId: string;
+            topicA: {
+              topicId: string;
+              topicName: string;
+              matched: boolean;
+              matchedNodeIds: string[];
+              matchedTerms: string[];
+              appliedModes?: string[];
+              reason?: string | null;
+              explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+            };
+            topicB: {
+              topicId: string;
+              topicName: string;
+              matched: boolean;
+              matchedNodeIds: string[];
+              matchedTerms: string[];
+              appliedModes?: string[];
+              reason?: string | null;
+              explain?: Array<{ nodeId?: string | null; label?: string | null; matched: boolean }>;
+            };
+          }>(explainPath)
+        : await fetchTopicSetOverlapDocExplain(topicSetId, {
+            docId,
+            topicAId: topicDocsContext.topicAId,
+            topicBId: topicDocsContext.topicBId,
+          })
+      : await (async () => {
+          const simulationDraft = await buildSimulationDraft();
+          if (!simulationDraft) return { data: null, error: getSimulationDraftUnavailableMessage() };
+          return simulateTopicSetOverlapExplain(docId, {
+            topicAId: topicDocsContext.topicAId,
+            topicBId: topicDocsContext.topicBId,
+            topicSetDraft: simulationDraft,
+          });
+        })();
     setOverlapExplainLoading(false);
     if (!result.data) {
       setOverlapExplainData(null);
@@ -1308,6 +1992,22 @@ export function TopicSetWorkspaceClient({
           title={feedback.title}
           message={feedback.message}
           onDismiss={() => setFeedback(null)}
+        />
+      )}
+
+      {showSimulationRuntimeWarning && (
+        <FeedbackBanner
+          type="error"
+          title={t("topicSet.simulation.runtimeRequiredTitle")}
+          message={t("topicSet.simulation.runtimeRequiredMessage")}
+          actions={
+            <Link
+              href="/runtime"
+              className="inline-flex rounded-md border border-current px-3 py-1.5 text-sm font-medium hover:bg-white/40"
+            >
+              {t("topicSet.simulation.runtimeRequiredAction")}
+            </Link>
+          }
         />
       )}
 
@@ -1878,26 +2578,26 @@ export function TopicSetWorkspaceClient({
       {activeTab === "dashboard" && (
         <GovernanceDashboardPage
           topicSetName={topicSetDetail?.name}
-          coverage={coverageDashboard}
-          coverageRows={coverageRows}
-          lowCoverageRows={lowCoverageRows}
+          health={null}
+          liveSummary={
+            coverageDashboard
+              ? {
+                  classifiedDocs: coverageDashboard.classifiedDocs,
+                  unmappedDocs: coverageDashboard.unmappedDocs,
+                  coverageRatio:
+                    coverageDashboard.classifiedDocs + coverageDashboard.unmappedDocs > 0
+                      ? coverageDashboard.classifiedDocs /
+                        (coverageDashboard.classifiedDocs + coverageDashboard.unmappedDocs)
+                      : 0,
+                  overlapCount: overlapRows.length,
+                }
+              : null
+          }
+          history={[]}
           overlapRows={overlapRows}
-          unmapped={unmappedDashboard ? {
-            unmappedDocs: unmappedDashboard.unmappedDocs,
-            sampleDocuments: unmappedDashboard.sampleDocuments,
-          } : null}
-          onOpenCoverageNode={(row) => {
-            if (row.nodeId) {
-              selectNode(row.nodeId);
-            }
-            setImpactPage(0);
-            setActiveTab("impact");
-          }}
-          onOpenLowCoverageNode={(nodeId) => {
-            selectNode(nodeId);
-            setActiveTab("taxonomy");
-          }}
-          onOpenOverlapDocs={(row) => {
+          keywords={[]}
+          isDraftRuntime={!usePublishedGovernanceApis}
+          onOpenOverlapDocs={(row: { topicAId: string; topicAName?: string | null; topicBId: string; topicBName?: string | null; overlapDocs: number }) => {
             void openOverlapDocs(row);
           }}
           onOpenUnmapped={() => setActiveTab("unmapped")}
@@ -1914,7 +2614,7 @@ export function TopicSetWorkspaceClient({
           selectedTopicsLoading={selectedNodeDistributionLoading}
           selectedTopicsError={selectedNodeDistributionError}
           lowCoverageRows={lowCoverageRows}
-          lowCoverageThreshold={3}
+          lowCoverageThreshold={LOW_COVERAGE_THRESHOLD}
           overlapRows={overlapRows}
           dedup={coverageDedup}
           onToggleDedup={(next) => setCoverageDedup(next)}

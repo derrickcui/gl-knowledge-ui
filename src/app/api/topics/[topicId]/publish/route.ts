@@ -1,44 +1,14 @@
-import { NextResponse } from "next/server";
-import { readUpstreamJsonBody } from "../../proxyUtils";
-
-const TOPICS_API_BASE =
-  process.env.NEXT_PUBLIC_TOPICS_API ??
-  "http://localhost:8080";
+import { TOPICS_SERVICE_BASE as TOPICS_API_BASE } from "@/lib/api/serverServiceConfig";
+import { proxyJsonRoute, proxyMutationJson } from "@/lib/api/serverProxy";
 
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ topicId: string }> }
 ) {
-  try {
-    const { topicId } = await params;
-    const body = await request.text();
-    const upstream = await fetch(
-      `${TOPICS_API_BASE}/api/topics/${topicId}/publish`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type":
-            request.headers.get("content-type") ??
-            "application/json",
-        },
-        body,
-      }
-    );
-    const responseBody = await readUpstreamJsonBody(upstream);
-    return new NextResponse(responseBody, {
-      status: upstream.status,
-      headers: {
-        "content-type": "application/json; charset=utf-8",
-      },
+  const { topicId } = await params;
+  return proxyMutationJson(`${TOPICS_API_BASE}/api/topics/${topicId}/publish`, "POST", request, {
+      success: false,
+      data: null,
+      error: "topic-service unreachable",
     });
-  } catch {
-    return NextResponse.json(
-      {
-        success: false,
-        data: null,
-        error: "topic-service unreachable",
-      },
-      { status: 502 }
-    );
-  }
 }

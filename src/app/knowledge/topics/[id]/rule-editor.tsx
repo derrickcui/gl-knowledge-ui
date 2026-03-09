@@ -102,12 +102,14 @@ export type RuleEditorProps = {
   onChange: (next: UiRuleViewModel) => void;
   readOnly?: boolean;
   previewResult?: RulePreviewResponse | null;
+  previewPage?: number;
+  previewPageSize?: number;
   previewDocument?: PreviewDocumentDetailResponse | null;
   previewDocumentBusy?: boolean;
   previewError?: string | null;
   previewBusy?: boolean;
   compiledGql?: string | null;
-  compiledGqlSource?: "local-compiler" | "server" | null;
+  compiledGqlSource?: "server" | "local-compiler" | null;
   fullRuntimeResult?: Extract<RuntimeExecuteResponse, { mode: "FULL" }> | null;
   impactRuntimeResult?: Extract<RuntimeExecuteResponse, { mode: "IMPACT" }> | null;
   nodeRuntimeResults?: Record<string, Extract<RuntimeExecuteResponse, { mode: "NODE" }>>;
@@ -169,6 +171,8 @@ export function RuleEditor({
   onChange,
   readOnly = false,
   previewResult = null,
+  previewPage = 1,
+  previewPageSize = 20,
   previewDocument = null,
   previewDocumentBusy = false,
   previewError = null,
@@ -1235,6 +1239,9 @@ export function RuleEditor({
               gqlPreviewEnabled={openViews.gqlPreview}
               activeNodeLabel={activePreviewNodeLabel}
               impactRanking={impactRanking}
+              previewResult={previewResult}
+              previewPage={previewPage}
+              previewPageSize={previewPageSize}
               fullRuntimeResult={fullRuntimeResult}
               impactRuntimeResult={impactRuntimeResult}
               nodeRuntimeResults={nodeRuntimeResults}

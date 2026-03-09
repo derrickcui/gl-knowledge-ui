@@ -1,6 +1,9 @@
 import { ApiResult } from "@/lib/api";
 
 const TOPICSET_SEARCH_PROXY = "/api/topicset-search";
+const GET_BURST_CACHE_MS = 1000;
+const requestPromiseCache = new Map<string, Promise<ApiResult<unknown>>>();
+const requestValueCache = new Map<string, { expiresAt: number; value: ApiResult<unknown> }>();
 
 type ApiErrorShape = {
   code?: string;
@@ -183,6 +186,45 @@ export type TopicSetRuntimeCacheRefreshResponse = {
   refreshedAt: string;
 };
 
+export type TopicSetDriftSummaryResponse = {
+  topicSetId: string;
+  version?: number;
+  classifiedDocs: number;
+  unmappedDocs: number;
+  coverageRatio: number;
+  overlapCount: number;
+};
+
+export type TopicSetDriftOverlapItemView = {
+  topicAId: string;
+  topicAName?: string | null;
+  topicBId: string;
+  topicBName?: string | null;
+  overlapDocs: number;
+};
+
+export type TopicSetDriftOverlapResponse = {
+  topicSetId: string;
+  version?: number;
+  minOverlap: number;
+  totalPairs: number;
+  overlaps: TopicSetDriftOverlapItemView[];
+};
+
+export type TopicSetDriftKeywordView = {
+  term: string;
+  frequency: number;
+  score: number;
+};
+
+export type TopicSetDriftKeywordsResponse = {
+  topicSetId: string;
+  version?: number;
+  sampleDocs: number;
+  limit: number;
+  keywords: TopicSetDriftKeywordView[];
+};
+
 function normalizeError(error: ApiEnvelope<unknown>["error"], fallback: string) {
   if (!error) return fallback;
   if (typeof error === "string") return error;
@@ -191,6 +233,21 @@ function normalizeError(error: ApiEnvelope<unknown>["error"], fallback: string) 
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<ApiResult<T>> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const cacheKey = method === "GET" ? `${method}:${path}` : null;
+  const now = Date.now();
+  if (cacheKey) {
+    const cached = requestValueCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.value as ApiResult<T>;
+    }
+    const inflight = requestPromiseCache.get(cacheKey);
+    if (inflight) {
+      return inflight as Promise<ApiResult<T>>;
+    }
+  }
+
+  const requestPromise = (async (): Promise<ApiResult<T>> => {
   try {
     const res = await fetch(path, { cache: "no-store", ...(init ?? {}) });
     if (!res.ok) {
@@ -214,6 +271,23 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<ApiResu
     return { data: (await res.json()) as T, error: null };
   } catch {
     return { data: null, error: "topicset-search-service unreachable" };
+  }
+  })();
+
+  if (!cacheKey) {
+    return requestPromise;
+  }
+
+  requestPromiseCache.set(cacheKey, requestPromise as Promise<ApiResult<unknown>>);
+  try {
+    const result = await requestPromise;
+    requestValueCache.set(cacheKey, {
+      expiresAt: Date.now() + GET_BURST_CACHE_MS,
+      value: result as ApiResult<unknown>,
+    });
+    return result;
+  } finally {
+    requestPromiseCache.delete(cacheKey);
   }
 }
 
@@ -450,5 +524,39 @@ export async function refreshTopicSetRuntimeCache(topicSetId: string) {
   return unwrapEnvelope<TopicSetRuntimeCacheRefreshResponse>(
     `${TOPICSET_SEARCH_PROXY}/internal/topicsets/${encodeURIComponent(topicSetId)}/runtime-cache/refresh`,
     { method: "POST" }
+  );
+}
+
+export async function fetchTopicSetDriftSummary(topicSetId: string) {
+  return unwrapEnvelope<TopicSetDriftSummaryResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift`
+  );
+}
+
+export async function fetchTopicSetDriftOverlap(
+  topicSetId: string,
+  params?: { minOverlap?: number; limit?: number }
+) {
+  const query = new URLSearchParams();
+  if (params?.minOverlap != null) query.set("minOverlap", String(params.minOverlap));
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  return unwrapEnvelope<TopicSetDriftOverlapResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift/overlap${
+      query.toString() ? `?${query.toString()}` : ""
+    }`
+  );
+}
+
+export async function fetchTopicSetDriftKeywords(
+  topicSetId: string,
+  params?: { limit?: number; sampleDocs?: number }
+) {
+  const query = new URLSearchParams();
+  if (params?.limit != null) query.set("limit", String(params.limit));
+  if (params?.sampleDocs != null) query.set("sampleDocs", String(params.sampleDocs));
+  return unwrapEnvelope<TopicSetDriftKeywordsResponse>(
+    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift/keywords${
+      query.toString() ? `?${query.toString()}` : ""
+    }`
   );
 }
