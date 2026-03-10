@@ -1,6 +1,7 @@
 import { ApiResult } from "@/lib/api";
 
 const TOPICSET_SEARCH_PROXY = "/api/topicset-search";
+const TOPICSETS_API_PROXY = "/api/topicsets";
 const GET_BURST_CACHE_MS = 1000;
 const requestPromiseCache = new Map<string, Promise<ApiResult<unknown>>>();
 const requestValueCache = new Map<string, { expiresAt: number; value: ApiResult<unknown> }>();
@@ -202,6 +203,7 @@ export type TopicSetDriftCoverageTopicView = {
   currentDocs: number;
   previousDocs: number;
   changeRate?: number | null;
+  docCount?: number | null;
 };
 
 export type TopicSetDriftCoverageResponse = {
@@ -554,7 +556,7 @@ export async function fetchTopicSetDriftSummary(topicSetId: string) {
 
 export async function fetchTopicSetDriftCoverage(topicSetId: string) {
   return unwrapEnvelope<TopicSetDriftCoverageResponse>(
-    `${TOPICSET_SEARCH_PROXY}/topicsets/${encodeURIComponent(topicSetId)}/drift/coverage`
+    `${TOPICSETS_API_PROXY}/${encodeURIComponent(topicSetId)}/drift/coverage`
   );
 }
 

@@ -77,6 +77,7 @@ import { VersionsPage } from "./components/versions/versions-page";
 import { TaxonomyDiffPage } from "./components/diff/taxonomy-diff-page";
 import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
 import { searchDocuments } from "@/lib/search-api";
+import { sanitizeHighlightHtml } from "@/lib/highlight-html";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -1491,7 +1492,7 @@ export function TopicSetWorkspaceClient({
           .map((item) => ({
             topicId: item.topicId ?? null,
             topicName: item.topicName ?? item.topicId ?? null,
-            currentDocs: Number(item.currentDocs ?? 0),
+            currentDocs: Number(item.currentDocs ?? item.docCount ?? 0),
             previousDocs: Number(item.previousDocs ?? 0),
             changeRate: item.changeRate ?? null,
           }))
@@ -2714,12 +2715,18 @@ export function TopicSetWorkspaceClient({
                     {topicDocsRows.map((row) => (
                       <tr key={row.docId} className="border-b">
                         <td className="py-2">
-                          <div>{row.title}</div>
+                          <div
+                            className="break-words text-sm leading-6"
+                            dangerouslySetInnerHTML={{ __html: sanitizeHighlightHtml(row.title) }}
+                          />
                           <div className="text-[10px] text-muted-foreground">{row.docId}</div>
                         </td>
                         <td className="py-2">
                           {row.secondary ? (
-                            <div className="text-xs text-muted-foreground">{row.secondary}</div>
+                            <div
+                              className="break-words text-xs leading-6 text-muted-foreground"
+                              dangerouslySetInnerHTML={{ __html: sanitizeHighlightHtml(row.secondary) }}
+                            />
                           ) : row.metric ? (
                             <div>{row.metric}</div>
                           ) : (

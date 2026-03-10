@@ -601,7 +601,7 @@
   "topicSet.runtimeMode.published": "Published Runtime",
   "topicSet.runtimeMode.draftMessage": "当前使用 Draft Simulation。仅用于分析，不影响生产。",
   "topicSet.tab.taxonomy": "主题集",
-  "topicSet.tab.dashboard": "Drift / Rule Health",
+  "topicSet.tab.dashboard": "漂移 / 规则健康",
   "topicSet.tab.map": "知识地图",
   "topicSet.tab.impact": "影响分析",
   "topicSet.tab.analytics": "分析",
