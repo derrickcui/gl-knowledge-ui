@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { TrendRange } from "@/store/useSemanticGovernanceStore";
 import { buildTrendPath } from "../dashboard-utils";
 
@@ -14,8 +15,8 @@ export function TrendChartCard(props: TrendChartCardProps) {
   if (!seriesValues.length) {
     return (
       <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-lg font-semibold">Topic Volume Trend</h2>
-        <p className="mt-3 text-xs text-slate-400">暂无趋势数据。</p>
+        <h2 className="text-lg font-semibold">{t("governance.card.trend.title")}</h2>
+        <p className="mt-3 text-xs text-slate-400">{t("governance.card.trend.empty")}</p>
       </article>
     );
   }
@@ -26,8 +27,10 @@ export function TrendChartCard(props: TrendChartCardProps) {
   return (
     <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">Topic Volume Trend</h2>
-        <span className="text-xs text-slate-400">Topic: {topicId}</span>
+        <h2 className="text-lg font-semibold">{t("governance.card.trend.title")}</h2>
+        <span className="text-xs text-slate-400">
+          {t("governance.card.trend.topicLabel", { topicId })}
+        </span>
         <div className="flex gap-2 text-xs">
           <button
             type="button"
@@ -36,7 +39,7 @@ export function TrendChartCard(props: TrendChartCardProps) {
             }`}
             onClick={() => onRangeChange("7d")}
           >
-            7 天
+            {t("governance.card.trend.range7d")}
           </button>
           <button
             type="button"
@@ -45,7 +48,7 @@ export function TrendChartCard(props: TrendChartCardProps) {
             }`}
             onClick={() => onRangeChange("30d")}
           >
-            30 天
+            {t("governance.card.trend.range30d")}
           </button>
           <button
             type="button"
@@ -54,7 +57,7 @@ export function TrendChartCard(props: TrendChartCardProps) {
             }`}
             onClick={() => onRangeChange("14d")}
           >
-            自定义
+            {t("governance.card.trend.rangeCustom")}
           </button>
         </div>
       </div>
@@ -80,7 +83,7 @@ export function TrendChartCard(props: TrendChartCardProps) {
           />
         ))}
         <text x="0" y={trendPathHeight + 20} fill="#94a3b8" fontSize="10">
-          时间
+          {t("governance.card.trend.timeAxis")}
         </text>
       </svg>
 

@@ -33,6 +33,7 @@ export function WorkspaceHeader({
   canCreateVersion,
   canDeprecate,
   canArchive,
+  taggingLoading,
   diffSummary,
   diffBaselineVersion,
   onChangeVersion,
@@ -45,6 +46,7 @@ export function WorkspaceHeader({
   onCreateVersion,
   onDeprecate,
   onArchive,
+  onRunTagging,
 }: {
   topicSetDetail: TopicSetDetail | null;
   version: number | null;
@@ -58,6 +60,7 @@ export function WorkspaceHeader({
   canCreateVersion: boolean;
   canDeprecate: boolean;
   canArchive: boolean;
+  taggingLoading?: boolean;
   diffSummary?: {
     nodesAdded: number;
     nodesRemoved: number;
@@ -76,6 +79,7 @@ export function WorkspaceHeader({
   onCreateVersion: () => void;
   onDeprecate: () => void;
   onArchive: () => void;
+  onRunTagging: () => void;
 }) {
   const activeVersionLabel = !topicSetDetail
     ? "-"
@@ -122,6 +126,16 @@ export function WorkspaceHeader({
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <button type="button" className="rounded-md border px-3 py-1.5 text-sm" onClick={onViewVersions}>
             {t("topicSet.workspace.viewVersions")}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-700 disabled:opacity-50"
+            onClick={onRunTagging}
+            disabled={!topicSetDetail || taggingLoading}
+          >
+            {taggingLoading
+              ? t("topicSet.workspace.runTaggingStarting")
+              : t("topicSet.workspace.runTagging")}
           </button>
           {canSubmitReview && (
             <button

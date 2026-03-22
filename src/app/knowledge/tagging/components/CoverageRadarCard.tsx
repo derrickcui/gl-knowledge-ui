@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { radarPoint } from "../dashboard-utils";
 import { DimensionKey, RadarDimension } from "@/store/useSemanticGovernanceStore";
 
@@ -9,14 +10,16 @@ type CoverageRadarCardProps = {
 
 export function CoverageRadarCard(props: CoverageRadarCardProps) {
   const { dimensions, selectedDimension, onSelectDimension } = props;
+
   if (!dimensions.length) {
     return (
       <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-        <h2 className="text-lg font-semibold">Topic 覆盖率雷达图</h2>
-        <p className="mt-3 text-xs text-slate-400">暂无覆盖率数据。</p>
+        <h2 className="text-lg font-semibold">{t("governance.card.radar.title")}</h2>
+        <p className="mt-3 text-xs text-slate-400">{t("governance.card.radar.empty")}</p>
       </article>
     );
   }
+
   const selectedRadar =
     dimensions.find((item) => item.key === selectedDimension) ?? dimensions[0];
 
@@ -29,8 +32,8 @@ export function CoverageRadarCard(props: CoverageRadarCardProps) {
 
   return (
     <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-      <h2 className="text-lg font-semibold">Topic 覆盖率雷达图</h2>
-      <p className="mt-1 text-xs text-slate-400">点击维度可查看分类明细。</p>
+      <h2 className="text-lg font-semibold">{t("governance.card.radar.title")}</h2>
+      <p className="mt-1 text-xs text-slate-400">{t("governance.card.radar.subtitle")}</p>
       <div className="mt-4 grid gap-4 md:grid-cols-[240px_1fr]">
         <svg viewBox="0 0 220 220" className="h-56 w-full">
           <polygon
@@ -57,9 +60,7 @@ export function CoverageRadarCard(props: CoverageRadarCardProps) {
                 cx={p.x}
                 cy={p.y}
                 r={selectedDimension === dimension.key ? 6 : 4}
-                fill={
-                  selectedDimension === dimension.key ? "#a78bfa" : "#60a5fa"
-                }
+                fill={selectedDimension === dimension.key ? "#a78bfa" : "#60a5fa"}
                 className="cursor-pointer"
                 onClick={() => onSelectDimension(dimension.key)}
               />
@@ -84,7 +85,9 @@ export function CoverageRadarCard(props: CoverageRadarCardProps) {
             </button>
           ))}
           <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/80 p-3">
-            <div className="text-xs text-slate-400">{selectedRadar.label} 明细</div>
+            <div className="text-xs text-slate-400">
+              {t("governance.card.radar.detailTitle", { label: selectedRadar.label })}
+            </div>
             <div className="mt-2 space-y-1 text-sm">
               {selectedRadar.detail.map((item) => (
                 <div key={item.name} className="flex justify-between">

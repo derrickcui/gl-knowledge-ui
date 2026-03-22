@@ -16,12 +16,24 @@ type ApiEnvelope<T> = {
 };
 
 export type TaggingJobStatus = "PENDING" | "RUNNING" | "SUCCESS" | "FAILED";
-export type TaggingJobMode = "FULL" | "TOPIC_ONLY";
+export type TaggingJobMode = "FULL" | "TOPIC_ONLY" | "TOPICSET_ONLY";
+
+export type TopicTaggingProjectionSummaryView = {
+  runtimeVersion: string | null;
+  namespace: string | null;
+  topicCount: number;
+  assignmentCount: number;
+  projectedNodeCount: number;
+  ancestorExpandedCount: number;
+};
 
 export type TaggingJobView = {
   jobId: string;
   topicId: string | null;
   topicVersion: string | null;
+  topicSetId: string | null;
+  topicSetVersion: string | null;
+  projection?: TopicTaggingProjectionSummaryView | null;
   mode: TaggingJobMode | null;
   status: TaggingJobStatus | null;
   totalDocs: number;
@@ -50,6 +62,29 @@ export type TaggingTopicResultView = {
   errorMessage: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+};
+
+export type TaggingLogLevel = "INFO" | "WARN" | "ERROR";
+export type TaggingLogScope = "JOB" | "TOPIC" | "TOPICSET";
+
+export type TaggingLogEntryView = {
+  level: TaggingLogLevel;
+  scope: TaggingLogScope;
+  topicId: string | null;
+  topicVersion: string | null;
+  status: string | null;
+  message: string | null;
+  totalDocs: number;
+  taggedDocs: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+export type TaggingJobLogsView = TaggingJobView & {
+  totalTopics: number;
+  successTopics: number;
+  failedTopics: number;
+  entries: TaggingLogEntryView[];
 };
 
 export type TaggingJobIdMap = {
@@ -141,6 +176,26 @@ export async function createTopicTaggingJob(
   return { data: res.data.data, error: null };
 }
 
+export async function createTopicSetTaggingJob(
+  topicSetId: string
+): Promise<ApiResult<TaggingJobIdMap>> {
+  const res = await requestJson<ApiEnvelope<TaggingJobIdMap>>(
+    `${TAGGING_API_PROXY}/topicset/${encodeURIComponent(topicSetId)}`,
+    { method: "POST" }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  if (!res.data.success) {
+    return {
+      data: null,
+      error: normalizeError(res.data.error, "failed to create topicset tagging job"),
+    };
+  }
+  if (!res.data.data) {
+    return { data: null, error: "invalid topicset tagging create response" };
+  }
+  return { data: res.data.data, error: null };
+}
+
 export async function createFullTaggingJob(): Promise<ApiResult<TaggingJobIdMap>> {
   const res = await requestJson<ApiEnvelope<TaggingJobIdMap>>(
     `${TAGGING_API_PROXY}/full`,
@@ -192,6 +247,34 @@ export async function listTaggingJobTopics(
     };
   }
   return { data: res.data.data ?? [], error: null };
+}
+
+export async function getTaggingJobLogs(
+  jobId: string,
+  params?: { includeSuccess?: boolean }
+): Promise<ApiResult<TaggingJobLogsView>> {
+  const url = new URL(
+    `${TAGGING_API_PROXY}/jobs/${encodeURIComponent(jobId)}/logs`,
+    "http://localhost"
+  );
+  if (params?.includeSuccess != null) {
+    url.searchParams.set("includeSuccess", String(params.includeSuccess));
+  }
+  const res = await requestJson<ApiEnvelope<TaggingJobLogsView>>(
+    `${url.pathname}${url.search}`,
+    { cache: "no-store" }
+  );
+  if (!res.data) return { data: null, error: res.error };
+  if (!res.data.success) {
+    return {
+      data: null,
+      error: normalizeError(res.data.error, "failed to load tagging job logs"),
+    };
+  }
+  if (!res.data.data) {
+    return { data: null, error: "invalid tagging job logs response" };
+  }
+  return { data: res.data.data, error: null };
 }
 
 export async function retryTaggingJob(jobId: string): Promise<ApiResult<TaggingJobIdMap>> {

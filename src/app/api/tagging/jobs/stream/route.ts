@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { SEARCH_SERVICE_BASE as TAGGING_API_BASE } from "@/lib/api/serverServiceConfig";
+import { TAGGING_SERVICE_BASE as TAGGING_API_BASE } from "@/lib/api/serverServiceConfig";
 
 type StreamPayload = {
   at: string;
@@ -114,4 +114,3 @@ export async function GET(request: NextRequest) {
     },
   });
 }
-

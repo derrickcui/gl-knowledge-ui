@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { fetchGovernanceTopicDocs } from "@/lib/governance-topic-detail-api";
@@ -78,6 +79,7 @@ import { TaxonomyDiffPage } from "./components/diff/taxonomy-diff-page";
 import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
 import { searchDocuments } from "@/lib/search-api";
 import { sanitizeHighlightHtml } from "@/lib/highlight-html";
+import { createTopicSetTaggingJob } from "@/lib/tagging-api";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -297,6 +299,7 @@ export function TopicSetWorkspaceClient({
 }: {
   initialTopicSetId: string;
 }) {
+  const router = useRouter();
   const {
     topicSetId,
     topicSetDetail,
@@ -359,6 +362,7 @@ export function TopicSetWorkspaceClient({
   const [versionActionComment, setVersionActionComment] = useState("");
   const [versionActionLoading, setVersionActionLoading] = useState(false);
   const [submitReviewDialog, setSubmitReviewDialog] = useState<SubmitReviewDialogState>(null);
+  const [taggingLoading, setTaggingLoading] = useState(false);
 
   const [coverageRows, setCoverageRows] = useState<Array<{ nodeId?: string; name: string; hitDocs: number; topics?: number }>>([]);
   const [coverageDashboard, setCoverageDashboard] = useState<{
@@ -1957,6 +1961,26 @@ export function TopicSetWorkspaceClient({
     });
   }
 
+  async function handleRunTagging() {
+    if (!topicSetId) return;
+    setTaggingLoading(true);
+    const result = await createTopicSetTaggingJob(topicSetId);
+    setTaggingLoading(false);
+    if (!result.data) {
+      setFeedback({
+        type: "error",
+        title: t("topicSet.workspace.runTaggingFailed"),
+        message: result.error ?? undefined,
+      });
+      return;
+    }
+    router.push(
+      `/knowledge/tagging?mode=TOPICSET_ONLY&topicSetId=${encodeURIComponent(
+        topicSetId
+      )}&jobId=${encodeURIComponent(result.data.jobId)}`
+    );
+  }
+
   async function handleCreateInlineNode(nextName?: string) {
     const resolvedName = (nextName ?? createName).trim();
     if (!resolvedName) return;
@@ -2374,6 +2398,7 @@ export function TopicSetWorkspaceClient({
         canCreateVersion={canCreateVersion}
         canDeprecate={canDeprecate}
         canArchive={canArchive}
+        taggingLoading={taggingLoading}
         diffSummary={headerDiffSummary}
         diffBaselineVersion={latestPublishedVersion}
         onChangeVersion={setVersion}
@@ -2412,6 +2437,9 @@ export function TopicSetWorkspaceClient({
         }}
         onArchive={() => {
           void handleArchive();
+        }}
+        onRunTagging={() => {
+          void handleRunTagging();
         }}
       />
 

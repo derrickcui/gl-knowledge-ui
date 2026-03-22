@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { AnalyticsTopicStatsView } from "@/lib/analytics-api";
 
 type TopicStatsCardProps = {
@@ -9,22 +10,34 @@ export function TopicStatsCard({ stats }: TopicStatsCardProps) {
 
   return (
     <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-      <h2 className="text-lg font-semibold">Topic Quality Stats</h2>
+      <h2 className="text-lg font-semibold">{t("governance.card.topicStats.title")}</h2>
       <p className="mt-1 text-xs text-slate-400">
-        docCount, avgWeight, coverageRate.
+        {t("governance.card.topicStats.subtitle")}
       </p>
       {!rows.length ? (
-        <div className="mt-4 text-xs text-slate-400">No topic stats data.</div>
+        <div className="mt-4 text-xs text-slate-400">
+          {t("governance.card.topicStats.empty")}
+        </div>
       ) : (
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-xs">
             <thead>
               <tr className="text-slate-400">
-                <th className="px-2 py-2 text-left">Topic</th>
-                <th className="px-2 py-2 text-left">Dimension</th>
-                <th className="px-2 py-2 text-left">docCount</th>
-                <th className="px-2 py-2 text-left">avgWeight</th>
-                <th className="px-2 py-2 text-left">coverageRate</th>
+                <th className="px-2 py-2 text-left">
+                  {t("governance.card.topicStats.columns.topic")}
+                </th>
+                <th className="px-2 py-2 text-left">
+                  {t("governance.card.topicStats.columns.dimension")}
+                </th>
+                <th className="px-2 py-2 text-left">
+                  {t("governance.card.topicStats.columns.docCount")}
+                </th>
+                <th className="px-2 py-2 text-left">
+                  {t("governance.card.topicStats.columns.avgWeight")}
+                </th>
+                <th className="px-2 py-2 text-left">
+                  {t("governance.card.topicStats.columns.coverageRate")}
+                </th>
               </tr>
             </thead>
             <tbody>

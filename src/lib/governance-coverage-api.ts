@@ -29,6 +29,29 @@ export type TopicCoverageOverviewResponse = {
   truncated?: boolean;
 };
 
+export type GovernanceCoverageHealthDiagnosis = {
+  type: string;
+  severity: "INFO" | "WARNING" | "ERROR" | string;
+  message: string;
+};
+
+export type GovernanceCoverageHealthResponse = {
+  score: number;
+  level: "GOOD" | "OK" | "POOR" | string;
+  summary: {
+    coverageRate: number;
+    multiHitRate: number;
+    blindSpotRate: number;
+  };
+  breakdown: {
+    coverageScore: number;
+    multiHitScore: number;
+    blindSpotScore: number;
+    distributionScore: number;
+  };
+  diagnosis: GovernanceCoverageHealthDiagnosis[];
+};
+
 export type TopicCoverageTopicItem = {
   topicId: string;
   topicName?: string | null;
@@ -174,6 +197,13 @@ export async function fetchCoverageOverview(params?: { datasetName?: string }) {
   );
 }
 
+export async function fetchCoverageHealth(params?: { datasetName?: string }) {
+  const query = buildQuery(params);
+  return unwrapOrReturn<GovernanceCoverageHealthResponse>(
+    `${GOVERNANCE_COVERAGE_PROXY}${query}`
+  );
+}
+
 export async function fetchCoverageTopics(params?: { datasetName?: string }) {
   const query = buildQuery(params);
   return unwrapOrReturn<TopicCoverageTopicsResponse>(
@@ -212,4 +242,3 @@ export async function recomputeCoverage(params?: { datasetName?: string }) {
     { method: "POST" }
   );
 }
-

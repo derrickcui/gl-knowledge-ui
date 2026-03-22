@@ -1279,6 +1279,9 @@ paths:
     get:
       tags: [Tagging]
       summary: List tagging jobs
+      description: |
+        Changed: each job item may include an optional `projection` summary.
+        The field is populated for `TOPICSET_ONLY` jobs and null for `TOPIC_ONLY` and `FULL` jobs.
       operationId: listTaggingJobs
       parameters:
         - name: status
@@ -1292,8 +1295,13 @@ paths:
           required: false
           schema:
             type: string
-            enum: [FULL, TOPIC_ONLY]
+            enum: [FULL, TOPIC_ONLY, TOPICSET_ONLY]
         - name: topicId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: topicSetId
           in: query
           required: false
           schema:
@@ -1373,6 +1381,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
 
+  /api/tagging/topicset/{topicSetId}:
+    post:
+      tags: [Tagging]
+      summary: Create tagging job for one published topicset
+      operationId: createTopicSetTaggingJob
+      parameters:
+        - name: topicSetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseJobIdMap'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/tagging/full:
     post:
       tags: [Tagging]
@@ -1396,6 +1430,9 @@ paths:
     get:
       tags: [Tagging]
       summary: Get tagging job detail
+      description: |
+        Changed: the response may include an optional `projection` summary.
+        The field is populated for `TOPICSET_ONLY` jobs and null for `TOPIC_ONLY` and `FULL` jobs.
       operationId: getTaggingJob
       parameters:
         - name: jobId
@@ -1417,10 +1454,72 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
 
+  /api/tagging/jobs/stream:
+    get:
+      tags: [Tagging]
+      summary: Stream tagging job realtime snapshot
+      description: |
+        Changed: the streamed job snapshot payload may include an optional `projection` summary
+        for `TOPICSET_ONLY` jobs.
+      operationId: streamTaggingJob
+      parameters:
+        - name: jobId
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: intervalMs
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 2000
+            minimum: 500
+            maximum: 60000
+      responses:
+        '200':
+          description: SSE stream of tagging job snapshots
+          content:
+            text/event-stream:
+              x-event-schema:
+                snapshot:
+                  $ref: '#/components/schemas/TaggingJobSnapshotEvent'
+                ping:
+                  $ref: '#/components/schemas/TaggingJobPingEvent'
+              schema:
+                type: string
+              example: |
+                event: snapshot
+                data: {"at":"2026-03-21T12:00:00Z","jobId":"job_123","data":{"success":true,"data":{"jobId":"job_123","topicId":null,"topicVersion":null,"topicSetId":"ts_001","topicSetVersion":"3","mode":"TOPICSET_ONLY","status":"RUNNING","totalDocs":141,"taggedDocs":78,"retryCount":0,"maxRetries":3,"errorMessage":null,"createdAt":"2026-03-21T11:59:00Z","startedAt":"2026-03-21T11:59:05Z","finishedAt":null,"projection":{"runtimeVersion":"3","namespace":"policy","topicCount":2,"assignmentCount":4,"projectedNodeCount":3,"ancestorExpandedCount":1}},"error":null},"error":null}
+                event: ping
+                data: {"at":"2026-03-21T12:00:15Z"}
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '404':
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+        '503':
+          description: Upstream tagging service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/tagging/job/{jobId}:
     get:
       tags: [Tagging]
       summary: Get tagging job detail (alias)
+      description: |
+        Changed: the response may include an optional `projection` summary.
+        The field is populated for `TOPICSET_ONLY` jobs and null for `TOPIC_ONLY` and `FULL` jobs.
       operationId: getTaggingJobAlias
       parameters:
         - name: jobId
@@ -1471,6 +1570,11 @@ paths:
     get:
       tags: [Tagging]
       summary: Get aggregated troubleshooting logs of a tagging job
+      description: |
+        Changed for `TOPICSET_ONLY` jobs:
+        - `entries[*].scope` may now be `TOPICSET`
+        - the response may include a synthetic TopicSet projection summary entry
+        - topic log messages may contain projection metrics such as assignments and ancestor expansion
       operationId: getTaggingJobLogs
       parameters:
         - name: jobId
@@ -3705,9 +3809,16 @@ components:
         topicVersion:
           type: string
           nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        topicSetVersion:
+          type: integer
+          format: int32
+          nullable: true
         mode:
           type: string
-          enum: [FULL, TOPIC_ONLY]
+          enum: [FULL, TOPIC_ONLY, TOPICSET_ONLY]
           nullable: true
         status:
           type: string
@@ -3739,7 +3850,35 @@ components:
           type: string
           format: date-time
           nullable: true
+        projection:
+          allOf:
+            - $ref: '#/components/schemas/TopicTaggingProjectionSummaryView'
+          nullable: true
       required: [jobId, totalDocs, taggedDocs, retryCount, maxRetries, createdAt]
+
+    TopicTaggingProjectionSummaryView:
+      type: object
+      description: Projection summary for TopicSet tagging jobs. Null for topic-only and full tagging jobs.
+      properties:
+        runtimeVersion:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        topicCount:
+          type: integer
+          format: int32
+        assignmentCount:
+          type: integer
+          format: int32
+        projectedNodeCount:
+          type: integer
+          format: int32
+        ancestorExpandedCount:
+          type: integer
+          format: int32
+      required: [topicCount, assignmentCount, projectedNodeCount, ancestorExpandedCount]
 
     TopicTaggingTopicResultView:
       type: object
@@ -3780,7 +3919,7 @@ components:
           enum: [INFO, WARN, ERROR]
         scope:
           type: string
-          enum: [JOB, TOPIC]
+          enum: [JOB, TOPIC, TOPICSET]
         topicId:
           type: string
           nullable: true
@@ -3820,9 +3959,16 @@ components:
         topicVersion:
           type: string
           nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        topicSetVersion:
+          type: integer
+          format: int32
+          nullable: true
         mode:
           type: string
-          enum: [FULL, TOPIC_ONLY]
+          enum: [FULL, TOPIC_ONLY, TOPICSET_ONLY]
           nullable: true
         status:
           type: string
@@ -3886,6 +4032,86 @@ components:
           type: integer
           format: int64
       required: [items, page, size, total]
+
+    TaggingJobStreamJobView:
+      type: object
+      properties:
+        jobId:
+          type: string
+        topicId:
+          type: string
+          nullable: true
+        topicVersion:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        topicSetVersion:
+          type: string
+          nullable: true
+        mode:
+          type: string
+          enum: [FULL, TOPIC_ONLY, TOPICSET_ONLY]
+          nullable: true
+        status:
+          type: string
+          enum: [PENDING, RUNNING, SUCCESS, FAILED]
+          nullable: true
+        totalDocs:
+          type: integer
+          format: int64
+        taggedDocs:
+          type: integer
+          format: int64
+        retryCount:
+          type: integer
+          format: int32
+        maxRetries:
+          type: integer
+          format: int32
+        errorMessage:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        projection:
+          allOf:
+            - $ref: '#/components/schemas/TopicTaggingProjectionSummaryView'
+          nullable: true
+
+    TaggingJobSnapshotEvent:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+        jobId:
+          type: string
+        data:
+          $ref: '#/components/schemas/ApiResponseTaggingJobStreamJobView'
+          nullable: true
+        error:
+          type: string
+          nullable: true
+      required: [at, jobId]
+
+    TaggingJobPingEvent:
+      type: object
+      properties:
+        at:
+          type: string
+          format: date-time
+      required: [at]
 
     TopicDimensionCoverageView:
       type: object
@@ -5386,6 +5612,17 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicTaggingJobView'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTaggingJobStreamJobView:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TaggingJobStreamJobView'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]

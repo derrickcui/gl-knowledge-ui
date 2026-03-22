@@ -1,4 +1,5 @@
 import { TaggingJobStatus, TaggingJobView } from "@/lib/tagging-api";
+import { t } from "@/i18n";
 
 export function heatColor(intensity: number) {
   const alpha = 0.2 + intensity * 0.8;
@@ -37,7 +38,9 @@ export function statusClass(status: TaggingJobStatus | null | undefined) {
 }
 
 export function modeText(mode: TaggingJobView["mode"]) {
-  return mode === "FULL" ? "FULL RETAG" : "TOPIC RETAG";
+  if (mode === "FULL") return t("governance.control.mode.full");
+  if (mode === "TOPICSET_ONLY") return t("governance.control.mode.topicSetOnly");
+  return t("governance.control.mode.topicOnly");
 }
 
 export function progressOf(job: TaggingJobView) {

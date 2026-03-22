@@ -7,8 +7,10 @@ import {
   fetchCoverageBlindspots,
   fetchCoverageControl,
   fetchCoverageDistribution,
+  fetchCoverageHealth,
   fetchCoverageOverview,
   fetchCoverageTopics,
+  GovernanceCoverageHealthResponse,
   recomputeCoverage,
   TopicCoverageBlindspotDoc,
   TopicCoverageControlResponse,
@@ -24,16 +26,22 @@ import {
   TopicSignalTimelinePointView,
   TopicSignalVersionDiffResponse,
 } from "@/lib/governance-topic-signals-api";
+import { searchTopics, TopicDTO } from "@/lib/topic-api";
 import {
   createFullTaggingJob,
+  createTopicSetTaggingJob,
   createTopicTaggingJob,
+  getTaggingJobLogs,
   getTaggingJob,
   listTaggingJobTopics,
   listTaggingJobs,
   retryTaggingJob,
+  TaggingJobLogsView,
+  TaggingJobMode,
   TaggingJobView,
   TaggingTopicResultView,
 } from "@/lib/tagging-api";
+import { listTopicSets, TopicSetSummary } from "@/lib/topicset-api";
 import { buildTrendPath, radarPoint } from "./dashboard-utils";
 import {
   CreateTopicFromBlindspotDialog,
@@ -60,6 +68,11 @@ type SnapshotOption = {
   label?: string | null;
 };
 
+type CreateTaggingTarget = "TOPIC" | "TOPICSET";
+type CreateTopicScope = "FULL" | "SINGLE";
+
+type HealthTone = "good" | "warn" | "bad";
+
 function normalizeRate(value: number | null | undefined) {
   if (typeof value !== "number" || Number.isNaN(value)) return 0;
   const normalized = value > 1 ? value : value * 100;
@@ -68,6 +81,37 @@ function normalizeRate(value: number | null | undefined) {
 
 function formatPercent(value: number | null | undefined) {
   return `${normalizeRate(value).toFixed(2)}%`;
+}
+
+function healthToneFromScore(score: number | null | undefined): HealthTone {
+  const normalized = Number(score ?? 0);
+  if (normalized >= 80) return "good";
+  if (normalized >= 60) return "warn";
+  return "bad";
+}
+
+function healthToneLabel(tone: HealthTone) {
+  if (tone === "good") return t("governance.control.health.good");
+  if (tone === "warn") return t("governance.control.health.warn");
+  return t("governance.control.health.bad");
+}
+
+function healthToneClass(tone: HealthTone) {
+  if (tone === "good") return "border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+  if (tone === "warn") return "border-amber-400/40 bg-amber-500/10 text-amber-200";
+  return "border-rose-400/40 bg-rose-500/10 text-rose-200";
+}
+
+function severityClass(severity: string | null | undefined) {
+  if (severity === "ERROR") return "border-rose-500/40 bg-rose-500/10 text-rose-200";
+  if (severity === "WARNING") return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+  return "border-sky-500/40 bg-sky-500/10 text-sky-200";
+}
+
+function severityLabel(severity: string | null | undefined) {
+  if (severity === "ERROR") return t("governance.control.diagnosis.error");
+  if (severity === "WARNING") return t("governance.control.diagnosis.warning");
+  return t("governance.control.diagnosis.info");
 }
 
 function formatSignedPercentDelta(value: number | null | undefined) {
@@ -133,8 +177,13 @@ function decodeSseJob(payload: unknown): TaggingJobView | null {
   if (!maybeData || typeof maybeData !== "object") return null;
   const innerData = (maybeData as { data?: unknown }).data;
   if (!innerData || typeof innerData !== "object") return null;
-  if (!("jobId" in (innerData as Record<string, unknown>))) return null;
-  return innerData as TaggingJobView;
+  const record = innerData as Record<string, unknown>;
+  if (!("jobId" in record)) return null;
+  return {
+    ...(record as TaggingJobView),
+    topicSetVersion:
+      record.topicSetVersion == null ? null : String(record.topicSetVersion),
+  };
 }
 
 export default function SemanticTaggingPage() {
@@ -142,12 +191,15 @@ export default function SemanticTaggingPage() {
   const blindspotRef = useRef<HTMLElement | null>(null);
   const phase3Ref = useRef<HTMLElement | null>(null);
   const taggingOpsRef = useRef<HTMLElement | null>(null);
+  const hasHydratedUrlStateRef = useRef(false);
+  const lastSseSnapshotKeyRef = useRef<string | null>(null);
 
   const [overview, setOverview] = useState<TopicCoverageOverviewResponse | null>(null);
   const [topics, setTopics] = useState<TopicCoverageTopicItem[]>([]);
   const [distribution, setDistribution] = useState<TopicCoverageDistributionResponse | null>(null);
   const [blindspots, setBlindspots] = useState<TopicCoverageBlindspotDoc[]>([]);
   const [control, setControl] = useState<TopicCoverageControlResponse | null>(null);
+  const [coverageHealth, setCoverageHealth] = useState<GovernanceCoverageHealthResponse | null>(null);
   const [matrix, setMatrix] = useState<AnalyticsMatrixView | null>(null);
   const [selectedHeatCell, setSelectedHeatCell] = useState<HeatCell | null>(null);
 
@@ -169,29 +221,45 @@ export default function SemanticTaggingPage() {
   const [snapshotBusy, setSnapshotBusy] = useState(false);
   const [createTopicSeed, setCreateTopicSeed] = useState<CreateTopicSeed | null>(null);
   const [incrementalEnabled, setIncrementalEnabled] = useState(true);
+  const [createTargetType, setCreateTargetType] = useState<CreateTaggingTarget>("TOPIC");
+  const [topicCreateScope, setTopicCreateScope] = useState<CreateTopicScope>("FULL");
+  const [publishedTopics, setPublishedTopics] = useState<TopicDTO[]>([]);
+  const [publishedTopicSets, setPublishedTopicSets] = useState<TopicSetSummary[]>([]);
+  const [createOptionsLoading, setCreateOptionsLoading] = useState(false);
   const [topicInput, setTopicInput] = useState("");
+  const [topicSetInput, setTopicSetInput] = useState("");
+  const [jobModeFilter, setJobModeFilter] = useState<"ALL" | TaggingJobMode>("ALL");
   const [jobs, setJobs] = useState<TaggingJobView[]>([]);
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
+  const [jobsLastUpdatedAt, setJobsLastUpdatedAt] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [expandedJobId, setExpandedJobId] = useState("");
   const [jobTopicMap, setJobTopicMap] = useState<Record<string, TaggingTopicResultView[]>>({});
   const [jobDetailMap, setJobDetailMap] = useState<Record<string, TaggingJobView>>({});
   const [jobTopicsLoadingMap, setJobTopicsLoadingMap] = useState<Record<string, boolean>>({});
+  const [jobLogsMap, setJobLogsMap] = useState<Record<string, TaggingJobLogsView>>({});
+  const [jobLogsLoadingMap, setJobLogsLoadingMap] = useState<Record<string, boolean>>({});
+  const [jobLogsIncludeSuccessMap, setJobLogsIncludeSuccessMap] = useState<Record<string, boolean>>({});
+  const [jobLogsLevelFilterMap, setJobLogsLevelFilterMap] = useState<
+    Record<string, "ALL" | "ERROR" | "WARN" | "PROBLEM">
+  >({});
   const [sseJobId, setSseJobId] = useState("");
   const [sseConnected, setSseConnected] = useState(false);
   const [sseLogs, setSseLogs] = useState<string[]>([]);
   const [sseError, setSseError] = useState<string | null>(null);
+  const [liveProgressLogExpanded, setLiveProgressLogExpanded] = useState(false);
 
   async function loadCoverageData(showLoading = false) {
     if (showLoading) setLoading(true);
 
-    const [overviewRes, topicsRes, distributionRes, blindspotRes, controlRes] = await Promise.all([
+    const [overviewRes, topicsRes, distributionRes, blindspotRes, controlRes, healthRes] = await Promise.all([
       fetchCoverageOverview(),
       fetchCoverageTopics(),
       fetchCoverageDistribution(),
       fetchCoverageBlindspots({ limit: 100 }),
       fetchCoverageControl(),
+      fetchCoverageHealth(),
     ]);
 
     if (showLoading) setLoading(false);
@@ -201,7 +269,8 @@ export default function SemanticTaggingPage() {
       topicsRes.error ??
       distributionRes.error ??
       blindspotRes.error ??
-      controlRes.error;
+      controlRes.error ??
+      healthRes.error;
 
     setError(firstError ?? null);
 
@@ -216,11 +285,29 @@ export default function SemanticTaggingPage() {
     if (distributionRes.data) setDistribution(distributionRes.data);
     if (blindspotRes.data) setBlindspots(blindspotRes.data.docs ?? []);
     if (controlRes.data) setControl(controlRes.data);
+    if (healthRes.data) setCoverageHealth(healthRes.data);
 
     const matrixRes = await fetchAnalyticsMatrix({ limit: 50, topicLimit: 10 });
     if (matrixRes.data) {
       setMatrix(matrixRes.data);
     }
+  }
+
+  async function loadCreateOptions() {
+    setCreateOptionsLoading(true);
+    const [topicsRes, topicSetsRes] = await Promise.all([
+      searchTopics({ status: "PUBLISHED" }),
+      listTopicSets(),
+    ]);
+    if (topicsRes.data) {
+      setPublishedTopics(topicsRes.data);
+    }
+    if (topicSetsRes.data) {
+      setPublishedTopicSets(
+        topicSetsRes.data.filter((item) => String(item.status).toUpperCase() === "PUBLISHED")
+      );
+    }
+    setCreateOptionsLoading(false);
   }
 
   async function handleRecompute() {
@@ -361,7 +448,11 @@ export default function SemanticTaggingPage() {
 
   async function loadJobs(showLoading = false) {
     if (showLoading) setJobsLoading(true);
-    const res = await listTaggingJobs({ page: 0, size: 20 });
+    const res = await listTaggingJobs({
+      page: 0,
+      size: 20,
+      mode: jobModeFilter === "ALL" ? undefined : jobModeFilter,
+    });
     if (showLoading) setJobsLoading(false);
 
     if (!res.data) {
@@ -370,6 +461,7 @@ export default function SemanticTaggingPage() {
     }
     setJobsError(null);
     setJobs(res.data.items);
+    setJobsLastUpdatedAt(new Date().toISOString());
     if (!expandedJobId && res.data.items.length > 0) {
       setExpandedJobId(res.data.items[0].jobId);
     }
@@ -377,12 +469,16 @@ export default function SemanticTaggingPage() {
 
   async function loadJobDetailAndTopics(jobId: string) {
     if (!jobId) return;
+    const includeSuccess = Boolean(jobLogsIncludeSuccessMap[jobId]);
     setJobTopicsLoadingMap((prev) => ({ ...prev, [jobId]: true }));
-    const [topicsRes, detailRes] = await Promise.all([
+    setJobLogsLoadingMap((prev) => ({ ...prev, [jobId]: true }));
+    const [topicsRes, detailRes, logsRes] = await Promise.all([
       listTaggingJobTopics(jobId),
       getTaggingJob(jobId),
+      getTaggingJobLogs(jobId, { includeSuccess }),
     ]);
     setJobTopicsLoadingMap((prev) => ({ ...prev, [jobId]: false }));
+    setJobLogsLoadingMap((prev) => ({ ...prev, [jobId]: false }));
 
     if (topicsRes.data) {
       setJobTopicMap((prev) => ({ ...prev, [jobId]: topicsRes.data ?? [] }));
@@ -390,6 +486,28 @@ export default function SemanticTaggingPage() {
     if (detailRes.data) {
       setJobDetailMap((prev) => ({ ...prev, [jobId]: detailRes.data as TaggingJobView }));
     }
+    if (logsRes.data) {
+      setJobLogsMap((prev) => ({ ...prev, [jobId]: logsRes.data as TaggingJobLogsView }));
+    }
+  }
+
+  async function handleToggleIncludeSuccessLogs(jobId: string, includeSuccess: boolean) {
+    setJobLogsIncludeSuccessMap((prev) => ({ ...prev, [jobId]: includeSuccess }));
+    if (expandedJobId === jobId) {
+      setJobLogsLoadingMap((prev) => ({ ...prev, [jobId]: true }));
+      const logsRes = await getTaggingJobLogs(jobId, { includeSuccess });
+      setJobLogsLoadingMap((prev) => ({ ...prev, [jobId]: false }));
+      if (logsRes.data) {
+        setJobLogsMap((prev) => ({ ...prev, [jobId]: logsRes.data as TaggingJobLogsView }));
+      }
+    }
+  }
+
+  function handleChangeLogsLevelFilter(
+    jobId: string,
+    levelFilter: "ALL" | "ERROR" | "WARN" | "PROBLEM"
+  ) {
+    setJobLogsLevelFilterMap((prev) => ({ ...prev, [jobId]: levelFilter }));
   }
 
   async function handleCreateFullTaggingJob() {
@@ -420,6 +538,33 @@ export default function SemanticTaggingPage() {
     await loadJobDetailAndTopics(res.data.jobId);
   }
 
+  async function handleCreateTopicSetTaggingJob() {
+    const topicSetId = topicSetInput.trim();
+    if (!topicSetId) return;
+    setActionLoading(true);
+    const res = await createTopicSetTaggingJob(topicSetId);
+    setActionLoading(false);
+    if (!res.data) {
+      setJobsError(res.error ?? "failed to create topicset tagging job");
+      return;
+    }
+    setExpandedJobId(res.data.jobId);
+    await loadJobs(false);
+    await loadJobDetailAndTopics(res.data.jobId);
+  }
+
+  async function handleCreateTaggingJob() {
+    if (createTargetType === "TOPICSET") {
+      await handleCreateTopicSetTaggingJob();
+      return;
+    }
+    if (topicCreateScope === "SINGLE") {
+      await handleCreateSingleTopicTaggingJob();
+      return;
+    }
+    await handleCreateFullTaggingJob();
+  }
+
   async function handleRetryJob(jobId: string) {
     setActionLoading(true);
     const res = await retryTaggingJob(jobId);
@@ -431,9 +576,83 @@ export default function SemanticTaggingPage() {
     await loadJobs(false);
   }
 
+  async function handleRefreshJobs() {
+    await loadJobs(true);
+    if (expandedJobId) {
+      await loadJobDetailAndTopics(expandedJobId);
+    }
+  }
+
   useEffect(() => {
     loadCoverageData(true);
+    loadCreateOptions();
   }, []);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const topicIdFromQuery = searchParams.get("topicId")?.trim() ?? "";
+    const topicSetIdFromQuery = searchParams.get("topicSetId")?.trim() ?? "";
+    const modeFromQuery = searchParams.get("mode")?.trim() ?? "";
+    const jobIdFromQuery = searchParams.get("jobId")?.trim() ?? "";
+    if (
+      modeFromQuery === "FULL" ||
+      modeFromQuery === "TOPIC_ONLY" ||
+      modeFromQuery === "TOPICSET_ONLY"
+    ) {
+      setJobModeFilter(modeFromQuery);
+    }
+    if (topicIdFromQuery) {
+      setTopicInput(topicIdFromQuery);
+      setCreateTargetType("TOPIC");
+      setTopicCreateScope("SINGLE");
+    }
+    if (topicSetIdFromQuery) {
+      setTopicSetInput(topicSetIdFromQuery);
+      setCreateTargetType("TOPICSET");
+      taggingOpsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (modeFromQuery === "FULL") {
+      setCreateTargetType("TOPIC");
+      setTopicCreateScope("FULL");
+    } else if (modeFromQuery === "TOPIC_ONLY") {
+      setCreateTargetType("TOPIC");
+      setTopicCreateScope("SINGLE");
+    } else if (modeFromQuery === "TOPICSET_ONLY") {
+      setCreateTargetType("TOPICSET");
+    }
+    if (jobIdFromQuery) {
+      setExpandedJobId(jobIdFromQuery);
+    }
+    hasHydratedUrlStateRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!hasHydratedUrlStateRef.current) return;
+    const searchParams = new URLSearchParams(window.location.search);
+    if (jobModeFilter === "ALL") {
+      searchParams.delete("mode");
+    } else {
+      searchParams.set("mode", jobModeFilter);
+    }
+    if (topicInput.trim()) {
+      searchParams.set("topicId", topicInput.trim());
+    } else {
+      searchParams.delete("topicId");
+    }
+    if (topicSetInput.trim()) {
+      searchParams.set("topicSetId", topicSetInput.trim());
+    } else {
+      searchParams.delete("topicSetId");
+    }
+    if (expandedJobId.trim()) {
+      searchParams.set("jobId", expandedJobId.trim());
+    } else {
+      searchParams.delete("jobId");
+    }
+    const nextQuery = searchParams.toString();
+    const nextUrl = nextQuery ? `/knowledge/tagging?${nextQuery}` : "/knowledge/tagging";
+    router.replace(nextUrl, { scroll: false });
+  }, [expandedJobId, jobModeFilter, router, topicInput, topicSetInput]);
 
   useEffect(() => {
     loadJobs(true);
@@ -441,7 +660,7 @@ export default function SemanticTaggingPage() {
       loadJobs(false);
     }, 5000);
     return () => window.clearInterval(poller);
-  }, []);
+  }, [jobModeFilter]);
 
   useEffect(() => {
     if (!expandedJobId) return;
@@ -449,19 +668,24 @@ export default function SemanticTaggingPage() {
     if (!sseJobId) {
       setSseJobId(expandedJobId);
     }
-  }, [expandedJobId]);
+  }, [expandedJobId, jobLogsIncludeSuccessMap]);
 
   useEffect(() => {
     if (!sseConnected || !sseJobId.trim()) return;
     setSseError(null);
+    lastSseSnapshotKeyRef.current = null;
     setSseLogs((prev) => [
-      `SSE connected: ${sseJobId} @ ${new Date().toLocaleTimeString()}`,
+      t("governance.control.sse.log.connected", {
+        jobId: sseJobId,
+        time: new Date().toLocaleTimeString(),
+      }),
       ...prev,
     ].slice(0, 80));
 
     const source = new EventSource(
       `/api/tagging/jobs/stream?jobId=${encodeURIComponent(sseJobId.trim())}&intervalMs=2000`
     );
+    let closedByTerminalSnapshot = false;
 
     source.addEventListener("snapshot", (event) => {
       try {
@@ -469,25 +693,54 @@ export default function SemanticTaggingPage() {
         const job = decodeSseJob(parsed);
         if (!job) {
           setSseLogs((prev) => [
-            `[${new Date().toLocaleTimeString()}] snapshot received (unparsed)`,
+            t("governance.control.sse.log.snapshotUnparsed", {
+              time: new Date().toLocaleTimeString(),
+            }),
             ...prev,
           ].slice(0, 80));
           return;
         }
+        const snapshotKey = [
+          job.jobId,
+          job.status ?? "",
+          job.taggedDocs,
+          job.totalDocs,
+          job.errorMessage ?? "",
+        ].join("|");
+        if (lastSseSnapshotKeyRef.current === snapshotKey) {
+          return;
+        }
+        lastSseSnapshotKeyRef.current = snapshotKey;
         setSseLogs((prev) => [
-          `[${new Date().toLocaleTimeString()}] ${job.jobId} ${job.status ?? "UNKNOWN"} ${job.taggedDocs}/${job.totalDocs}`,
+          t("governance.control.sse.log.snapshot", {
+            time: new Date().toLocaleTimeString(),
+            jobId: job.jobId,
+            status: job.status ?? t("governance.control.unknown"),
+            taggedDocs: job.taggedDocs,
+            totalDocs: job.totalDocs,
+          }),
           ...prev,
         ].slice(0, 80));
+        if (job.status === "SUCCESS" || job.status === "FAILED") {
+          closedByTerminalSnapshot = true;
+          setSseConnected(false);
+          source.close();
+        }
       } catch {
         setSseLogs((prev) => [
-          `[${new Date().toLocaleTimeString()}] snapshot parse failed`,
+          t("governance.control.sse.log.snapshotParseFailed", {
+            time: new Date().toLocaleTimeString(),
+          }),
           ...prev,
         ].slice(0, 80));
       }
     });
 
     source.onerror = () => {
-      setSseError("SSE disconnected");
+      if (closedByTerminalSnapshot) {
+        return;
+      }
+      setSseError(t("governance.control.sseDisconnected"));
       setSseConnected(false);
       source.close();
     };
@@ -527,14 +780,18 @@ export default function SemanticTaggingPage() {
   }, [normalizedDistribution]);
 
   const radarMetrics: RadarMetric[] = useMemo(() => {
-    const docCoverage = normalizeRate(overview?.overallCoverageRate ?? 0);
+    const docCoverage = normalizeRate(
+      coverageHealth?.summary.coverageRate ?? overview?.overallCoverageRate ?? 0
+    );
     const filterControl = modeCoverage(control, "FILTER");
     const boostControl = modeCoverage(control, "BOOST");
-    const density = Math.max(0, Math.min(100, multiTopicDensity(overview, distribution)));
-    const blindspotInverted =
-      overview && overview.totalDocs > 0
-        ? 100 - normalizeRate((overview.uncoveredDocs ?? 0) / overview.totalDocs)
-        : 0;
+    const density = normalizeRate(
+      coverageHealth?.summary.multiHitRate ?? multiTopicDensity(overview, distribution)
+    );
+    const blindspotInverted = Math.max(
+      0,
+      100 - normalizeRate(coverageHealth?.summary.blindSpotRate)
+    );
 
     return [
       { key: "docCoverage", label: t("governance.control.radar.docCoverage"), value: docCoverage },
@@ -543,7 +800,7 @@ export default function SemanticTaggingPage() {
       { key: "density", label: t("governance.control.radar.multiTopicDensity"), value: density },
       { key: "blindspot", label: t("governance.control.radar.blindspotInverted"), value: blindspotInverted },
     ];
-  }, [overview, control, distribution]);
+  }, [overview, control, distribution, coverageHealth]);
 
   const radarPolygon = useMemo(() => {
     return radarMetrics
@@ -563,9 +820,21 @@ export default function SemanticTaggingPage() {
       return title.includes(keyword) || docId.includes(keyword);
     });
   }, [blindspots, blindspotKeyword]);
+  const selectedPublishedTopicMissing = Boolean(
+    topicInput.trim() && !publishedTopics.some((item) => item.id === topicInput.trim())
+  );
+  const selectedPublishedTopicSetMissing = Boolean(
+    topicSetInput.trim() && !publishedTopicSets.some((item) => item.id === topicSetInput.trim())
+  );
 
   const totalDocs = overview?.totalDocs ?? 0;
   const blindspotCount = overview?.uncoveredDocs ?? blindspots.length;
+  const coverageRateValue = coverageHealth?.summary.coverageRate ?? overview?.overallCoverageRate ?? 0;
+  const multiHitRateValue =
+    coverageHealth?.summary.multiHitRate ?? multiTopicDensity(overview, distribution) / 100;
+  const blindSpotRateValue =
+    coverageHealth?.summary.blindSpotRate ??
+    (overview && overview.totalDocs > 0 ? (overview.uncoveredDocs ?? 0) / overview.totalDocs : 0);
   const topRuntimeVersion = overview?.runtimeVersion ?? control?.runtimeVersion ?? "-";
   const trendPathWidth = 620;
   const trendPathHeight = 180;
@@ -590,14 +859,52 @@ export default function SemanticTaggingPage() {
     versionDiff?.baseline?.topicRuntimeVersion,
     versionDiff?.current?.topicRuntimeVersion
   );
+  const topicNameMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    topics.forEach((topic) => {
+      const label = topic.topicName?.trim();
+      if (label) {
+        map[topic.topicId] = label;
+      }
+    });
+    publishedTopics.forEach((topic) => {
+      const label = topic.name?.trim();
+      if (label && !map[topic.id]) {
+        map[topic.id] = label;
+      }
+    });
+    return map;
+  }, [publishedTopics, topics]);
   const liveEvents = useMemo(() => {
     const events: string[] = [];
     if (recomputeStatus) events.push(recomputeStatus);
-    if (jobsError) events.push(`Job error: ${jobsError}`);
+    if (jobsError) {
+      events.push(t("governance.control.liveEvents.jobError", { error: jobsError }));
+    }
     if (sseError) events.push(`SSE: ${sseError}`);
     events.push(...sseLogs);
     return events.slice(0, 10);
   }, [recomputeStatus, jobsError, sseError, sseLogs]);
+
+  useEffect(() => {
+    if (sseConnected || sseError) {
+      setLiveProgressLogExpanded(true);
+    }
+  }, [sseConnected, sseError]);
+
+  const showLiveProgressLog =
+    Boolean(sseConnected) || Boolean(sseError) || liveEvents.length > 0;
+  const headerHealthTone = healthToneFromScore(coverageHealth?.score);
+  const coverageTone = healthToneFromScore(coverageHealth?.breakdown.coverageScore);
+  const multiHitTone = healthToneFromScore(coverageHealth?.breakdown.multiHitScore);
+  const blindSpotTone = healthToneFromScore(coverageHealth?.breakdown.blindSpotScore);
+  const radarToneByKey: Record<string, HealthTone> = {
+    docCoverage: coverageTone,
+    filterControl: healthToneFromScore(coverageHealth?.breakdown.distributionScore),
+    boostControl: healthToneFromScore(coverageHealth?.breakdown.distributionScore),
+    density: multiHitTone,
+    blindspot: blindSpotTone,
+  };
 
   return (
     <div className="min-h-full bg-background text-slate-100">
@@ -614,8 +921,8 @@ export default function SemanticTaggingPage() {
                 {incrementalEnabled ? t("governance.control.on") : t("governance.control.off")} · {t("governance.control.lastRetag")}:
                 {" "}
                 {formatTime(overview?.generatedAt)} · {t("governance.control.status")}:{" "}
-                <span className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-emerald-300">
-                  {t("governance.control.healthy")}
+                <span className={`rounded-full border px-2 py-0.5 ${healthToneClass(headerHealthTone)}`}>
+                  {coverageHealth?.level ?? t("governance.control.healthy")} ({Number(coverageHealth?.score ?? 0).toFixed(0)})
                 </span>
               </p>
             </div>
@@ -703,11 +1010,21 @@ export default function SemanticTaggingPage() {
               className="rounded-xl border border-blue-400/30 bg-blue-500/10 p-4 text-left transition hover:bg-blue-500/20"
             >
               <div className="text-xs uppercase tracking-wide text-blue-200">{t("governance.control.overview.coverage")}</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{formatPercent(overview?.overallCoverageRate ?? 0)}</div>
+              <div className="mt-2 flex items-end justify-between gap-3">
+                <div className="text-3xl font-semibold text-white">{formatPercent(coverageRateValue)}</div>
+                <span className={`rounded-full border px-2 py-0.5 text-xs ${healthToneClass(coverageTone)}`}>
+                  {healthToneLabel(coverageTone)}
+                </span>
+              </div>
             </button>
             <article className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
               <div className="text-xs uppercase tracking-wide text-slate-400">{t("governance.control.overview.multiHit")}</div>
-              <div className="mt-2 text-3xl font-semibold">{multiTopicDensity(overview, distribution).toFixed(2)}%</div>
+              <div className="mt-2 flex items-end justify-between gap-3">
+                <div className="text-3xl font-semibold">{formatPercent(multiHitRateValue)}</div>
+                <span className={`rounded-full border px-2 py-0.5 text-xs ${healthToneClass(multiHitTone)}`}>
+                  {healthToneLabel(multiHitTone)}
+                </span>
+              </div>
             </article>
             <button
               type="button"
@@ -715,7 +1032,15 @@ export default function SemanticTaggingPage() {
               className="rounded-xl border border-amber-400/40 bg-amber-500/10 p-4 text-left transition hover:bg-amber-500/20"
             >
               <div className="text-xs uppercase tracking-wide text-amber-200">{t("governance.control.overview.blindspots")}</div>
-              <div className="mt-2 text-3xl font-semibold text-white">{blindspotCount.toLocaleString()}</div>
+              <div className="mt-2 flex items-end justify-between gap-3">
+                <div>
+                  <div className="text-3xl font-semibold text-white">{blindspotCount.toLocaleString()}</div>
+                  <div className="mt-1 text-xs text-amber-100/80">{formatPercent(blindSpotRateValue)}</div>
+                </div>
+                <span className={`rounded-full border px-2 py-0.5 text-xs ${healthToneClass(blindSpotTone)}`}>
+                  {healthToneLabel(blindSpotTone)}
+                </span>
+              </div>
             </button>
             <article className="rounded-xl border border-slate-700 bg-slate-950/60 p-4">
               <div className="text-xs uppercase tracking-wide text-slate-400">{t("governance.control.overview.runtime")}</div>
@@ -724,7 +1049,25 @@ export default function SemanticTaggingPage() {
           </div>
         </section>
 
-        <section className="mt-5 grid gap-5 xl:grid-cols-[1fr_1fr_320px]">
+        {coverageHealth?.diagnosis?.length ? (
+          <section className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
+            <div className="mb-3 text-lg font-semibold">{t("governance.control.diagnosis.title")}</div>
+            <div className="space-y-2">
+              {coverageHealth.diagnosis.map((item, index) => (
+                <div
+                  key={`${item.type}-${index}`}
+                  className={`rounded-lg border px-3 py-2 text-sm ${severityClass(item.severity)}`}
+                >
+                  <span className="font-medium">{severityLabel(item.severity)}</span>
+                  <span className="mx-2 opacity-60">·</span>
+                  <span>{item.message}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section className="mt-5 grid items-start gap-5 lg:grid-cols-2">
           <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
             <h2 className="text-lg font-semibold">{t("governance.control.radar.title")}</h2>
             <p className="mt-1 text-xs text-slate-400">{t("governance.control.radar.subtitle")}</p>
@@ -742,16 +1085,30 @@ export default function SemanticTaggingPage() {
                 {radarMetrics.map((metric) => (
                   <div key={metric.key} className="flex items-center justify-between rounded-lg border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm">
                     <span className="text-slate-300">{metric.label}</span>
-                    <span className="font-medium text-white">{metric.value.toFixed(2)}%</span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-white">{metric.value.toFixed(2)}%</span>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[11px] ${healthToneClass(
+                          radarToneByKey[metric.key] ?? headerHealthTone
+                        )}`}
+                      >
+                        {healthToneLabel(radarToneByKey[metric.key] ?? headerHealthTone)}
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           </article>
 
-          <article className="rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">{t("governance.control.topicVolumeTrend")}</h2>
+          <article className="self-start rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">{t("governance.control.topicVolumeTrend")}</h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  {t("governance.card.trend.emptyStateHint")}
+                </p>
+              </div>
               <select
                 value={selectedTrendTopicId}
                 onChange={(event) => setSelectedTrendTopicId(event.target.value)}
@@ -766,7 +1123,15 @@ export default function SemanticTaggingPage() {
               </select>
             </div>
             {!timelinePoints.length ? (
-              <p className="mt-3 text-xs text-slate-400">{t("governance.control.noTrendData")}</p>
+              <div className="mt-4 rounded-xl border border-dashed border-slate-700 bg-slate-950/50 px-4 py-10">
+                <div className="mx-auto flex max-w-sm flex-col items-center text-center">
+                  <div className="mb-3 h-16 w-24 rounded-full border border-slate-700/80 bg-[radial-gradient(circle_at_center,rgba(96,165,250,0.18),transparent_65%)]" />
+                  <p className="text-sm text-slate-300">{t("governance.control.noTrendData")}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {t("governance.card.trend.emptyStateDescription")}
+                  </p>
+                </div>
+              </div>
             ) : (
               <>
                 <svg
@@ -788,14 +1153,15 @@ export default function SemanticTaggingPage() {
                   />
                 </svg>
                 <div className="mt-2 text-xs text-slate-400">
-                  Points: {timelinePoints.length} · Latest:{" "}
-                  {timelinePoints.length ? formatTime(timelinePoints[timelinePoints.length - 1].capturedAt) : "-"}
+                  {t("governance.control.points")}: {timelinePoints.length} · {t("governance.control.latest")}:{" "}
+                  {timelinePoints.length
+                    ? formatTime(timelinePoints[timelinePoints.length - 1].capturedAt)
+                    : "-"}
                 </div>
               </>
             )}
           </article>
 
-          <LiveEventDrawer events={liveEvents} />
         </section>
 
         <section className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
@@ -996,90 +1362,283 @@ export default function SemanticTaggingPage() {
               {t("governance.control.taggingOpsBadge")}
             </span>
           </div>
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={handleCreateFullTaggingJob}
-              disabled={actionLoading}
-              className="h-9 rounded-md border border-blue-400/40 bg-blue-500/10 px-3 text-sm text-blue-100 disabled:opacity-50"
-            >
-              {t("governance.control.fullTagging")}
-            </button>
-            <input
-              value={topicInput}
-              onChange={(event) => setTopicInput(event.target.value)}
-              placeholder={t("governance.control.topicIdPlaceholder")}
-              className="h-9 w-56 rounded-md border border-slate-600 bg-slate-950 px-3 text-sm text-slate-100 placeholder:text-slate-500"
+          <div className="grid gap-4 xl:grid-cols-3">
+            <article className="rounded-xl border border-cyan-400/30 bg-gradient-to-br from-cyan-500/10 via-slate-950/80 to-slate-950/80 p-4 shadow-[0_0_0_1px_rgba(34,211,238,0.05)]">
+              <div className="mb-1 text-sm font-medium text-slate-100">
+                {t("governance.control.createJobs")}
+              </div>
+              <div className="mb-3 text-xs text-slate-400">
+                {t("governance.control.createJobsHint")}
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-cyan-200">
+                    {t("governance.control.createTargetLabel")}
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <button
+                      type="button"
+                      onClick={() => setCreateTargetType("TOPIC")}
+                      className={`rounded-lg border px-3 py-3 text-left transition ${
+                        createTargetType === "TOPIC"
+                          ? "border-cyan-400/60 bg-cyan-500/10 text-cyan-100"
+                          : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-slate-600"
+                      }`}
+                    >
+                      <div className="text-sm font-medium">
+                        {t("governance.control.createTargetTopic")}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {t("governance.control.createTargetTopicHint")}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCreateTargetType("TOPICSET")}
+                      className={`rounded-lg border px-3 py-3 text-left transition ${
+                        createTargetType === "TOPICSET"
+                          ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+                          : "border-slate-700 bg-slate-950/70 text-slate-300 hover:border-slate-600"
+                      }`}
+                    >
+                      <div className="text-sm font-medium">
+                        {t("governance.control.createTargetTopicSet")}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {t("governance.control.createTargetTopicSetHint")}
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {createTargetType === "TOPIC" ? (
+                  <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-300">
+                      {t("governance.control.createModeLabel")}
+                    </div>
+                    <div className="space-y-3">
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-700/80 bg-slate-950/70 px-3 py-2">
+                        <input
+                          type="radio"
+                          name="topic-create-scope"
+                          checked={topicCreateScope === "FULL"}
+                          onChange={() => setTopicCreateScope("FULL")}
+                          className="mt-1"
+                        />
+                        <span>
+                          <span className="block text-sm text-slate-100">
+                            {t("governance.control.topicScopeFull")}
+                          </span>
+                          <span className="mt-1 block text-xs text-slate-400">
+                            {t("governance.control.topicScopeFullHint")}
+                          </span>
+                        </span>
+                      </label>
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-700/80 bg-slate-950/70 px-3 py-2">
+                        <input
+                          type="radio"
+                          name="topic-create-scope"
+                          checked={topicCreateScope === "SINGLE"}
+                          onChange={() => setTopicCreateScope("SINGLE")}
+                          className="mt-1"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm text-slate-100">
+                            {t("governance.control.topicScopeSingle")}
+                          </span>
+                          <span className="mt-1 block text-xs text-slate-400">
+                            {t("governance.control.topicScopeSingleHint")}
+                          </span>
+                          {topicCreateScope === "SINGLE" ? (
+                            <select
+                              value={topicInput}
+                              onChange={(event) => setTopicInput(event.target.value)}
+                              className="mt-3 h-9 w-full rounded-md border border-slate-600 bg-slate-950 px-3 text-sm text-slate-100"
+                            >
+                              <option value="">
+                                {createOptionsLoading
+                                  ? t("governance.control.loadingPublishedTopics")
+                                  : t("governance.control.topicIdPlaceholder")}
+                              </option>
+                              {selectedPublishedTopicMissing ? (
+                                <option value={topicInput}>
+                                  {t("governance.control.currentTopicSelection", {
+                                    topicId: topicInput,
+                                  })}
+                                </option>
+                              ) : null}
+                              {publishedTopics.map((item) => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name?.trim() || item.id} ({item.id})
+                                </option>
+                              ))}
+                            </select>
+                          ) : null}
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-slate-700 bg-slate-950/60 p-3">
+                    <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-300">
+                      {t("governance.control.createModeLabel")}
+                    </div>
+                    <div className="text-xs text-slate-400">
+                      {t("governance.control.topicSetScopeHint")}
+                    </div>
+                    <select
+                      value={topicSetInput}
+                      onChange={(event) => setTopicSetInput(event.target.value)}
+                      className="mt-3 h-9 w-full rounded-md border border-slate-600 bg-slate-950 px-3 text-sm text-slate-100"
+                    >
+                      <option value="">
+                        {createOptionsLoading
+                          ? t("governance.control.loadingPublishedTopicSets")
+                          : t("governance.control.topicSetIdPlaceholder")}
+                      </option>
+                      {selectedPublishedTopicSetMissing ? (
+                        <option value={topicSetInput}>
+                          {t("governance.control.currentTopicSetSelection", {
+                            topicSetId: topicSetInput,
+                          })}
+                        </option>
+                      ) : null}
+                      {publishedTopicSets.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name?.trim() || item.id} ({item.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleCreateTaggingJob}
+                  disabled={
+                    actionLoading ||
+                    (createTargetType === "TOPICSET"
+                      ? !topicSetInput.trim()
+                      : topicCreateScope === "SINGLE" && !topicInput.trim())
+                  }
+                  className="h-10 rounded-md border border-cyan-400/40 bg-cyan-500/10 px-4 text-sm font-medium text-cyan-100 disabled:opacity-50"
+                >
+                  {t("governance.control.startTaggingJob")}
+                </button>
+              </div>
+            </article>
+
+            <article className="xl:col-span-2 rounded-xl border border-slate-700/80 bg-slate-950/55 p-4">
+              <div className="grid gap-4 xl:grid-cols-[minmax(0,280px)_1fr]">
+                <div>
+                  <div className="mb-1 text-sm font-medium text-slate-100">
+                    {t("governance.control.taskFilters")}
+                  </div>
+                  <div className="mb-3 text-xs text-slate-400">
+                    {t("governance.control.taskFiltersHint")}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-slate-400">
+                      {t("governance.control.jobFilterLabel")}
+                    </span>
+                    <select
+                      value={jobModeFilter}
+                      onChange={(event) =>
+                        setJobModeFilter(event.target.value as "ALL" | TaggingJobMode)
+                      }
+                      className="h-9 rounded-md border border-slate-600 bg-slate-950 px-3 text-sm text-slate-100"
+                    >
+                      <option value="ALL">{t("governance.control.filter.allModes")}</option>
+                      <option value="FULL">{t("governance.control.filter.fullMode")}</option>
+                      <option value="TOPIC_ONLY">{t("governance.control.filter.topicMode")}</option>
+                      <option value="TOPICSET_ONLY">{t("governance.control.filter.topicSetMode")}</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-1 text-sm font-medium text-slate-100">
+                    {t("governance.control.liveProgress")}
+                  </div>
+                  <div className="mb-3 text-xs text-slate-400">
+                    {t("governance.control.liveProgressHint")}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      value={sseJobId}
+                      onChange={(event) => setSseJobId(event.target.value)}
+                      placeholder={t("governance.control.liveProgressJobIdPlaceholder")}
+                      className="h-9 w-full max-w-md rounded-md border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 placeholder:text-slate-500"
+                    />
+                    {!sseConnected ? (
+                      <button
+                        type="button"
+                        onClick={() => setSseConnected(true)}
+                        disabled={!sseJobId.trim()}
+                        className="h-9 rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 text-sm text-emerald-100 disabled:opacity-50"
+                      >
+                        {t("governance.control.startLiveProgress")}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setSseConnected(false)}
+                        className="h-9 rounded-md border border-amber-400/40 bg-amber-500/10 px-3 text-sm text-amber-100"
+                      >
+                        {t("governance.control.stopLiveProgress")}
+                      </button>
+                    )}
+                    <span
+                      className={`text-xs ${
+                        sseConnected ? "text-emerald-300" : "text-slate-400"
+                      }`}
+                    >
+                      {sseConnected
+                        ? t("governance.control.connected")
+                        : t("governance.control.disconnected")}
+                    </span>
+                  </div>
+                  {sseError ? (
+                    <div className="mt-2 text-xs text-rose-300">{sseError}</div>
+                  ) : null}
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-slate-700/80 bg-slate-950/45 p-1">
+            <JobMonitorCard
+              incrementalEnabled={incrementalEnabled}
+              onToggleIncremental={setIncrementalEnabled}
+              jobs={jobs}
+              jobsLoading={jobsLoading}
+              jobsError={jobsError}
+              jobsLastUpdatedAt={jobsLastUpdatedAt}
+              expandedJobId={expandedJobId}
+              onToggleExpandJob={(jobId) => setExpandedJobId(expandedJobId === jobId ? "" : jobId)}
+              jobTopicMap={jobTopicMap}
+              jobDetailMap={jobDetailMap}
+              jobTopicsLoadingMap={jobTopicsLoadingMap}
+              jobLogsMap={jobLogsMap}
+              jobLogsLoadingMap={jobLogsLoadingMap}
+              jobLogsIncludeSuccessMap={jobLogsIncludeSuccessMap}
+              jobLogsLevelFilterMap={jobLogsLevelFilterMap}
+              onToggleIncludeSuccessLogs={handleToggleIncludeSuccessLogs}
+              onChangeLogsLevelFilter={handleChangeLogsLevelFilter}
+              onRefreshJobs={handleRefreshJobs}
+              onRetryJob={handleRetryJob}
+              actionLoading={actionLoading}
+              topicNameMap={topicNameMap}
             />
-            <button
-              type="button"
-              onClick={handleCreateSingleTopicTaggingJob}
-              disabled={actionLoading || !topicInput.trim()}
-              className="h-9 rounded-md border border-violet-400/40 bg-violet-500/10 px-3 text-sm text-violet-100 disabled:opacity-50"
-            >
-              {t("governance.control.singleTopicTagging")}
-            </button>
           </div>
-
-          <div className="mb-4 rounded-lg border border-slate-700 bg-slate-950/70 p-3">
-            <div className="mb-2 text-sm font-medium text-slate-100">{t("governance.control.sseJobMonitor")}</div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                value={sseJobId}
-                onChange={(event) => setSseJobId(event.target.value)}
-                placeholder={t("governance.control.sseJobIdPlaceholder")}
-                className="h-9 w-64 rounded-md border border-slate-600 bg-slate-900 px-3 text-sm text-slate-100 placeholder:text-slate-500"
-              />
-              {!sseConnected ? (
-                <button
-                  type="button"
-                  onClick={() => setSseConnected(true)}
-                  disabled={!sseJobId.trim()}
-                  className="h-9 rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 text-sm text-emerald-100 disabled:opacity-50"
-                >
-                  {t("governance.control.startSse")}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setSseConnected(false)}
-                  className="h-9 rounded-md border border-amber-400/40 bg-amber-500/10 px-3 text-sm text-amber-100"
-                >
-                  {t("governance.control.stopSse")}
-                </button>
-              )}
-              <span className={`text-xs ${sseConnected ? "text-emerald-300" : "text-slate-400"}`}>
-                {sseConnected ? "CONNECTED" : "DISCONNECTED"}
-              </span>
-            </div>
-            {sseError ? (
-              <div className="mt-2 text-xs text-rose-300">{sseError}</div>
-            ) : null}
-            <div className="mt-2 max-h-28 overflow-auto rounded border border-slate-800 bg-slate-900/80 p-2 text-xs text-slate-300">
-              {!sseLogs.length ? (
-                <div className="text-slate-500">{t("governance.control.noSseEvents")}</div>
-              ) : (
-                sseLogs.slice(0, 12).map((line, index) => (
-                  <div key={`${line}-${index}`}>{line}</div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <JobMonitorCard
-            incrementalEnabled={incrementalEnabled}
-            onToggleIncremental={setIncrementalEnabled}
-            jobs={jobs}
-            jobsLoading={jobsLoading}
-            jobsError={jobsError}
-            expandedJobId={expandedJobId}
-            onToggleExpandJob={(jobId) => setExpandedJobId(expandedJobId === jobId ? "" : jobId)}
-            jobTopicMap={jobTopicMap}
-            jobDetailMap={jobDetailMap}
-            jobTopicsLoadingMap={jobTopicsLoadingMap}
-            onRetryJob={handleRetryJob}
-            actionLoading={actionLoading}
-          />
+          {showLiveProgressLog ? (
+            <LiveEventDrawer
+              events={liveEvents}
+              className="mt-4 rounded-xl border-slate-700/80 bg-slate-950/45"
+              expanded={liveProgressLogExpanded}
+              onToggleExpanded={() => setLiveProgressLogExpanded((prev) => !prev)}
+            />
+          ) : null}
         </section>
 
         <section ref={phase3Ref} className="mt-5 rounded-2xl border border-slate-700 bg-slate-900/80 p-5">
