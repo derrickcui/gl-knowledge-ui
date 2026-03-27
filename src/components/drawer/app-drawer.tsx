@@ -82,6 +82,14 @@ export function AppDrawer() {
         />
 
         <DrawerItem
+          href="/topics"
+          label="Topic Portal"
+          icon={<Book className="h-4 w-4" />}
+          collapsed={collapsed}
+          active={isActive("/topics")}
+        />
+
+        <DrawerItem
           href="/chat"
           label={t("drawer.chat")}
           icon={<MessageSquare className="h-4 w-4" />}
