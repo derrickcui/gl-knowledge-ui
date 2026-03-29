@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Languages,
+  Sparkles,
 } from "lucide-react";
 import {
   getLocale,
@@ -153,6 +154,15 @@ export function AppDrawer() {
             collapsed={collapsed}
             nested
             active={isActive("/knowledge/governance") || isActive("/knowledge/tagging")}
+          />
+
+          <DrawerItem
+            href="/knowledge/operations/ai-vocabulary"
+            label={t("drawer.aiVocabulary")}
+            icon={<Sparkles className="h-4 w-4" />}
+            collapsed={collapsed}
+            nested
+            active={isActive("/knowledge/operations/ai-vocabulary")}
           />
 
           <DrawerItem

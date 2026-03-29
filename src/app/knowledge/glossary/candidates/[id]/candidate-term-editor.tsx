@@ -1,5 +1,6 @@
 import { CandidateDTO } from "@/lib/api";
 import { t } from "@/i18n";
+import { decodeUnicodeEscapes } from "@/lib/text-utils";
 
 export function CandidateTermEditor({
   draft,
@@ -37,7 +38,7 @@ export function CandidateTermEditor({
         <input
           className="mt-1 w-full rounded-md border px-2 py-1 text-sm"
           placeholder={t("glossary.candidates.editor.aliasesPlaceholder")}
-          value={draft.aliases.join(", ")}
+          value={draft.aliases.map(decodeUnicodeEscapes).join(", ")}
           disabled={readonly}
           onChange={(e) =>
             onChange({

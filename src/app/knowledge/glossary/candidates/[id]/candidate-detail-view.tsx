@@ -17,6 +17,7 @@ import { CandidateActions } from "./candidate-actions";
 import { FeedbackBanner } from "@/components/ui/feedback-banner";
 import { ApprovalActionPanel } from "@/components/glossary/approval/approval-action-panel";
 import { t } from "@/i18n";
+import { decodeUnicodeEscapes } from "@/lib/text-utils";
 
 function formatStatusValue(status: string) {
   return status
@@ -56,6 +57,15 @@ function normalizeChangeId(value: unknown) {
   return undefined;
 }
 
+function normalizeCandidateDraft(candidate: CandidateDTO) {
+  return {
+    ...candidate,
+    aliases: candidate.aliases.map((alias) =>
+      decodeUnicodeEscapes(alias)
+    ),
+  };
+}
+
 export function CandidateDetailView({
   candidate,
   reviewInfo,
@@ -77,7 +87,9 @@ export function CandidateDetailView({
   const [resolvedChangeId, setResolvedChangeId] = useState(
     initialChangeId
   );
-  const [draft, setDraft] = useState(candidate);
+  const [draft, setDraft] = useState(() =>
+    normalizeCandidateDraft(candidate)
+  );
 
   const effectiveStatus =
     candidate.lifecycleStatus ??
@@ -112,6 +124,10 @@ export function CandidateDetailView({
   const [statusMessage, setStatusMessage] = useState<
     string | null
   >(null);
+
+  useEffect(() => {
+    setDraft(normalizeCandidateDraft(candidate));
+  }, [candidate]);
 
   useEffect(() => {
     if (resolvedChangeId || !isInReview) return;
