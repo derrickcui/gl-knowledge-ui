@@ -88,6 +88,26 @@ export type RawTermResponse = {
   created_at: string;
 };
 
+export type RunTermItemResponse = {
+  rawTermId: string;
+  term: string;
+  normalizedTerm: string;
+  confidence: number;
+  validationStatus: string;
+  docId: string;
+  chunkId: string;
+  evidence: string;
+  evidenceStart?: number | null;
+  evidenceEnd?: number | null;
+  hasCandidate: boolean;
+  candidateId?: number | null;
+};
+
+export type RunTermsPageResponse = {
+  total: number;
+  items: RunTermItemResponse[];
+};
+
 export type TermCandidateResponse = {
   id: number;
   dataset?: string | null;
@@ -119,18 +139,77 @@ export type TermCandidateEvidenceResponse = {
 };
 
 export type RunSummaryResponse = {
-  run_id: string;
-  run_key: string;
+  runId: string;
   dataset: string;
-  sample_version_id: string;
+  sampleVersion: string;
+  promptVersion: string;
+  model: string;
   status: string;
-  total_samples: number;
-  processed_samples: number;
-  total_terms: number;
-  raw_term_count: number;
-  valid_term_count: number;
-  invalid_term_count: number;
-  candidate_count: number;
+  createdAt: string;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  metrics: {
+    totalSamples: number;
+    rawTerms: number;
+    validTerms: number;
+    invalidTerms: number;
+    candidates: number;
+    validRate: number;
+    evidenceFailRate: number;
+    noiseRate: number;
+  };
+};
+
+export type InvalidBreakdownResponse = {
+  breakdown: Array<{
+    type: string;
+    count: number;
+  }>;
+};
+
+export type RunTopCandidatesResponse = {
+  items: Array<{
+    term: string;
+    candidateId: number;
+    evidenceCount: number;
+  }>;
+};
+
+export type RunCompareResponse = {
+  baseRun: RunSummaryResponse;
+  targetRun: RunSummaryResponse;
+  metricsDiff: {
+    rawTerms: number;
+    validTerms: number;
+    invalidTerms: number;
+    candidates: number;
+    validRate: number;
+    evidenceFailRate: number;
+    noiseRate: number;
+  };
+  invalidBreakdownDiff: Array<{
+    type: string;
+    baseCount: number;
+    targetCount: number;
+    delta: number;
+  }>;
+  topTermChanges: Array<{
+    term: string;
+    baseCount: number;
+    targetCount: number;
+    changeType: string;
+  }>;
+};
+
+export type RawTermActionResponse = {
+  rawTermId: string;
+  ignored?: boolean;
+  ignoredAt?: string | null;
+  validationStatus?: string | null;
+  candidateId?: number | null;
+  term?: string | null;
+  status?: string | null;
+  createdAt?: string | null;
 };
 
 export type RunLogResponse = {
@@ -160,6 +239,14 @@ export type CreateRunRequest = {
   batch_size?: number;
 };
 
+export type RerunRequest = {
+  promptVersion?: string | null;
+  temperature?: number | null;
+  provider?: string | null;
+  modelName?: string | null;
+  batchSize?: number | null;
+};
+
 type CandidateFilter = {
   dataset?: string;
   ai_run_id?: string;
@@ -171,6 +258,18 @@ type RunListFilter = {
   status?: string;
   limit?: number;
   offset?: number;
+};
+
+type RunTermsFilter = {
+  validationStatus?: string;
+  confidenceMin?: number;
+  hasCandidate?: boolean;
+  docId?: string;
+  term?: string;
+  sortBy?: string;
+  sortOrder?: string;
+  page?: number;
+  size?: number;
 };
 
 async function readError(res: Response) {
@@ -295,9 +394,79 @@ export function getRunSummary(runId: string) {
   );
 }
 
-export function listRunTerms(runId: string) {
-  return requestAiJson<RawTermResponse[]>(
-    `ai-vocabulary/runs/${encodeURIComponent(runId)}/terms`
+export function getInvalidBreakdown(runId: string) {
+  return requestAiJson<InvalidBreakdownResponse>(
+    `ai-vocabulary/runs/${encodeURIComponent(runId)}/invalid-breakdown`
+  );
+}
+
+export function listRunTerms(runId: string, filters: RunTermsFilter = {}) {
+  const search = new URLSearchParams();
+  if (filters.validationStatus) {
+    search.set("validationStatus", filters.validationStatus);
+  }
+  if (filters.confidenceMin != null) {
+    search.set("confidenceMin", String(filters.confidenceMin));
+  }
+  if (filters.hasCandidate != null) {
+    search.set("hasCandidate", String(filters.hasCandidate));
+  }
+  if (filters.docId) search.set("docId", filters.docId);
+  if (filters.term) search.set("term", filters.term);
+  if (filters.sortBy) search.set("sortBy", filters.sortBy);
+  if (filters.sortOrder) search.set("sortOrder", filters.sortOrder);
+  search.set("page", String(filters.page ?? 1));
+  search.set("size", String(filters.size ?? 20));
+  return requestAiJson<RunTermsPageResponse>(
+    `ai-vocabulary/runs/${encodeURIComponent(runId)}/terms?${search.toString()}`
+  );
+}
+
+export function getRunTopCandidates(runId: string, limit = 5) {
+  const search = new URLSearchParams();
+  search.set("limit", String(limit));
+  return requestAiJson<RunTopCandidatesResponse>(
+    `ai-vocabulary/runs/${encodeURIComponent(runId)}/top-candidates?${search.toString()}`
+  );
+}
+
+export function compareRuns(runId: string, targetRunId: string) {
+  const search = new URLSearchParams();
+  search.set("targetRunId", targetRunId);
+  return requestAiJson<RunCompareResponse>(
+    `ai-vocabulary/runs/${encodeURIComponent(runId)}/compare?${search.toString()}`
+  );
+}
+
+export function rerunRun(runId: string, payload: RerunRequest) {
+  return requestAiJson<RunResponse>(
+    `ai-vocabulary/runs/${encodeURIComponent(runId)}/rerun`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+}
+
+export function addRawTermToCandidate(rawTermId: string) {
+  return requestAiJson<RawTermActionResponse>(
+    `ai-vocabulary/raw-terms/${encodeURIComponent(rawTermId)}/candidate`,
+    { method: "POST" }
+  );
+}
+
+export function ignoreRawTerm(rawTermId: string) {
+  return requestAiJson<RawTermActionResponse>(
+    `ai-vocabulary/raw-terms/${encodeURIComponent(rawTermId)}/ignore`,
+    { method: "POST" }
+  );
+}
+
+export function unignoreRawTerm(rawTermId: string) {
+  return requestAiJson<RawTermActionResponse>(
+    `ai-vocabulary/raw-terms/${encodeURIComponent(rawTermId)}/unignore`,
+    { method: "POST" }
   );
 }
 

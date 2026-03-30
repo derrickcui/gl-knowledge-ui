@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { getLocale, t } from "@/i18n";
 import {
   createRun,
@@ -29,6 +29,11 @@ type RunRecord = {
   run: RunResponse;
   summary: RunSummaryResponse | null;
 };
+
+function isActiveRunStatus(status: string) {
+  const normalized = status.toUpperCase();
+  return normalized.includes("RUN") || normalized.includes("QUEUE");
+}
 
 type RunLogEntry = {
   id: string;
@@ -62,7 +67,7 @@ function formatDate(value?: string | null) {
 function statusClass(status: string) {
   const normalized = status.toUpperCase();
   if (normalized.includes("COMPLETE") || normalized === "APPROVED") return "bg-[#dde8c2] text-[#476021]";
-  if (normalized.includes("RUN") || normalized.includes("QUEUE")) return "bg-[#f8e8b3] text-[#856e15]";
+  if (isActiveRunStatus(status)) return "bg-[#f8e8b3] text-[#856e15]";
   if (normalized.includes("FAIL") || normalized.includes("REJECT")) return "bg-[#f2d0c2] text-[#8d4a31]";
   return "bg-[#e8e1d2] text-[#61513c]";
 }
@@ -115,20 +120,31 @@ function MetricCard({ title, value, description, tone }: { title: string; value:
 
 export default function AiVocabularyConsolePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialBatchSize = Number(searchParams.get("batchSize") ?? "2");
+  const initialTemperature = Number(searchParams.get("temperature") ?? "0.1");
   const [loading, setLoading] = useState(true);
   const [mutating, setMutating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [dataset, setDataset] = useState("gl_demo");
-  const [promptVersion, setPromptVersion] = useState("vocab_extract_v1");
-  const [provider, setProvider] = useState("ali");
-  const [modelName, setModelName] = useState("qwen-plus");
+  const [dataset, setDataset] = useState(searchParams.get("dataset") ?? "gl_demo");
+  const [promptVersion, setPromptVersion] = useState(
+    searchParams.get("promptVersion") ?? "vocab_extract_v1"
+  );
+  const [provider, setProvider] = useState(searchParams.get("provider") ?? "ali");
+  const [modelName, setModelName] = useState(searchParams.get("modelName") ?? "qwen-plus");
   const [versionName, setVersionName] = useState("smoke_v1");
   const [sampleSize, setSampleSize] = useState(150);
   const [similarityThreshold, setSimilarityThreshold] = useState(0.85);
-  const [batchSize, setBatchSize] = useState(2);
-  const [temperature, setTemperature] = useState(0.1);
-  const [sampleVersionId, setSampleVersionId] = useState("");
+  const [batchSize, setBatchSize] = useState(
+    Number.isFinite(initialBatchSize) ? initialBatchSize : 2
+  );
+  const [temperature, setTemperature] = useState(
+    Number.isFinite(initialTemperature) ? initialTemperature : 0.1
+  );
+  const [sampleVersionId, setSampleVersionId] = useState(
+    searchParams.get("sampleVersionId") ?? ""
+  );
   const [selectedRunId, setSelectedRunId] = useState("");
   const [runOffset, setRunOffset] = useState(0);
   const [prompts, setPrompts] = useState<PromptVersionResponse[]>([]);
@@ -173,7 +189,14 @@ export default function AiVocabularyConsolePage() {
     const pagedRunItems = (pagedRunResult.data ?? []).slice(0, RUN_PAGE_SIZE);
     const listedRuns = [...recentRunItems, ...runningRunItems, ...pagedRunItems];
     const runMap = new Map(listedRuns.map((item) => [item.id, item] as const));
-    const mergedRunIds = Array.from(new Set([...listedRuns.map((item) => item.id), ...preferredRunIds, ...readRecentRuns(), ...candidateRunIds])).slice(0, 12);
+    const mergedRunIds = Array.from(
+      new Set([
+        ...listedRuns.map((item) => item.id),
+        ...preferredRunIds,
+        ...readRecentRuns(),
+        ...candidateRunIds,
+      ])
+    ).slice(0, 12);
 
     const resolved = await Promise.all(
       mergedRunIds.map(async (runId) => {
@@ -193,8 +216,25 @@ export default function AiVocabularyConsolePage() {
         if (match) acc.push(match);
         return acc;
       }, []);
-    const nextRecent = project(recentRunItems);
-    const nextRunning = project(runningRunItems);
+    const preferredRecords = mergedRunIds
+      .map((id) => records.find((record) => record.run.id === id) ?? null)
+      .filter((record): record is RunRecord => Boolean(record));
+    const nextRecent = Array.from(
+      new Map(
+        [...preferredRecords, ...project(recentRunItems)].map((record) => [
+          record.run.id,
+          record,
+        ])
+      ).values()
+    ).slice(0, 5);
+    const nextRunning = Array.from(
+      new Map(
+        [...project(runningRunItems), ...preferredRecords.filter((record) => isActiveRunStatus(record.run.status))].map((record) => [
+          record.run.id,
+          record,
+        ])
+      ).values()
+    ).slice(0, 5);
     const nextPaged = project(pagedRunItems);
 
     setRecentRuns(nextRecent);
@@ -232,7 +272,7 @@ export default function AiVocabularyConsolePage() {
   useEffect(() => {
     if (!selectedRunId || !selectedRun) return;
     const normalized = selectedRun.run.status.toUpperCase();
-    if (!normalized.includes("RUN") && !normalized.includes("QUEUE")) return;
+    if (!isActiveRunStatus(normalized)) return;
 
     const timer = window.setInterval(async () => {
       const [runResult, summaryResult, logResult] = await Promise.all([
@@ -335,7 +375,7 @@ export default function AiVocabularyConsolePage() {
       setRuns((current) => current.map(patchRecord));
 
       const normalized = runResult.data.status.toUpperCase();
-      if (!normalized.includes("RUN") && !normalized.includes("QUEUE")) {
+      if (!isActiveRunStatus(normalized)) {
         setWatchRunId(null);
         return;
       }
@@ -404,10 +444,12 @@ export default function AiVocabularyConsolePage() {
       setMutating(null);
       return;
     }
+    const nextRunIds = [selectedRunId, ...readRecentRuns()];
+    writeRecentRuns(nextRunIds);
     setWatchRunId(selectedRunId);
     setInfo(t("aiVocabulary.console.executeRunSuccess", { name: selectedRunId }));
     setMutating(null);
-    await refresh([selectedRunId, ...readRecentRuns()]);
+    await refresh(nextRunIds);
   }
   return (
     <div className="min-h-full overflow-auto bg-[#f3f0e8] p-6 text-[#17322c]">
@@ -486,7 +528,7 @@ export default function AiVocabularyConsolePage() {
                 <div className="mt-6 space-y-4">
                   {!!recentRuns.length && <div className="space-y-3"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6c5944]">{t("aiVocabulary.runs.recent")}</div>{recentRuns.slice(0, 3).map((record) => <div key={`recent-${record.run.id}`} className="rounded-[18px] bg-[#f7f2e8] p-4"><div className="flex items-center justify-between gap-3"><button type="button" className="text-sm font-semibold hover:underline" onClick={() => setSelectedRunId(record.run.id)}>{record.run.run_key}</button><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(record.run.status)}`}>{record.run.status}</span></div><div className="mt-2 text-xs text-[#736450]">{record.run.dataset} / {record.run.provider}:{record.run.model_name}{record.run.max_chunks_per_doc != null ? ` / ${t("aiVocabulary.runs.maxChunks", { value: formatCount(record.run.max_chunks_per_doc) })}` : ""}</div></div>)}</div>}
                   {!!runningRuns.length && <div className="space-y-3"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6c5944]">{t("aiVocabulary.runs.running")}</div><div className="grid gap-3 lg:grid-cols-2">{runningRuns.slice(0, 2).map((record) => <div key={`running-${record.run.id}`} className="rounded-[18px] bg-[#17322c] p-5 text-[#f8f4ea]"><div className="flex items-center justify-between gap-3"><div className="text-sm font-semibold">{record.run.run_key}</div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(record.run.status)}`}>{record.run.status}</span></div><div className="mt-3 text-sm text-[#d7e5df]">{t("aiVocabulary.runs.samplesProgress", { processed: formatCount(record.run.processed_samples), total: formatCount(record.run.total_samples) })}</div><div className="mt-2 text-xs text-[#d7e5df]">{t("aiVocabulary.runs.heartbeat", { value: formatDate(record.run.last_heartbeat_at) })}</div></div>)}</div></div>}
-                  {!!runs.length && <div className="space-y-3"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6c5944]">{t("aiVocabulary.runs.all")}</div>{runs.map((record) => { const active = selectedRun?.run.id === record.run.id; return <div key={record.run.id} className={`rounded-[18px] border p-5 transition ${active ? "border-[#17322c] bg-[#f7f2e8]" : "border-[#e7decf] bg-[#fbf8f2]"}`}><div className="flex flex-wrap items-start justify-between gap-4"><div className="space-y-2"><button type="button" className="text-left text-sm font-semibold underline-offset-4 hover:underline" onClick={() => setSelectedRunId(record.run.id)}>{record.run.run_key}</button><div className="text-sm text-[#736450]">{record.run.dataset} / {record.run.provider}:{record.run.model_name}</div><div className="text-xs text-[#8a7a63]">{t("aiVocabulary.runs.batchProgress", { batch: formatCount(record.run.batch_size), processed: formatCount(record.run.processed_samples), total: formatCount(record.run.total_samples) })}</div></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(record.run.status)}`}>{record.run.status}</span><div className="text-right text-xs text-[#6f614c]"><div>{t("aiVocabulary.runs.terms", { value: formatCount(record.summary?.valid_term_count ?? record.run.total_terms) })}</div><div>{t("aiVocabulary.runs.candidates", { value: formatCount(record.summary?.candidate_count) })}</div><div>{t("aiVocabulary.runs.heartbeat", { value: formatDate(record.run.last_heartbeat_at) })}</div></div><button type="button" className="rounded-full bg-[#17322c] px-4 py-2 text-xs font-semibold text-[#f8f4ea]" onClick={() => router.push(`/knowledge/operations/ai-vocabulary/runs/${encodeURIComponent(record.run.id)}`)}>{t("aiVocabulary.runs.view")}</button></div></div></div>; })}</div>}
+                  {!!runs.length && <div className="space-y-3"><div className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6c5944]">{t("aiVocabulary.runs.all")}</div>{runs.map((record) => { const active = selectedRun?.run.id === record.run.id; return <div key={record.run.id} className={`rounded-[18px] border p-5 transition ${active ? "border-[#17322c] bg-[#f7f2e8]" : "border-[#e7decf] bg-[#fbf8f2]"}`}><div className="flex flex-wrap items-start justify-between gap-4"><div className="space-y-2"><button type="button" className="text-left text-sm font-semibold underline-offset-4 hover:underline" onClick={() => setSelectedRunId(record.run.id)}>{record.run.run_key}</button><div className="text-sm text-[#736450]">{record.run.dataset} / {record.run.provider}:{record.run.model_name}</div><div className="text-xs text-[#8a7a63]">{t("aiVocabulary.runs.batchProgress", { batch: formatCount(record.run.batch_size), processed: formatCount(record.run.processed_samples), total: formatCount(record.run.total_samples) })}</div></div><div className="flex items-center gap-3"><span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusClass(record.run.status)}`}>{record.run.status}</span><div className="text-right text-xs text-[#6f614c]"><div>{t("aiVocabulary.runs.terms", { value: formatCount(record.summary?.metrics.validTerms ?? record.run.total_terms) })}</div><div>{t("aiVocabulary.runs.candidates", { value: formatCount(record.summary?.metrics.candidates) })}</div><div>{t("aiVocabulary.runs.heartbeat", { value: formatDate(record.run.last_heartbeat_at) })}</div></div><button type="button" className="rounded-full bg-[#17322c] px-4 py-2 text-xs font-semibold text-[#f8f4ea]" onClick={() => router.push(`/knowledge/operations/ai-vocabulary/runs/${encodeURIComponent(record.run.id)}`)}>{t("aiVocabulary.runs.view")}</button></div></div></div>; })}</div>}
                   {!runs.length && <div className="rounded-[18px] bg-[#fbf8f2] p-6 text-sm text-[#72604a]">{t("aiVocabulary.runs.empty")}</div>}
                   {!!runs.length && <div className="flex items-center justify-between pt-2 text-sm"><span className="text-[#72604a]">{t("aiVocabulary.runs.page", { value: Math.floor(runOffset / RUN_PAGE_SIZE) + 1 })}</span><div className="flex items-center gap-2"><button type="button" className="rounded-full border border-[#c9b89d] px-4 py-2 text-xs font-semibold text-[#4f4437] disabled:opacity-40" disabled={runOffset === 0 || loading} onClick={() => setRunOffset((current) => Math.max(0, current - RUN_PAGE_SIZE))}>{t("aiVocabulary.runs.prev")}</button><button type="button" className="rounded-full border border-[#c9b89d] px-4 py-2 text-xs font-semibold text-[#4f4437] disabled:opacity-40" disabled={!hasMoreRuns || loading} onClick={() => setRunOffset((current) => current + RUN_PAGE_SIZE)}>{t("aiVocabulary.runs.next")}</button></div></div>}
                 </div>
