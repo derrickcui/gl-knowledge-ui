@@ -16,12 +16,16 @@ export function NodeInspector({
   onPatchNode,
   onChangeField,
   onEditTermSet,
+  onSuggestNode,
+  onSuggestTermExpansion,
 }: {
   node: UiExpressionNode | null;
   readOnly: boolean;
   onPatchNode: (nodeId: string, updater: (node: UiExpressionNode) => UiExpressionNode) => void;
   onChangeField: (nodeId: string, field: RuleField) => void;
   onEditTermSet: (node: UiTermSetNode) => void;
+  onSuggestNode?: (nodeId: string) => void;
+  onSuggestTermExpansion?: (nodeId: string) => void;
 }) {
   const capability = useCapability();
   if (!node) {
@@ -38,6 +42,26 @@ export function NodeInspector({
       <div className="text-xs text-slate-500">
         {t("ruleEditor.nodeInspector.nodeType", { type: nodeTypeLabel(node.type) })}
       </div>
+      {!readOnly && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm text-sky-700 hover:bg-sky-100"
+            onClick={() => onSuggestNode?.(node.id)}
+          >
+            ✨ AI建议
+          </button>
+          {node.type === "TERM_SET" && (
+            <button
+              type="button"
+              className="rounded border px-3 py-1.5 text-sm hover:bg-slate-50"
+              onClick={() => onSuggestTermExpansion?.(node.id)}
+            >
+              ✨ 扩展术语
+            </button>
+          )}
+        </div>
+      )}
 
       {node.type === "LOGIC" && (
         <div className="space-y-1">

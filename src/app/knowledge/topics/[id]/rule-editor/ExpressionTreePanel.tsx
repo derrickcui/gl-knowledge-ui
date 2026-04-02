@@ -35,6 +35,7 @@ export function ExpressionTreePanel({
   diffMode,
   onToggleDiffMode,
   onAutoFormat,
+  onSuggestNode,
   proximitySuggestion,
   onApplyProximitySuggestion,
   diffStatusById,
@@ -77,6 +78,7 @@ export function ExpressionTreePanel({
   diffMode: boolean;
   onToggleDiffMode: () => void;
   onAutoFormat: () => void;
+  onSuggestNode?: (nodeId: string) => void;
   proximitySuggestion?: ProximitySuggestion | null;
   onApplyProximitySuggestion?: (payload: ProximitySuggestion) => void;
   diffStatusById: Record<string, NodeDiffStatus>;
@@ -203,6 +205,7 @@ export function ExpressionTreePanel({
             canDropAt={canDropAt}
             activePreviewNodeId={activePreviewNodeId}
             onDebugNode={onDebugNode}
+            onSuggestNode={onSuggestNode}
             diffMode={diffMode}
             diffStatusById={diffStatusById}
             conflictNodeIds={conflictNodeIds}

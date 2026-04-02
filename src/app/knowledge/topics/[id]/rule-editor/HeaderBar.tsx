@@ -22,6 +22,7 @@ type HeaderBarProps = {
   onDeleteDraft?: () => void;
   onSubmit?: () => void;
   onPublish?: () => void;
+  onOpenAiGenerate?: () => void;
   disableSave?: boolean;
   disableSaveHint?: string;
   openViews?: Record<OpenViewOption, boolean>;
@@ -58,6 +59,7 @@ export function HeaderBar({
   onDeleteDraft,
   onSubmit,
   onPublish,
+  onOpenAiGenerate,
   disableSave = false,
   disableSaveHint,
   openViews,
@@ -163,6 +165,14 @@ export function HeaderBar({
               {publishBusy
                 ? t("topicActions.publishing")
                 : t("ruleEditor.header.publish")}
+            </button>
+            <button
+              type="button"
+              className="rounded border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={onOpenAiGenerate}
+              disabled={busy || !onOpenAiGenerate}
+            >
+              ✨ AI生成
             </button>
             <div className="relative">
               <button

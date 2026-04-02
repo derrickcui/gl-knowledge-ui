@@ -11,6 +11,7 @@ import type {
 import type { RuleAbTestResult } from "./ab-test";
 import type { RuleVersionEntry } from "./RuleVersionTimelinePanel";
 import { buildVerificationMarkdown, downloadVerificationMarkdown } from "./verification-export";
+import type { TopicAiEvaluateResponse, TopicAiOptimizeResponse } from "@/lib/topic-ai-api";
 
 export function RuleIntelligencePanel({
   topicName,
@@ -23,6 +24,14 @@ export function RuleIntelligencePanel({
   abTestResult,
   versionHistory,
   onApplySuggestion,
+  aiEvaluate,
+  aiEvaluateBusy = false,
+  aiEvaluateError = null,
+  aiOptimizeResult,
+  aiOptimizeBusy = false,
+  aiOptimizeError = null,
+  onRefreshAiEvaluate,
+  onAiOptimize,
 }: {
   topicName: string;
   complexity: ComplexityMetrics;
@@ -34,10 +43,38 @@ export function RuleIntelligencePanel({
   abTestResult: RuleAbTestResult | null;
   versionHistory: RuleVersionEntry[];
   onApplySuggestion: (suggestion: OptimizationSuggestion) => void;
+  aiEvaluate?: TopicAiEvaluateResponse | null;
+  aiEvaluateBusy?: boolean;
+  aiEvaluateError?: string | null;
+  aiOptimizeResult?: TopicAiOptimizeResponse | null;
+  aiOptimizeBusy?: boolean;
+  aiOptimizeError?: string | null;
+  onRefreshAiEvaluate?: () => void;
+  onAiOptimize?: () => void;
 }) {
   return (
     <div className="rounded-lg border bg-white p-4">
-      <div className="text-sm font-semibold">{t("ruleEditor.intel.title")}</div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold">{t("ruleEditor.intel.title")}</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded border px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            onClick={onRefreshAiEvaluate}
+            disabled={!onRefreshAiEvaluate || aiEvaluateBusy}
+          >
+            {aiEvaluateBusy ? "AI评估中..." : "AI评估"}
+          </button>
+          <button
+            type="button"
+            className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-700 hover:bg-sky-100 disabled:opacity-50"
+            onClick={onAiOptimize}
+            disabled={!onAiOptimize || aiOptimizeBusy}
+          >
+            {aiOptimizeBusy ? "优化中..." : "一键优化"}
+          </button>
+        </div>
+      </div>
       <button
         type="button"
         className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 hover:bg-slate-100"
@@ -57,6 +94,63 @@ export function RuleIntelligencePanel({
       >
         {t("ruleEditor.intel.exportSnapshot")}
       </button>
+
+      {(aiEvaluateError || aiOptimizeError) && (
+        <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {[aiEvaluateError, aiOptimizeError].filter(Boolean).join(" | ")}
+        </div>
+      )}
+
+      {aiEvaluate && (
+        <div className="mt-3 rounded border border-sky-200 bg-sky-50 p-3 text-xs">
+          <div className="font-semibold text-sky-900">AI Rule Health</div>
+          {aiEvaluate.summary ? <div className="mt-1 text-sky-900">{aiEvaluate.summary}</div> : null}
+          {aiEvaluate.strengths.length > 0 && (
+            <div className="mt-2">
+              <div className="font-medium text-sky-900">优势</div>
+              <div className="mt-1 space-y-1 text-sky-800">
+                {aiEvaluate.strengths.map((item) => (
+                  <div key={item}>- {item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {aiEvaluate.risks.length > 0 && (
+            <div className="mt-2">
+              <div className="font-medium text-sky-900">风险</div>
+              <div className="mt-1 space-y-1 text-sky-800">
+                {aiEvaluate.risks.map((item) => (
+                  <div key={item}>- {item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+          {aiEvaluate.recommendedActions.length > 0 && (
+            <div className="mt-2">
+              <div className="font-medium text-sky-900">建议</div>
+              <div className="mt-1 space-y-1 text-sky-800">
+                {aiEvaluate.recommendedActions.map((item) => (
+                  <div key={item}>- {item}</div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {aiOptimizeResult && (
+        <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-xs">
+          <div className="font-semibold text-emerald-900">AI 优化结果</div>
+          {aiOptimizeResult.summary ? <div className="mt-1 text-emerald-900">{aiOptimizeResult.summary}</div> : null}
+          {aiOptimizeResult.cautions.length > 0 && (
+            <div className="mt-2 space-y-1 text-emerald-800">
+              {aiOptimizeResult.cautions.map((item) => (
+                <div key={item}>- {item}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 rounded border bg-slate-50 p-2 text-xs">
         <div className="font-semibold text-slate-700">{t("ruleEditor.intel.complexity.title")}</div>

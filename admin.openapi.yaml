@@ -34,6 +34,8 @@ tags:
     description: Semantic analytics APIs
   - name: TopicSet
     description: TopicSet governance APIs
+  - name: AI
+    description: Embedded AI capability APIs for topic authoring and governance
 
 paths:
   /api/runtime/active:
@@ -1426,6 +1428,28 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
 
+  /api/tagging/clear:
+    post:
+      tags: [Tagging]
+      summary: Clear all Solr tagging fields
+      description: |
+        Clears all currently indexed tagging fields in the active tagging datasets.
+        This removes both `_gl_ann_*` and `_gl_tax_*` fields so tagging can be rebuilt from scratch.
+      operationId: clearAllTaggingFields
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicTaggingClearResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/tagging/jobs/{jobId}:
     get:
       tags: [Tagging]
@@ -2090,6 +2114,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseTopicSetBindingScopeHealthResponse'
 
+  /api/topicsets/{id}/repair-paths:
+    post:
+      tags: [TopicSet]
+      summary: Repair TopicSet node paths from current tree
+      description: |
+        Rebuilds `topic_set_node.path` and `depth` from the current parent-child tree using node names.
+        Intended for repairing historical bad paths such as `/node` and `/node/node`.
+        Allowed for `DRAFT` and `PUBLISHED` topic sets.
+        After repair, the TopicSet is moved to `DRAFT` and must be published again.
+      operationId: repairTopicSetPaths
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetPathRepairResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/topicsets/{id}/tree:
     get:
       tags: [TopicSet]
@@ -2568,6 +2628,206 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiResponseTopicNodeBindingResponse'
+
+  /api/topics/ai/generate:
+    post:
+      tags: [AI]
+      summary: Generate a topic rule proposal from natural language
+      operationId: generateTopicWithAi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicAiGenerateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicAiGenerateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/ai/suggest:
+    post:
+      tags: [AI]
+      summary: Suggest structural and semantic improvements for a topic rule
+      operationId: suggestTopicRuleWithAi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AITopicSuggestRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAITopicSuggestResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/ai/optimize:
+    post:
+      tags: [AI]
+      summary: Optimize a topic rule proposal with AI assistance
+      operationId: optimizeTopicRuleWithAi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AITopicOptimizeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAITopicOptimizeResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/ai/explain:
+    post:
+      tags: [AI]
+      summary: Explain a topic rule in natural language
+      operationId: explainTopicRuleWithAi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicAiExplainRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAIExplainResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/ai/evaluate:
+    post:
+      tags: [AI]
+      summary: Evaluate a topic rule against simulation data
+      operationId: evaluateTopicRuleWithAi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AITopicEvaluateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAIEvaluateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/topics/ai/invocations:
+    get:
+      tags: [AI]
+      summary: Query AI invocation audit records
+      operationId: listAiInvocations
+      parameters:
+        - name: capability
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: topicId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: topicSetId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: createdBy
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: parsedSuccess
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAiInvocationPageResponse'
 
   /api/topicsets/{id}/publish:
     post:
@@ -3798,6 +4058,19 @@ components:
           type: string
       required: [jobId]
 
+    TopicTaggingClearResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        affectedDocs:
+          type: integer
+          format: int64
+        datasets:
+          type: integer
+          format: int32
+      required: [success, affectedDocs, datasets]
+
     TopicTaggingJobView:
       type: object
       properties:
@@ -4568,6 +4841,23 @@ components:
             type: string
       required: [topicSetIdColumnPresent, globalTopicUniqueIndexPresent, topicSetScopedUniqueIndexPresent, indexes]
 
+    TopicSetPathRepairResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        repairedNodes:
+          type: integer
+          format: int32
+        status:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [topicSetId, repairedNodes, status]
+
     TopicSetSummaryResponse:
       type: object
       properties:
@@ -5281,6 +5571,17 @@ components:
           $ref: '#/components/schemas/ApiError'
       required: [success]
 
+    ApiResponseTopicSetPathRepairResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetPathRepairResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     ApiResponseCreateNodeResponse:
       type: object
       properties:
@@ -5605,6 +5906,17 @@ components:
           $ref: '#/components/schemas/ApiError'
       required: [success]
 
+    ApiResponseTopicTaggingClearResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicTaggingClearResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     ApiResponseTopicTaggingJobView:
       type: object
       properties:
@@ -5812,6 +6124,72 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/TopicReviewResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicAiGenerateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicAiGenerateResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAITopicSuggestResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AITopicSuggestResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAITopicOptimizeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AITopicOptimizeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAIExplainResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AIExplainResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAIEvaluateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AIEvaluateResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseAiInvocationPageResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AiInvocationPageResponse'
         error:
           $ref: '#/components/schemas/ApiError'
       required: [success]
@@ -6919,6 +7297,348 @@ components:
           type: string
           nullable: true
       required: [deploymentId, topicId, snapshotId, status]
+
+    TopicAiGenerateRequest:
+      type: object
+      properties:
+        description:
+          type: string
+        fields:
+          type: array
+          items:
+            type: string
+        mode:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [description]
+
+    TopicAiGenerateResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        topicName:
+          type: string
+        businessRule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        compiled:
+          $ref: '#/components/schemas/AICompiledRule'
+        explanation:
+          type: string
+          nullable: true
+        warnings:
+          type: array
+          items:
+            type: string
+      required: [provider, model, topicName, businessRule, compiled, warnings]
+
+    AITopicSuggestRequest:
+      type: object
+      properties:
+        businessRule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        focusNodeId:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [businessRule]
+
+    AITopicSuggestResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        summary:
+          type: string
+          nullable: true
+        issues:
+          type: array
+          items:
+            type: string
+        addTerms:
+          type: array
+          items:
+            type: string
+        synonyms:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+        structureOptimization:
+          type: object
+          additionalProperties: true
+        cautions:
+          type: array
+          items:
+            type: string
+      required: [provider, model, issues, addTerms, synonyms, structureOptimization, cautions]
+
+    AITopicOptimizeRequest:
+      type: object
+      properties:
+        businessRule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        optimizationGoal:
+          type: string
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [businessRule]
+
+    AITopicOptimizeResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        businessRule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        compiled:
+          $ref: '#/components/schemas/AICompiledRule'
+        summary:
+          type: string
+          nullable: true
+        cautions:
+          type: array
+          items:
+            type: string
+      required: [provider, model, businessRule, compiled, cautions]
+
+    TopicAiExplainRequest:
+      type: object
+      properties:
+        topicName:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        businessRule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [businessRule]
+
+    AITopicEvaluateRequest:
+      type: object
+      properties:
+        businessRule:
+          $ref: '#/components/schemas/UiRuleViewModel'
+        simulation:
+          type: object
+          additionalProperties: true
+          nullable: true
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        sampleSize:
+          type: integer
+          format: int32
+          nullable: true
+      required: [businessRule]
+
+    AICompiledRule:
+      type: object
+      properties:
+        ast:
+          type: object
+          additionalProperties: true
+          nullable: true
+        gql:
+          type: string
+          nullable: true
+
+    AIExplainResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        summary:
+          type: string
+          nullable: true
+        bullets:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+        recommendedActions:
+          type: array
+          items:
+            type: string
+      required: [provider, model, bullets, risks, recommendedActions]
+
+    AIEvaluateResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        summary:
+          type: string
+          nullable: true
+        strengths:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+        recommendedActions:
+          type: array
+          items:
+            type: string
+      required: [provider, model, strengths, risks, recommendedActions]
+
+    AiInvocationPageResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiInvocationView'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        total:
+          type: integer
+          format: int64
+      required: [items, page, size, total]
+
+    AiInvocationView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        capability:
+          type: string
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        promptVersion:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        topicSetId:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+        requestPayloadJson:
+          type: object
+          additionalProperties: true
+          nullable: true
+        promptText:
+          type: string
+          nullable: true
+        responseText:
+          type: string
+          nullable: true
+        parsedSuccess:
+          type: boolean
+        errorCode:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, capability, parsedSuccess, createdAt]
 
     PreviewDocumentDetailResponse:
       type: object

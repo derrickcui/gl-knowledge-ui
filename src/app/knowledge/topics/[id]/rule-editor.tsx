@@ -30,6 +30,9 @@ import { NodeInspector } from "./rule-editor/NodeInspector";
 import { CapabilityProvider } from "./rule-editor/CapabilityContext";
 import { RuleIntelligencePanel } from "./rule-editor/RuleIntelligencePanel";
 import { RuleVersionTimelinePanel, type RuleVersionEntry } from "./rule-editor/RuleVersionTimelinePanel";
+import { AiGenerateDrawer } from "./rule-editor/AiGenerateDrawer";
+import { AiSuggestionPanel } from "./rule-editor/AiSuggestionPanel";
+import { AiInvocationPanel } from "./rule-editor/AiInvocationPanel";
 import { t } from "@/i18n";
 import {
   canCreatePositionMode,
@@ -75,8 +78,22 @@ import type { RuntimeActiveItem } from "@/lib/api/runtime";
 import type { RuntimeExecuteResponse } from "@/lib/api/ruleRuntime";
 import type { RuntimeExecuteOptions } from "@/lib/api/ruleRuntime";
 import type { RuleAbTestResult } from "./rule-editor/ab-test";
+import {
+  evaluateTopicRuleWithAi,
+  explainTopicRuleWithAi,
+  generateTopicWithAi,
+  optimizeTopicRuleWithAi,
+  suggestTopicRuleWithAi,
+  listTopicAiInvocations,
+  type AiInvocationPageResponse,
+  type TopicAiEvaluateResponse,
+  type TopicAiExplainResponse,
+  type TopicAiOptimizeResponse,
+  type TopicAiSuggestResponse,
+} from "@/lib/topic-ai-api";
 
 export type RuleEditorProps = {
+  topicId?: string;
   rule: UiRuleViewModel;
   capability: UiCapabilityViewModel;
   explain?: ExplainViewModel | null;
@@ -124,6 +141,7 @@ export type RuleEditorProps = {
   optimizationSuggestionsOverride?: OptimizationSuggestion[] | null;
   versionHistoryOverride?: RuleVersionEntry[] | null;
   diffOverride?: NodeDiffDetail | null;
+  onTopicNameChange?: (topicName: string) => void;
 };
 
 type PreviewState = {
@@ -146,6 +164,7 @@ type PositionRelationDraft = {
 };
 
 export function RuleEditor({
+  topicId,
   rule,
   capability,
   explain = null,
@@ -193,6 +212,7 @@ export function RuleEditor({
   optimizationSuggestionsOverride = null,
   versionHistoryOverride = null,
   diffOverride = null,
+  onTopicNameChange,
 }: RuleEditorProps) {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(rule.root?.id ?? null);
   const [collapsedByUser, setCollapsedByUser] = useState<Record<string, boolean>>({});
@@ -241,6 +261,25 @@ export function RuleEditor({
   const [versionHistory, setVersionHistory] = useState<RuleVersionEntry[]>([]);
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [draggingNodeType, setDraggingNodeType] = useState<UiExpressionNode["type"] | null>(null);
+  const [aiGenerateOpen, setAiGenerateOpen] = useState(false);
+  const [aiGenerateBusy, setAiGenerateBusy] = useState(false);
+  const [aiGenerateError, setAiGenerateError] = useState<string | null>(null);
+  const [aiGenerateWarnings, setAiGenerateWarnings] = useState<string[]>([]);
+  const [aiSuggestionBusy, setAiSuggestionBusy] = useState(false);
+  const [aiSuggestionError, setAiSuggestionError] = useState<string | null>(null);
+  const [aiSuggestion, setAiSuggestion] = useState<(TopicAiSuggestResponse & { focusNodeId?: string | null }) | null>(null);
+  const [aiExplainBusy, setAiExplainBusy] = useState(false);
+  const [aiExplainError, setAiExplainError] = useState<string | null>(null);
+  const [aiExplainResponse, setAiExplainResponse] = useState<TopicAiExplainResponse | null>(null);
+  const [aiEvaluateBusy, setAiEvaluateBusy] = useState(false);
+  const [aiEvaluateError, setAiEvaluateError] = useState<string | null>(null);
+  const [aiEvaluateResponse, setAiEvaluateResponse] = useState<TopicAiEvaluateResponse | null>(null);
+  const [aiOptimizeBusy, setAiOptimizeBusy] = useState(false);
+  const [aiOptimizeError, setAiOptimizeError] = useState<string | null>(null);
+  const [aiOptimizeResult, setAiOptimizeResult] = useState<TopicAiOptimizeResponse | null>(null);
+  const [aiInvocationsBusy, setAiInvocationsBusy] = useState(false);
+  const [aiInvocationsError, setAiInvocationsError] = useState<string | null>(null);
+  const [aiInvocations, setAiInvocations] = useState<AiInvocationPageResponse | null>(null);
   const lastHintKeyRef = useRef<string>("");
 
   const baselineRootRef = useRef<UiExpressionNode | null>(rule.root);
@@ -297,10 +336,29 @@ export function RuleEditor({
   const optimizationSuggestions = optimizationSuggestionsOverride ?? localOptimizationSuggestions;
   const diff = diffOverride ?? localDiff;
   const effectiveVersionHistory = versionHistoryOverride && versionHistoryOverride.length > 0 ? versionHistoryOverride : versionHistory;
-  const explainViewModel = useMemo(
-    () => buildExplainViewModel(rule.root, topicName, explain),
-    [rule.root, explain, topicName]
-  );
+  const explainViewModel = useMemo(() => {
+    const base = buildExplainViewModel(rule.root, topicName, explain);
+    if (!aiExplainResponse) return base;
+
+    const sections = [
+      aiExplainResponse.summary?.trim() ?? "",
+      aiExplainResponse.bullets.length > 0 ? `命中逻辑:\n- ${aiExplainResponse.bullets.join("\n- ")}` : "",
+      aiExplainResponse.risks.length > 0 ? `风险:\n- ${aiExplainResponse.risks.join("\n- ")}` : "",
+      aiExplainResponse.recommendedActions.length > 0
+        ? `建议动作:\n- ${aiExplainResponse.recommendedActions.join("\n- ")}`
+        : "",
+    ].filter(Boolean);
+
+    return {
+      ...(base ?? { title: "AI Explain", blocks: [] }),
+      title: "AI Explain",
+      professionalText: sections.join("\n\n"),
+      businessText:
+        aiExplainResponse.summary?.trim() ||
+        aiExplainResponse.bullets.slice(0, 3).join("；") ||
+        base?.businessText,
+    };
+  }, [rule.root, topicName, explain, aiExplainResponse]);
   const selectedNode = useMemo(
     () => (rule.root && selectedNodeId ? findNode(rule.root, selectedNodeId) : null),
     [rule.root, selectedNodeId]
@@ -328,7 +386,15 @@ export function RuleEditor({
     setFullTabStale(true);
     setImpactTabStale(true);
     setNodeTabs((prev) => prev.map((tab) => ({ ...tab, stale: true })));
+    setAiSuggestion(null);
+    setAiEvaluateResponse(null);
+    setAiOptimizeResult(null);
   }, [rule.root]);
+
+  useEffect(() => {
+    if (!topicId) return;
+    void handleRefreshAiInvocations();
+  }, [topicId]);
 
   useEffect(() => {
     const firstError = validationIssues.find((item) => item.severity === "error");
@@ -576,6 +642,175 @@ export function RuleEditor({
     setDraftBPreview(null);
     setVisibleStructureHints([t("ruleEditor.intel.autogen.draftApplied")]);
     window.setTimeout(() => setVisibleStructureHints([]), 1500);
+  };
+
+  const replaceRuleFromAi = (nextRule: UiRuleViewModel) => {
+    const normalized = normalizeExpressionTree(nextRule.root).root;
+    if (!normalized) return false;
+    setRoot(normalized);
+    setSelectedNodeId(normalized.id);
+    setAiExplainResponse(null);
+    return true;
+  };
+
+  const handleGenerateWithAi = async (payload: {
+    description: string;
+    provider?: string | null;
+    model?: string | null;
+  }) => {
+    setAiGenerateBusy(true);
+    setAiGenerateError(null);
+    setAiGenerateWarnings([]);
+    try {
+      const result = await generateTopicWithAi({
+        ...payload,
+        topicId: topicId ?? null,
+      });
+      if (!result.data) {
+        setAiGenerateError(result.error ?? "AI generate failed.");
+        return;
+      }
+      if (!replaceRuleFromAi(result.data.businessRule)) {
+        setAiGenerateError("AI generated an empty rule.");
+        return;
+      }
+      setAiGenerateWarnings(result.data.warnings ?? []);
+      onTopicNameChange?.(result.data.topicName);
+      setAiGenerateOpen(false);
+    } finally {
+      setAiGenerateBusy(false);
+    }
+  };
+
+  const handleSuggestNode = async (nodeId: string) => {
+    setAiSuggestionBusy(true);
+    setAiSuggestionError(null);
+    try {
+      const result = await suggestTopicRuleWithAi({
+        businessRule: { root: rule.root },
+        focusNodeId: nodeId,
+        topicId: topicId ?? null,
+      });
+      if (!result.data) {
+        setAiSuggestionError(result.error ?? "AI suggest failed.");
+        return;
+      }
+      setAiSuggestion({ ...result.data, focusNodeId: nodeId });
+      setSelectedNodeId(nodeId);
+    } finally {
+      setAiSuggestionBusy(false);
+    }
+  };
+
+  const handleInsertAiTerms = () => {
+    const targetNodeId = aiSuggestion?.focusNodeId;
+    if (!targetNodeId || !aiSuggestion || aiSuggestion.addTerms.length === 0) return;
+    handlePatchNode(targetNodeId, (node) => {
+      if (node.type !== "TERM_SET") return node;
+      const existing = new Set(node.terms.map((item) => item.conceptName.trim().toLowerCase()));
+      const appended = aiSuggestion.addTerms
+        .map((item) => item.trim())
+        .filter(Boolean)
+        .filter((item) => !existing.has(item.toLowerCase()))
+        .map((item) => ({
+          source: "CONCEPT" as const,
+          conceptId: `ai:${item}`,
+          conceptName: item,
+          includeDescendants: false,
+          weight: 1,
+        }));
+      return appended.length > 0 ? { ...node, terms: [...node.terms, ...appended] } : node;
+    });
+    setAiSuggestion(null);
+  };
+
+  const handleApplyAiSuggestion = () => {
+    const optimization = aiSuggestion?.structureOptimization;
+    if (!optimization) return;
+    const maybeRule =
+      (optimization["businessRule"] as UiRuleViewModel | undefined) ??
+      (("root" in optimization ? optimization : null) as UiRuleViewModel | null);
+    if (!maybeRule?.root) return;
+    if (replaceRuleFromAi(maybeRule)) {
+      setAiSuggestion(null);
+    }
+  };
+
+  const handleRefreshAiExplain = async () => {
+    setAiExplainBusy(true);
+    setAiExplainError(null);
+    try {
+      const result = await explainTopicRuleWithAi({
+        topicId: topicId ?? null,
+        topicName,
+        businessRule: { root: rule.root },
+      });
+      if (!result.data) {
+        setAiExplainError(result.error ?? "AI explain failed.");
+        return;
+      }
+      setAiExplainResponse(result.data);
+    } finally {
+      setAiExplainBusy(false);
+    }
+  };
+
+  const handleRefreshAiEvaluate = async () => {
+    setAiEvaluateBusy(true);
+    setAiEvaluateError(null);
+    try {
+      const result = await evaluateTopicRuleWithAi({
+        topicId: topicId ?? null,
+        businessRule: { root: rule.root },
+        runtimeEnvironmentId: activeRuntimeId ?? null,
+      });
+      if (!result.data) {
+        setAiEvaluateError(result.error ?? "AI evaluate failed.");
+        return;
+      }
+      setAiEvaluateResponse(result.data);
+    } finally {
+      setAiEvaluateBusy(false);
+    }
+  };
+
+  const handleAiOptimize = async () => {
+    setAiOptimizeBusy(true);
+    setAiOptimizeError(null);
+    try {
+      const result = await optimizeTopicRuleWithAi({
+        topicId: topicId ?? null,
+        businessRule: { root: rule.root },
+      });
+      if (!result.data) {
+        setAiOptimizeError(result.error ?? "AI optimize failed.");
+        return;
+      }
+      setAiOptimizeResult(result.data);
+      replaceRuleFromAi(result.data.businessRule);
+    } finally {
+      setAiOptimizeBusy(false);
+    }
+  };
+
+  const handleRefreshAiInvocations = async () => {
+    if (!topicId) return;
+    setAiInvocationsBusy(true);
+    setAiInvocationsError(null);
+    try {
+      const result = await listTopicAiInvocations({
+        topicId,
+        page: 0,
+        size: 10,
+      });
+      if (!result.data) {
+        setAiInvocationsError(result.error ?? "AI invocations query failed.");
+        return;
+      }
+      setAiInvocations(result.data);
+    } finally {
+      setAiInvocationsBusy(false);
+    }
   };
 
   const expandPathToNode = (nodeId: string) => {
@@ -1146,7 +1381,7 @@ export function RuleEditor({
     <CapabilityProvider value={capability}>
       <RuleEditorLayout
       header={
-          <HeaderBar
+        <HeaderBar
           topicName={topicName}
           status={status}
           templateLabel={templateLabel}
@@ -1164,6 +1399,7 @@ export function RuleEditor({
           onDeleteDraft={onDeleteDraft}
           onSubmit={onSubmit}
           onPublish={onPublish}
+          onOpenAiGenerate={readOnly ? undefined : () => setAiGenerateOpen(true)}
           openViews={openViews}
           onToggleOpenView={(option, checked) => {
             setOpenViews((prev) => {
@@ -1220,6 +1456,7 @@ export function RuleEditor({
               diffMode={diffMode}
               onToggleDiffMode={() => setDiffMode((prev) => !prev)}
               onAutoFormat={handleAutoFormat}
+              onSuggestNode={readOnly ? undefined : handleSuggestNode}
               proximitySuggestion={proximitySuggestion}
               onApplyProximitySuggestion={handleApplyProximitySuggestion}
               diffStatusById={diff.statusById}
@@ -1290,9 +1527,46 @@ export function RuleEditor({
                   onPatchNode={handlePatchNode}
                   onChangeField={handleChangeField}
                   onEditTermSet={handleEditTermSet}
+                  onSuggestNode={readOnly ? undefined : handleSuggestNode}
+                  onSuggestTermExpansion={readOnly ? undefined : handleSuggestNode}
                 />
               }
-              explainPanel={<ExplainPanel explain={explainViewModel} />}
+              explainPanel={
+                <div className="space-y-3">
+                  <div className="rounded-lg border bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-semibold">AI Explain</div>
+                        <div className="text-xs text-slate-500">基于当前规则生成自然语言解释。</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50"
+                        onClick={() => void handleRefreshAiExplain()}
+                        disabled={aiExplainBusy}
+                      >
+                        {aiExplainBusy ? "生成中..." : "刷新"}
+                      </button>
+                    </div>
+                    {aiExplainError ? (
+                      <div className="mt-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                        {aiExplainError}
+                      </div>
+                    ) : null}
+                  </div>
+                  <ExplainPanel explain={explainViewModel} />
+                </div>
+              }
+              aiPanel={
+                <AiSuggestionPanel
+                  suggestion={aiSuggestion}
+                  busy={aiSuggestionBusy}
+                  error={aiSuggestionError}
+                  onApply={handleApplyAiSuggestion}
+                  onInsertTerms={handleInsertAiTerms}
+                  onDismiss={() => setAiSuggestion(null)}
+                />
+              }
               validationPanel={<ValidationPanel issues={validationIssues} onAutoFix={handleAutoFix} />}
               intelligencePanel={
                 <RuleIntelligencePanel
@@ -1306,6 +1580,23 @@ export function RuleEditor({
                   abTestResult={abTestResult}
                   versionHistory={effectiveVersionHistory}
                   onApplySuggestion={handleApplyOptimizationSuggestion}
+                  aiEvaluate={aiEvaluateResponse}
+                  aiEvaluateBusy={aiEvaluateBusy}
+                  aiEvaluateError={aiEvaluateError}
+                  aiOptimizeResult={aiOptimizeResult}
+                  aiOptimizeBusy={aiOptimizeBusy}
+                  aiOptimizeError={aiOptimizeError}
+                  onRefreshAiEvaluate={() => void handleRefreshAiEvaluate()}
+                  onAiOptimize={() => void handleAiOptimize()}
+                />
+              }
+              invocationPanel={
+                <AiInvocationPanel
+                  items={aiInvocations?.items ?? []}
+                  total={aiInvocations?.total ?? 0}
+                  busy={aiInvocationsBusy}
+                  error={aiInvocationsError}
+                  onRefresh={() => void handleRefreshAiInvocations()}
                 />
               }
               versionTimelinePanel={<RuleVersionTimelinePanel entries={effectiveVersionHistory} />}
@@ -1325,21 +1616,22 @@ export function RuleEditor({
       }
       footer={null}
       modals={
-        <GlobalModals
-          termSelectorModal={
-            <TermSelectorModal
-              open={termSelector.open}
-              onClose={() =>
-                setTermSelector({ open: false, targetNodeId: null, targetParentId: null, initialSelected: [] })
-              }
-              initialSelected={termSelector.initialSelected}
-              onConfirm={handleConfirmTerms}
-            />
-          }
-          confirmDialog={
-            positionEditor.open ? (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-                <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
+        <>
+          <GlobalModals
+            termSelectorModal={
+              <TermSelectorModal
+                open={termSelector.open}
+                onClose={() =>
+                  setTermSelector({ open: false, targetNodeId: null, targetParentId: null, initialSelected: [] })
+                }
+                initialSelected={termSelector.initialSelected}
+                onConfirm={handleConfirmTerms}
+              />
+            }
+            confirmDialog={
+              positionEditor.open ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+                  <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-xl">
                   <div className="text-sm font-semibold">{t("ruleEditor.positionEditor.title")}</div>
                   <div className="mt-1 text-xs text-slate-500">{t("ruleEditor.positionEditor.subtitle")}</div>
                   <div className="mt-4 space-y-3">
@@ -1446,10 +1738,21 @@ export function RuleEditor({
                     </button>
                   </div>
                 </div>
-              </div>
-            ) : null
-          }
-        />
+                </div>
+              ) : null
+            }
+          />
+          <AiGenerateDrawer
+            open={aiGenerateOpen}
+            busy={aiGenerateBusy}
+            error={aiGenerateError}
+            warnings={aiGenerateWarnings}
+            onClose={() => {
+              if (!aiGenerateBusy) setAiGenerateOpen(false);
+            }}
+            onSubmit={(payload) => void handleGenerateWithAi(payload)}
+          />
+        </>
       }
       />
     </CapabilityProvider>

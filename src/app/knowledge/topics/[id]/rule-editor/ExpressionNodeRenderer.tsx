@@ -38,6 +38,7 @@ export function ExpressionNodeRenderer({
   canDropAt,
   activePreviewNodeId,
   onDebugNode,
+  onSuggestNode,
   diffMode,
   diffStatusById,
   conflictNodeIds,
@@ -78,6 +79,7 @@ export function ExpressionNodeRenderer({
   canDropAt: (targetParentId: string, targetIndex: number) => boolean;
   activePreviewNodeId: string | undefined;
   onDebugNode: (nodeId: string) => void;
+  onSuggestNode?: (nodeId: string) => void;
   diffMode: boolean;
   diffStatusById: Record<string, NodeDiffStatus>;
   conflictNodeIds: Set<string>;
@@ -344,6 +346,16 @@ export function ExpressionNodeRenderer({
             >
               <Search className="h-3.5 w-3.5" />
             </button>
+            {!readOnly && (
+              <button
+                type="button"
+                className="rounded border border-sky-300 bg-sky-50 px-2 py-1 text-[11px] text-sky-700 opacity-0 transition hover:bg-sky-100 focus:opacity-100 group-hover:opacity-100"
+                onClick={() => onSuggestNode?.(node.id)}
+                title="AI建议"
+              >
+                ✨
+              </button>
+            )}
             {diffMode && diffStatus && (
               <span
                 className={`rounded px-2 py-0.5 text-[11px] ${
@@ -623,6 +635,7 @@ export function ExpressionNodeRenderer({
                   canDropAt={canDropAt}
                   activePreviewNodeId={activePreviewNodeId}
                   onDebugNode={onDebugNode}
+                  onSuggestNode={onSuggestNode}
                   diffMode={diffMode}
                   diffStatusById={diffStatusById}
                   conflictNodeIds={conflictNodeIds}
@@ -684,6 +697,7 @@ export function ExpressionNodeRenderer({
                 canDropAt={canDropAt}
                 activePreviewNodeId={activePreviewNodeId}
                 onDebugNode={onDebugNode}
+                onSuggestNode={onSuggestNode}
                 diffMode={diffMode}
                 diffStatusById={diffStatusById}
                 conflictNodeIds={conflictNodeIds}

@@ -1227,6 +1227,7 @@ function TopicDetailPageClient() {
             {activeTab === "RULE" &&
               (editorState ? (
               <RuleEditor
+                topicId={topicId}
                 rule={editorState.rule}
                 capability={editorState.capability}
                 topicName={topicName}
@@ -1282,6 +1283,7 @@ function TopicDetailPageClient() {
                         }
                   )
                 }
+                onTopicNameChange={setTopicName}
                 readOnly={actionsLocked}
               />
             ) : (

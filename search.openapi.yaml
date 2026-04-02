@@ -1966,6 +1966,7 @@ paths:
         Notes:
         - `topicId` is optional. When provided, current phase only supports `mode=LEXICAL`.
         - `topicId` is applied as topic filter (`fq={!geelink}<compiledGql>`).
+        - When topic-intelligence rewrite is enabled, the service may detect query intent topics automatically and apply them as query-time `fq` / `bq`.
       operationId: search
       requestBody:
         required: true
@@ -1989,6 +1990,23 @@ paths:
                   size: 10
                   mode: LEXICAL
                   topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+              lexicalWithAutoTopicIntent:
+                summary: Lexical search where topic intent may be auto-detected
+                value:
+                  query: åšå£«è¡¥è´´
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+              lexicalWithTopicIntentOverride:
+                summary: Lexical search with user-controlled topic intent overrides
+                value:
+                  query: Ã¥ÂÅ¡Ã¥Â£Â«Ã¨Â¡Â¥Ã¨Â´Â´
+                  page: 1
+                  size: 10
+                  mode: LEXICAL
+                  topicIntentOverrides:
+                    - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                      enabled: false
               lexicalWithRankingExperiment:
                 summary: Lexical search with ranking experiment override
                 value:
@@ -2059,6 +2077,60 @@ paths:
                       vectorWeight: 0
                       rerankApplied: false
                       rankingLatencyMs: 18
+                    queryIntent:
+                      applied: true
+                      primaryMode: FILTER
+                      primaryReason: MANUAL_TOPIC_FILTER
+                      primaryConfidence: 1.0
+                      filterPromotionMinMatchedTerms: 2
+                      filterPromotionMinConfidence: 0.65
+                      primaryTopicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                      primaryTopicName: testHeader
+                      topicCount: 1
+                      topics:
+                        - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                          topicName: testHeader
+                          weight: 1
+                          deployModes: [FILTER, BOOST, LABEL, MAP, SIGNAL]
+                          mode: FILTER
+                          confidence: 1.0
+                          reason: MANUAL_TOPIC_FILTER
+                          matchedTerms: []
+                          matchedNodeIds: []
+                    queryTopicSignals:
+                      - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        topicName: testHeader
+                        matched: true
+                        matchedSource: QUERY_INTENT
+                        appliedModes: [FILTER]
+                        matchedTerms: []
+                        matchedNodeIds: []
+                    queryRewriteCandidates:
+                      - term: testHeader
+                        topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        confidence: 1.0
+                        intentMode: FILTER
+                        detected: true
+                        enabled: true
+                        applied: true
+                        matchedTermCount: 1
+                        topicTermCount: 1
+                        coverage: 1.0
+                        matchedTerms: [区级人力社保部门]
+                        source: topic
+                    groupedResults:
+                      - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        topicName: testHeader
+                        dataset: gl_demo
+                        namespace: policy
+                        count: 1
+                        scoreContributionSum: 0.1
+                        hitIds: [doc-1]
+                        previewHits:
+                          - id: doc-1
+                            title: Ã¤ÂºÂºÃ¦â€°ÂÃ¨Â¡Â¥Ã¨Â´Â´Ã§â€Â³Ã¨Â¯Â·Ã¦Å’â€¡Ã¥Ââ€”
+                            summary: Ã©â‚¬â€šÃ§â€Â¨Ã¤ÂºÅ½Ã¤Â¼ÂÃ¤Â¸Å¡Ã¤ÂºÂºÃ¦â€°ÂÃ¨Â¡Â¥Ã¨Â´Â´Ã§â€Â³Ã¦Å Â¥...
+                            score: 2.31
                     debug:
                       topic:
                         requested: true
@@ -2079,6 +2151,30 @@ paths:
                           solrTarget: fq
                           solrInjected: "{!geelink}åŒºçº§äººåŠ›ç¤¾ä¿éƒ¨é—¨"
                           reason: APPLIED
+                      queryIntent:
+                        applied: true
+                        primaryMode: FILTER
+                        primaryReason: MANUAL_TOPIC_FILTER
+                        primaryConfidence: 1.0
+                        filterPromotionMinMatchedTerms: 2
+                        filterPromotionMinConfidence: 0.65
+                        primaryMatchedTermCount: 1
+                        primaryTopicTermCount: 1
+                        primaryCoverage: 1.0
+                        primaryMatchedTerms: [区级人力社保部门]
+                        primaryTopicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                        primaryTopicName: testHeader
+                        topicCount: 1
+                        topics:
+                          - topicId: topic-45c09288-bcfc-406d-8c5b-4668f86e76b2
+                            topicName: testHeader
+                            weight: 1
+                            deployModes: [FILTER, BOOST, LABEL, MAP, SIGNAL]
+                            mode: FILTER
+                            confidence: 1.0
+                            reason: MANUAL_TOPIC_FILTER
+                            matchedTerms: []
+                            matchedNodeIds: []
                     query:
                       intents: []
         "400":
@@ -2573,6 +2669,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TopicCoverageOverviewResponse'
+
+  /api/governance/coverage:
+    get:
+      x-internal: true
+      tags: [governance-internal]
+      summary: Topic coverage health summary
+      description: Aggregated governance health score, level, breakdown and diagnosis derived from coverage overview.
+      operationId: topicCoverageHealth
+      responses:
+        "200":
+          description: Coverage health summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TopicCoverageHealthResponse'
 
   /api/governance/coverage/topics:
     get:
@@ -3766,6 +3877,214 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiEnvelopeSearchFacets'
 
+  /api/portal/search:
+    post:
+      tags: [portal]
+      summary: Portal search entry
+      description: |
+        Product-facing semantic search API.
+
+        Compared with `/api/search`, this endpoint adds normalized product fields:
+        - `detectedTopics`
+        - `rewrite`
+        - `filters`
+
+        It also keeps compatibility aliases to simplify UI migration:
+        - `hits`
+        - `facets`
+        - `queryIntent`
+        - `queryRewriteCandidates`
+      operationId: portalSearch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        "200":
+          description: Portal search success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSearchResponse'
+
+  /api/portal/search/facets:
+    post:
+      tags: [portal]
+      summary: Portal topic facets
+      operationId: portalSearchFacets
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalSearchFacetRequest'
+      responses:
+        "200":
+          description: Portal facet success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsSearchFacets'
+
+  /api/portal/topics/hot:
+    get:
+      tags: [portal]
+      summary: Hot topics for portal homepage
+      operationId: portalHotTopics
+      parameters:
+        - name: datasetName
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: topN
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Hot topics success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalTopicHotResponse'
+
+  /api/portal/topics/catalog:
+    get:
+      tags: [portal]
+      summary: Topic catalog for portal browsing
+      operationId: portalTopicCatalog
+      parameters:
+        - name: datasetName
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic catalog success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalTopicCatalogResponse'
+
+  /api/portal/topics/{topicId}:
+    get:
+      tags: [portal]
+      summary: Topic detail for portal page
+      description: |
+        Topic landing-page detail API for the portal.
+
+        Notes:
+        - `definition` is resolved from runtime topic metadata first.
+        - Current lookup order is:
+          1. runtime topic `definition`
+          2. `search.portal.topic-definitions.by-id.{topicId}`
+          3. `search.portal.topic-definitions.by-name.{topicName}`
+          4. generated fallback description
+      operationId: portalTopicDetail
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: datasetName
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic detail success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalTopicDetailResponse'
+              examples:
+                topicDetail:
+                  summary: Topic detail with configured definition
+                  value:
+                    topicId: topic-phd
+                    topicName: PhD Talent
+                    datasetName: policy
+                    namespace: talent
+                    runtimeVersion: 12
+                    definition: PhD talent related semantic topic covering policies, projects, subsidies and eligibility.
+                    compiledGql: "<in/title>(PhD Talent)"
+                    weight: 8
+                    deployModes: [FILTER, SIGNAL]
+                    relatedTopics:
+                      - topicId: topic-company
+                        topicName: High-tech Enterprise
+                        cooccurDocs: 8
+                        score: 0.61
+                    relatedDocuments:
+                      - docId: doc-9
+                        title: PhD Talent Policy Guide
+                        publishedAt: "2026-01-12T00:00:00Z"
+                        weight: 0.9
+                        hitTopicCount: 2
+                        multiHit: true
+                        snippet: Related policy and eligibility summary.
+
+  /api/portal/topics/{topicId}/search:
+    post:
+      tags: [portal]
+      summary: Search within one portal topic page
+      operationId: portalSearchByTopic
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchRequest'
+      responses:
+        "200":
+          description: Topic search success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortalSearchResponse'
+
+  /api/portal/topics/{topicId}/documents/{docId}/explain:
+    get:
+      tags: [portal]
+      summary: Explain one document against one topic
+      operationId: portalTopicDocumentExplain
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runtimeVersion
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Topic explain success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GovernanceTopicDocExplain'
+
 components:
   schemas:
     SearchMode:
@@ -3828,6 +4147,12 @@ components:
           description: Optional active topics for doc-level topic signal evaluation (LEXICAL/HYBRID).
           items:
             type: string
+        topicIntentOverrides:
+          type: array
+          nullable: true
+          description: Optional user overrides for detected topic intents used by query rewrite UI.
+          items:
+            $ref: '#/components/schemas/TopicIntentOverride'
         rankingExperimentId:
           type: string
           nullable: true
@@ -3849,6 +4174,297 @@ components:
           format: double
           nullable: true
           description: Optional request-level override for topic weight feature weight.
+
+    PortalSearchFacetRequest:
+      type: object
+      properties:
+        query:
+          type: string
+          nullable: true
+        filterQueries:
+          type: array
+          items:
+            type: string
+        limit:
+          type: integer
+          default: 20
+
+    PortalSearchResponse:
+      type: object
+      properties:
+        query:
+          type: string
+          nullable: true
+        totalHits:
+          type: integer
+          format: int64
+        page:
+          type: integer
+        size:
+          type: integer
+        quality:
+          $ref: '#/components/schemas/SearchQuality'
+        hits:
+          type: array
+          description: Compatibility alias of `results` to simplify migration from `/api/search`.
+          items:
+            $ref: '#/components/schemas/SearchHit'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+        facets:
+          type: object
+          description: Compatibility alias of raw search facets from `/api/search`.
+          additionalProperties:
+            $ref: '#/components/schemas/FacetResult'
+        queryIntent:
+          $ref: '#/components/schemas/QueryIntentView'
+        queryRewriteCandidates:
+          type: array
+          description: Compatibility alias of `rewrite`.
+          items:
+            $ref: '#/components/schemas/QueryRewriteCandidateView'
+        detectedTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalDetectedTopicView'
+        rewrite:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryRewriteCandidateView'
+        filters:
+          $ref: '#/components/schemas/PortalSearchFiltersView'
+        groupedResults:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupedResultView'
+        debug:
+          type: object
+          additionalProperties: true
+
+    PortalDetectedTopicView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        score:
+          type: number
+          format: double
+          nullable: true
+        confidence:
+          type: number
+          format: double
+          nullable: true
+        coverage:
+          type: number
+          format: double
+          nullable: true
+        mode:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        matchedTerms:
+          type: array
+          items:
+            type: string
+
+    PortalSearchFiltersView:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacetBucket'
+        groupedTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyticsFacetGroup'
+        raw:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FacetResult'
+
+    PortalTopicHotResponse:
+      type: object
+      properties:
+        hotTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicHotItemView'
+        growthTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicHotItemView'
+        declineTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicHotItemView'
+
+    PortalTopicHotItemView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        datasetName:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        heat:
+          type: integer
+          format: int64
+        previousHeat:
+          type: integer
+          format: int64
+        trendRatio:
+          type: number
+          format: double
+          nullable: true
+        trend:
+          type: string
+          nullable: true
+
+    PortalTopicCatalogResponse:
+      type: object
+      properties:
+        runtimeVersion:
+          type: integer
+          format: int32
+        totalTopics:
+          type: integer
+          format: int32
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicCatalogGroupView'
+
+    PortalTopicCatalogGroupView:
+      type: object
+      properties:
+        groupId:
+          type: string
+        groupName:
+          type: string
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicCatalogItemView'
+
+    PortalTopicCatalogItemView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        datasetName:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        weight:
+          type: integer
+          format: int32
+          nullable: true
+
+    PortalTopicDetailResponse:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        datasetName:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        runtimeVersion:
+          type: integer
+          format: int32
+          nullable: true
+        definition:
+          type: string
+          nullable: true
+          description: |
+            Topic definition for portal display.
+            Backend resolves it from:
+            - runtime topic `definition`
+            - `search.portal.topic-definitions.by-id`
+            - `search.portal.topic-definitions.by-name`
+            If neither is configured, a fallback description is generated.
+          example: PhD talent related semantic topic covering policies, projects, subsidies and eligibility.
+        compiledGql:
+          type: string
+          nullable: true
+        weight:
+          type: integer
+          format: int32
+          nullable: true
+        deployModes:
+          type: array
+          items:
+            type: string
+        relatedTopics:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicRelatedView'
+        relatedDocuments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortalTopicDocumentView'
+
+    PortalTopicRelatedView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        cooccurDocs:
+          type: integer
+          format: int64
+        score:
+          type: number
+          format: double
+
+    PortalTopicDocumentView:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+        weight:
+          type: number
+          format: double
+        hitTopicCount:
+          type: integer
+          format: int32
+        multiHit:
+          type: boolean
+        snippet:
+          type: string
+          nullable: true
 
     TopicEntrySearchRequest:
       type: object
@@ -4013,11 +4629,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SearchHit'
+        results:
+          type: array
+          description: Alias of `hits` for product-facing clients.
+          items:
+            $ref: '#/components/schemas/SearchHit'
         facets:
           type: object
           additionalProperties:
-            type: object
-            additionalProperties: true
+            $ref: '#/components/schemas/FacetResult'
         quality:
           $ref: '#/components/schemas/SearchQuality'
         debug:
@@ -4033,11 +4653,203 @@ components:
             - `rankingResolved`
             - `topicIntent`
             - `topicGrouping`
+            - `facetMeta`
           additionalProperties: true
         query:
           type: object
           description: Query intelligence attributes (dynamic object)
           additionalProperties: true
+        queryIntent:
+          $ref: '#/components/schemas/QueryIntentView'
+        queryTopicSignals:
+          type: array
+          description: Structured query-level topic signals derived from query intent detection.
+          items:
+            $ref: '#/components/schemas/TopicSignalRuntimeView'
+        queryRewriteCandidates:
+          type: array
+          description: UI-facing query rewrite candidates derived from query intent topics.
+          items:
+            $ref: '#/components/schemas/QueryRewriteCandidateView'
+        groupedResults:
+          type: array
+          description: Topic-grouped view of the current result page derived from matched hit topic signals.
+          items:
+            $ref: '#/components/schemas/GroupedResultView'
+
+    QueryRewriteCandidateView:
+      type: object
+      properties:
+        term:
+          type: string
+          nullable: true
+        topicId:
+          type: string
+          nullable: true
+        confidence:
+          type: number
+          format: double
+          nullable: true
+        intentMode:
+          type: string
+          nullable: true
+        detected:
+          type: boolean
+          nullable: true
+        enabled:
+          type: boolean
+          nullable: true
+        applied:
+          type: boolean
+          nullable: true
+        matchedTermCount:
+          type: integer
+          format: int32
+          nullable: true
+        topicTermCount:
+          type: integer
+          format: int32
+          nullable: true
+        coverage:
+          type: number
+          format: double
+          nullable: true
+        matchedTerms:
+          type: array
+          nullable: true
+          items:
+            type: string
+        source:
+          type: string
+          nullable: true
+
+    TopicIntentOverride:
+      type: object
+      properties:
+        topicId:
+          type: string
+          nullable: true
+        enabled:
+          type: boolean
+          nullable: true
+
+    GroupedResultView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+          nullable: true
+        dataset:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        count:
+          type: integer
+          format: int32
+        scoreContributionSum:
+          type: number
+          format: double
+        hitIds:
+          type: array
+          items:
+            type: string
+        previewHits:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchHit'
+
+    QueryIntentView:
+      type: object
+      description: Structured query intent summary derived from topic detection and decision logic.
+      properties:
+        applied:
+          type: boolean
+        primaryMode:
+          type: string
+          description: Primary intent execution mode selected for the query, e.g. `FILTER` or `BOOST`.
+        primaryReason:
+          type: string
+          description: Human-readable decision reason for the primary topic intent.
+        primaryConfidence:
+          type: number
+          format: double
+        filterPromotionMinMatchedTerms:
+          type: integer
+          format: int32
+          description: Current matched-terms threshold used when promoting a topic intent from `BOOST` to `FILTER`.
+        filterPromotionMinConfidence:
+          type: number
+          format: double
+          description: Current confidence threshold used when promoting a topic intent from `BOOST` to `FILTER`.
+        primaryMatchedTermCount:
+          type: integer
+          format: int32
+        primaryTopicTermCount:
+          type: integer
+          format: int32
+        primaryCoverage:
+          type: number
+          format: double
+        primaryMatchedTerms:
+          type: array
+          items:
+            type: string
+        primaryTopicId:
+          type: string
+        primaryTopicName:
+          type: string
+        topicCount:
+          type: integer
+          format: int32
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryIntentTopicView'
+
+    QueryIntentTopicView:
+      type: object
+      description: One detected topic intent item for the query.
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        weight:
+          type: integer
+          format: int32
+        deployModes:
+          type: array
+          items:
+            type: string
+        mode:
+          type: string
+          description: Resolved execution mode for this topic intent.
+        confidence:
+          type: number
+          format: double
+        reason:
+          type: string
+        matchedTerms:
+          type: array
+          items:
+            type: string
+        matchedNodeIds:
+          type: array
+          items:
+            type: string
+        matchedTermCount:
+          type: integer
+          format: int32
+        topicTermCount:
+          type: integer
+          format: int32
+        coverage:
+          type: number
+          format: double
 
     SearchHit:
       type: object
@@ -4078,10 +4890,210 @@ components:
           description: Topic labels derived from matched topic signals for display grouping/tagging.
           items:
             type: string
+        topics:
+          type: array
+          items:
+            type: string
+        taxonomy:
+          type: array
+          items:
+            type: string
+        taxonomyNodes:
+          type: array
+          description: Taxonomy path split into structured nodes without namespace prefix.
+          items:
+            type: array
+            items:
+              type: string
+        explain:
+          type: array
+          description: Lightweight human-readable explain strings.
+          items:
+            type: string
+        explainDetail:
+          $ref: '#/components/schemas/SearchExplain'
+        rankingExplain:
+          $ref: '#/components/schemas/SearchRankingExplain'
+        runtimeVersion:
+          type: string
+          description: Topic/taxonomy runtime version used for this hit, normalized as `vN`.
         aiSummary:
           type: object
           nullable: true
           additionalProperties: true
+
+    SearchExplain:
+      type: object
+      properties:
+        topics:
+          type: array
+          items:
+            type: string
+        taxonomy:
+          type: array
+          items:
+            type: string
+        terms:
+          type: array
+          items:
+            type: string
+        termFields:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        topicSources:
+          type: object
+          additionalProperties:
+            type: string
+          description: Topic explain source enum, e.g. `ANNOTATION`.
+        taxonomySources:
+          type: object
+          additionalProperties:
+            type: string
+          description: Taxonomy explain source enum, e.g. `ANNOTATION`.
+        termSources:
+          type: object
+          additionalProperties:
+            type: string
+          description: Term explain source enum, e.g. `HIGHLIGHT`, `FIELD_MATCH`, `QUERY_FALLBACK`.
+
+    SearchRankingExplain:
+      type: object
+      properties:
+        factors:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchRankingFactor'
+        reasons:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchRankingReason'
+        finalScore:
+          type: number
+          format: double
+
+    SearchRankingFactor:
+      type: object
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        score:
+          type: number
+          format: double
+        estimated:
+          type: boolean
+
+    SearchRankingReason:
+      type: object
+      properties:
+        feature:
+          type: string
+        label:
+          type: string
+        contribution:
+          type: number
+          format: double
+        evidence:
+          type: array
+          items:
+            type: string
+        estimated:
+          type: boolean
+
+    FacetResult:
+      type: object
+      properties:
+        field:
+          type: string
+        type:
+          type: string
+          description: Facet value type, e.g. `term` or `path`.
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacetBucket'
+        values:
+          type: array
+          description: Alias of `buckets` for UI-oriented clients.
+          items:
+            $ref: '#/components/schemas/FacetBucket'
+        tree:
+          type: array
+          description: Structured taxonomy tree; typically populated only for path facets.
+          items:
+            $ref: '#/components/schemas/FacetNode'
+
+    FacetBucket:
+      type: object
+      properties:
+        value:
+          type: string
+        count:
+          type: integer
+          format: int64
+        fq:
+          type: string
+          nullable: true
+          description: Prebuilt filter query expression for clicking this bucket.
+        topicId:
+          type: string
+          nullable: true
+        topicName:
+          type: string
+          nullable: true
+        runtimeVersion:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        nodes:
+          type: array
+          nullable: true
+          items:
+            type: string
+        depth:
+          type: integer
+          nullable: true
+        leaf:
+          type: boolean
+          nullable: true
+
+    FacetNode:
+      type: object
+      properties:
+        value:
+          type: string
+        count:
+          type: integer
+          format: int64
+        path:
+          type: string
+          nullable: true
+        fq:
+          type: string
+          nullable: true
+        namespace:
+          type: string
+          nullable: true
+        nodes:
+          type: array
+          items:
+            type: string
+        depth:
+          type: integer
+          nullable: true
+        leaf:
+          type: boolean
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FacetNode'
 
     SearchQuality:
       type: object
@@ -4129,6 +5141,9 @@ components:
           type: string
         topicName:
           type: string
+        definition:
+          type: string
+          nullable: true
         compiledGql:
           type: string
         datasetName:
@@ -5536,6 +6551,67 @@ components:
         truncated:
           type: boolean
 
+    TopicCoverageHealthResponse:
+      type: object
+      properties:
+        score:
+          type: number
+          format: double
+        level:
+          type: string
+          description: "GOOD | OK | POOR"
+        summary:
+          $ref: '#/components/schemas/TopicCoverageHealthSummary'
+        breakdown:
+          $ref: '#/components/schemas/TopicCoverageHealthBreakdown'
+        diagnosis:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicCoverageDiagnosisItem'
+
+    TopicCoverageHealthSummary:
+      type: object
+      properties:
+        coverageRate:
+          type: number
+          format: double
+          description: 0-1 ratio
+        multiHitRate:
+          type: number
+          format: double
+          description: 0-1 ratio
+        blindSpotRate:
+          type: number
+          format: double
+          description: 0-1 ratio
+
+    TopicCoverageHealthBreakdown:
+      type: object
+      properties:
+        coverageScore:
+          type: number
+          format: double
+        multiHitScore:
+          type: number
+          format: double
+        blindSpotScore:
+          type: number
+          format: double
+        distributionScore:
+          type: number
+          format: double
+
+    TopicCoverageDiagnosisItem:
+      type: object
+      properties:
+        type:
+          type: string
+        severity:
+          type: string
+          description: "INFO | WARNING | ERROR"
+        message:
+          type: string
+
     TopicCoverageTopicsResponse:
       type: object
       properties:
@@ -6802,6 +7878,14 @@ components:
           type: array
           items:
             type: string
+          nullable: true
+        confidence:
+          type: number
+          format: double
+          nullable: true
+        weight:
+          type: number
+          format: double
           nullable: true
 
     ScoreBreakdownView:
