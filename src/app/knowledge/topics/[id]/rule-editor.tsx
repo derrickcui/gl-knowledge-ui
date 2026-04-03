@@ -144,6 +144,53 @@ export type RuleEditorProps = {
   onTopicNameChange?: (topicName: string) => void;
 };
 
+function extractAiSuggestedRule(payload: Record<string, unknown> | null | undefined): UiRuleViewModel | null {
+  if (!payload || typeof payload !== "object") return null;
+
+  const directRule = payload as Partial<UiRuleViewModel>;
+  if (directRule.root && typeof directRule.root === "object") {
+    return directRule as UiRuleViewModel;
+  }
+
+  const nestedBusinessRule = payload.businessRule;
+  if (nestedBusinessRule && typeof nestedBusinessRule === "object") {
+    const candidate = nestedBusinessRule as Partial<UiRuleViewModel>;
+    if (candidate.root && typeof candidate.root === "object") {
+      return candidate as UiRuleViewModel;
+    }
+  }
+
+  const optimizedRule = payload.optimizedRule;
+  if (optimizedRule && typeof optimizedRule === "object") {
+    const candidate = optimizedRule as Partial<UiRuleViewModel>;
+    if (candidate.root && typeof candidate.root === "object") {
+      return candidate as UiRuleViewModel;
+    }
+  }
+
+  const nestedData = payload.data;
+  if (nestedData && typeof nestedData === "object") {
+    const candidate = extractAiSuggestedRule(nestedData as Record<string, unknown>);
+    if (candidate) return candidate;
+  }
+
+  return null;
+}
+
+function collectTermSetNodeIds(node: UiExpressionNode | null): string[] {
+  if (!node) return [];
+  if (node.type === "TERM_SET") return [node.id];
+
+  const childIds: string[] = [];
+  if ("child" in node && node.child) {
+    childIds.push(...collectTermSetNodeIds(node.child));
+  }
+  if ("children" in node && Array.isArray(node.children)) {
+    node.children.forEach((child) => childIds.push(...collectTermSetNodeIds(child)));
+  }
+  return childIds;
+}
+
 type PreviewState = {
   activeNodeId?: string;
 };
@@ -518,6 +565,11 @@ export function RuleEditor({
     });
   };
 
+  const flashAiHint = (message: string) => {
+    setVisibleStructureHints([message]);
+    window.setTimeout(() => setVisibleStructureHints([]), 2000);
+  };
+
   const handleAutoFormat = () => {
     if (!rule.root) return;
     const formatted = formatExpressionTree(rule.root);
@@ -702,9 +754,39 @@ export function RuleEditor({
     }
   };
 
-  const handleInsertAiTerms = () => {
-    const targetNodeId = aiSuggestion?.focusNodeId;
-    if (!targetNodeId || !aiSuggestion || aiSuggestion.addTerms.length === 0) return;
+  const handleInsertAiTerms = (): boolean => {
+    const focusNodeId = aiSuggestion?.focusNodeId;
+    if (!focusNodeId || !aiSuggestion || aiSuggestion.addTerms.length === 0) {
+      setAiSuggestionError("当前没有可插入的建议词。");
+      flashAiHint("未找到可插入的建议词。");
+      return false;
+    }
+    const focusNode = rule.root ? findNode(rule.root, focusNodeId) : null;
+    if (!focusNode || !rule.root) {
+      setAiSuggestionError("未找到 AI 建议对应的节点，无法插入建议词。");
+      flashAiHint("未找到 AI 建议对应的节点。");
+      return false;
+    }
+
+    const candidateIds =
+      focusNode.type === "TERM_SET"
+        ? [focusNode.id]
+        : collectTermSetNodeIds(focusNode).concat(
+            collectTermSetNodeIds(rule.root).filter((id) => id !== focusNode.id)
+          );
+    const targetNodeId = candidateIds[0] ?? null;
+
+    if (!targetNodeId) {
+      setAiSuggestionError("当前规则中没有可插入建议词的词节点。");
+      flashAiHint("当前规则中没有可插词的词节点。");
+      return false;
+    }
+
+    if (focusNode.type !== "TERM_SET") {
+      flashAiHint("AI 建议已自动定位到最近的词节点。");
+    }
+
+    let insertedCount = 0;
     handlePatchNode(targetNodeId, (node) => {
       if (node.type !== "TERM_SET") return node;
       const existing = new Set(node.terms.map((item) => item.conceptName.trim().toLowerCase()));
@@ -719,21 +801,56 @@ export function RuleEditor({
           includeDescendants: false,
           weight: 1,
         }));
+      insertedCount = appended.length;
       return appended.length > 0 ? { ...node, terms: [...node.terms, ...appended] } : node;
     });
+    if (insertedCount === 0) {
+      setAiSuggestionError("建议词均已存在，未插入新词。");
+      flashAiHint("建议词已存在，未插入新词。");
+      return false;
+    }
     setAiSuggestion(null);
+    setAiSuggestionError(null);
+    flashAiHint(`已插入 ${insertedCount} 个建议词。`);
+    return true;
   };
 
   const handleApplyAiSuggestion = () => {
-    const optimization = aiSuggestion?.structureOptimization;
-    if (!optimization) return;
-    const maybeRule =
-      (optimization["businessRule"] as UiRuleViewModel | undefined) ??
-      (("root" in optimization ? optimization : null) as UiRuleViewModel | null);
-    if (!maybeRule?.root) return;
-    if (replaceRuleFromAi(maybeRule)) {
-      setAiSuggestion(null);
+    if (!aiSuggestion) return;
+
+    const optimization = aiSuggestion.structureOptimization;
+    const hasTerms = aiSuggestion.addTerms.length > 0;
+    const maybeRule = extractAiSuggestedRule(optimization ?? undefined);
+    const changed = optimization && typeof optimization === "object" ? optimization["changed"] : undefined;
+
+    if (!optimization && !hasTerms) {
+      setAiSuggestionError("AI 未返回可应用的建议。");
+      flashAiHint("AI 未返回可应用的建议。");
+      return;
     }
+
+    if (maybeRule?.root && changed !== false) {
+      if (!replaceRuleFromAi(maybeRule)) {
+        setAiSuggestionError("AI 返回了空规则，未能应用。");
+        flashAiHint("AI 结构建议应用失败。");
+        return;
+      }
+      flashAiHint("AI 结构建议已应用。");
+    }
+
+    if (hasTerms) {
+      if (handleInsertAiTerms()) return;
+    }
+
+    if (maybeRule?.root) {
+      setAiSuggestion(null);
+      setAiSuggestionError(null);
+      flashAiHint("当前结构已是建议状态，无需额外调整。");
+      return;
+    }
+
+    setAiSuggestionError("当前建议仅建议保持结构不变，请使用“仅插入词”应用补充词。");
+    flashAiHint("当前建议仅保持结构不变。");
   };
 
   const handleRefreshAiExplain = async () => {
