@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { TopicSetNode, TopicSetNodeDetail } from "@/lib/topicset-api";
 import { t } from "@/i18n";
+import { AIOptimizePanel } from "../[id]/components/ai/ai-optimize-panel";
 
 type NodeDetailPanelProps = {
   node: TopicSetNode | null;
@@ -16,6 +17,24 @@ type NodeDetailPanelProps = {
   description?: string;
   saving?: boolean;
   onSave: (payload: { name: string; description: string }) => Promise<void>;
+  aiAnalysis?: {
+    issues: string[];
+    suggestions: string[];
+    explain?: string[];
+  } | null;
+  aiActions?: Array<{
+    id: string;
+    label: string;
+    hint: string;
+    onClick: () => void;
+  }>;
+  aiSuggestionActions?: Array<{
+    id: string;
+    title: string;
+    reason: string;
+    confidence?: number;
+    onApply: () => void;
+  }>;
 };
 
 export function NodeDetailPanel({
@@ -30,6 +49,9 @@ export function NodeDetailPanel({
   description,
   saving = false,
   onSave,
+  aiAnalysis,
+  aiActions = [],
+  aiSuggestionActions = [],
 }: NodeDetailPanelProps) {
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
@@ -84,6 +106,11 @@ export function NodeDetailPanel({
             <div className="mt-1">{impactCount}</div>
           </div>
         </div>
+        <AIOptimizePanel
+          analysis={aiAnalysis ?? null}
+          actions={aiActions}
+          suggestionActions={aiSuggestionActions}
+        />
         {detailLoading && <div className="text-xs text-muted-foreground">{t("common.loading")}</div>}
         <div>
           <label className="text-xs text-muted-foreground">{t("topicSet.detail.nodeName")}</label>

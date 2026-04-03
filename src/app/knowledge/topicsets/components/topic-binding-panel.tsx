@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { NodeTopicView } from "@/lib/topicset-api";
 import { TopicDTO } from "@/lib/topic-api";
 import { t } from "@/i18n";
+import { AIAssignPanel } from "../[id]/components/ai/ai-assign-panel";
 
 type TopicBindingPanelProps = {
   readOnly: boolean;
@@ -14,6 +15,10 @@ type TopicBindingPanelProps = {
   onSearch: (keyword: string) => Promise<TopicDTO[]>;
   onBind: (topicId: string) => Promise<void>;
   onViewDocuments: (topic: NodeTopicView) => Promise<void>;
+  aiRecommendedTopics?: Array<{ topicId: string; topicName: string; score: number }>;
+  unmappedTopics?: string[];
+  onBindRecommended?: () => Promise<void>;
+  onAutoClassify?: () => Promise<void>;
 };
 
 export function TopicBindingPanel({
@@ -25,6 +30,10 @@ export function TopicBindingPanel({
   onSearch,
   onBind,
   onViewDocuments,
+  aiRecommendedTopics = [],
+  unmappedTopics = [],
+  onBindRecommended,
+  onAutoClassify,
 }: TopicBindingPanelProps) {
   const [keyword, setKeyword] = useState("");
   const [searching, setSearching] = useState(false);
@@ -120,6 +129,14 @@ export function TopicBindingPanel({
         </div>
 
         <div className="border-t pt-3">
+          <AIAssignPanel
+            readOnly={readOnly}
+            recommendedTopics={aiRecommendedTopics}
+            unmappedTopics={unmappedTopics}
+            onBindRecommended={onBindRecommended}
+            onAutoClassify={onAutoClassify}
+          />
+
           <div className="text-xs text-muted-foreground">{t("topicSet.binding.addTopic")}</div>
           <div className="mt-2 text-xs text-muted-foreground">{t("topicSet.binding.searchTitle")}</div>
           <div className="mt-2 flex gap-2">

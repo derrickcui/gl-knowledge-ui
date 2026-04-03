@@ -70,6 +70,8 @@ import { TopicBindingPanel } from "../components/topic-binding-panel";
 import { LifecycleValidationPanel } from "../components/lifecycle-validation-panel";
 import { WorkspaceHeader } from "./components/workspace-header";
 import { TopicSetWorkspaceTab, WorkspaceTabs } from "./components/workspace-tabs";
+import { AIGenerateStructureModal } from "./components/ai/ai-generate-structure-modal";
+import { AIInsightPanel } from "./components/ai/ai-insight-panel";
 import { DriftWorkspace } from "./components/drift/drift-workspace";
 import { ImpactPage } from "./components/impact/impact-page";
 import { CoveragePage } from "./components/coverage/coverage-page";
@@ -80,6 +82,24 @@ import { KnowledgeMapPage } from "./components/map/knowledge-map-page";
 import { searchDocuments } from "@/lib/search-api";
 import { sanitizeHighlightHtml } from "@/lib/highlight-html";
 import { createTopicSetTaggingJob } from "@/lib/tagging-api";
+import {
+  assignTopicSetTopicsWithAi,
+  getTopicSetAiAnalysis,
+  optimizeTopicSetWithAi,
+  suggestTopicSetStructureWithAi,
+  TopicSetAIBindTopicsPayload,
+  TopicSetAIAnalysisResponse,
+  TopicSetAIMergeNodesPayload,
+  TopicSetAIMoveNodePayload,
+  TopicSetAIOptimizeResponse,
+  TopicSetAIReviewEmptyNodesPayload,
+  TopicSetAIRenameNodePayload,
+  TopicSetAISplitNodePayload,
+  TopicSetAIStructureNodeView,
+  TopicSetAITopicInput,
+  TopicSetAISuggestion,
+  TopicSetAISuggestionPayload,
+} from "@/lib/topicset-ai-api";
 
 type FeedbackState = {
   type: "error" | "success" | "info";
@@ -292,6 +312,59 @@ async function loadGovernanceTopicDocCount(topicId: string, runtimeRefreshTick: 
   }
 }
 
+function estimateTopicMatchScore(nodeName: string, topicName: string) {
+  const normalizedNode = nodeName.trim().toLowerCase();
+  const normalizedTopic = topicName.trim().toLowerCase();
+  if (!normalizedNode || !normalizedTopic) return 70;
+  if (normalizedNode === normalizedTopic) return 98;
+  if (normalizedTopic.includes(normalizedNode)) return 92;
+  if (normalizedNode.includes(normalizedTopic)) return 88;
+
+  const nodeChars = new Set(normalizedNode.split(""));
+  const topicChars = new Set(normalizedTopic.split(""));
+  let overlap = 0;
+  for (const char of nodeChars) {
+    if (topicChars.has(char)) overlap += 1;
+  }
+  const ratio = overlap / Math.max(1, nodeChars.size);
+  return Math.max(72, Math.min(95, Math.round(72 + ratio * 23)));
+}
+
+function uniqueStrings(items: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      items
+        .map((item) => String(item ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function extractSuggestionLabel(payload: TopicSetAISuggestionPayload | undefined) {
+  if (!payload) return "";
+  const candidates = [
+    "name" in payload ? payload.name : undefined,
+    "title" in payload ? payload.title : undefined,
+    "label" in payload ? payload.label : undefined,
+    "nodeName" in payload ? payload.nodeName : undefined,
+    "topicName" in payload ? payload.topicName : undefined,
+    "targetNodeName" in payload ? payload.targetNodeName : undefined,
+    "target" in payload ? payload.target : undefined,
+  ];
+  for (const candidate of candidates) {
+    const value = String(candidate ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
+
+function hasAction<TAction extends string>(
+  payload: TopicSetAISuggestionPayload,
+  action: TAction
+): payload is TopicSetAISuggestionPayload & { action: TAction } {
+  return String(payload.action ?? "").trim().toUpperCase() === action;
+}
+
 const MAX_TAXONOMY_DEPTH = 6;
 
 export function TopicSetWorkspaceClient({
@@ -363,6 +436,16 @@ export function TopicSetWorkspaceClient({
   const [versionActionLoading, setVersionActionLoading] = useState(false);
   const [submitReviewDialog, setSubmitReviewDialog] = useState<SubmitReviewDialogState>(null);
   const [taggingLoading, setTaggingLoading] = useState(false);
+  const [aiStructureOpen, setAiStructureOpen] = useState(false);
+  const [aiStructureApplying, setAiStructureApplying] = useState(false);
+  const [aiStructureLoading, setAiStructureLoading] = useState(false);
+  const [aiInsightExpanded, setAiInsightExpanded] = useState(true);
+  const [aiStructureDimensions, setAiStructureDimensions] = useState<TopicSetAIStructureNodeView[]>([]);
+  const [aiBindingSuggestions, setAiBindingSuggestions] = useState<
+    Array<{ topicId: string; topicName: string; score: number }>
+  >([]);
+  const [aiOptimizeResult, setAiOptimizeResult] = useState<TopicSetAIOptimizeResponse | null>(null);
+  const [aiAnalysisResult, setAiAnalysisResult] = useState<TopicSetAIAnalysisResponse | null>(null);
 
   const [coverageRows, setCoverageRows] = useState<Array<{ nodeId?: string; name: string; hitDocs: number; topics?: number }>>([]);
   const [coverageDashboard, setCoverageDashboard] = useState<{
@@ -868,6 +951,103 @@ export function TopicSetWorkspaceClient({
     return Array.from(ids).sort();
   }, [topics]);
   const loadedTopicIdsKey = useMemo(() => loadedTopicIds.join("|"), [loadedTopicIds]);
+  const aiTopicInputs = useMemo<TopicSetAITopicInput[]>(() => {
+    const topicMap = new Map<string, TopicSetAITopicInput>();
+    for (const nodeTopics of Object.values(topics)) {
+      for (const topic of nodeTopics) {
+        if (!topic.topicId || topicMap.has(topic.topicId)) continue;
+        topicMap.set(topic.topicId, {
+          topicId: topic.topicId,
+          name: topic.topicName ?? topic.topicId,
+        });
+      }
+    }
+    return Array.from(topicMap.values());
+  }, [topics]);
+  const aiNodeInputs = useMemo(
+    () =>
+      flatNodes.map((node) => ({
+        nodeId: node.id,
+        parentId: node.parentId ?? null,
+        name: node.name,
+        path: node.path,
+      })),
+    [flatNodes]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAiBindingSuggestions() {
+      if (!topicSetId || !selectedNode || aiNodeInputs.length === 0 || aiTopicInputs.length === 0) {
+        setAiBindingSuggestions([]);
+        return;
+      }
+      const result = await assignTopicSetTopicsWithAi({
+        topicSetId,
+        nodes: aiNodeInputs,
+        topics: aiTopicInputs,
+        refineWithLlm: true,
+      });
+      if (cancelled) return;
+      if (!result.data) {
+        if (!selectedNodeData?.name) {
+          setAiBindingSuggestions([]);
+          return;
+        }
+        const fallback = (await searchTopic(selectedNodeData.name))
+          .filter((topic) => !selectedNodeTopics.some((item) => item.topicId === topic.id))
+          .map((topic) => ({
+            topicId: topic.id,
+            topicName: topic.name,
+            score: estimateTopicMatchScore(selectedNodeData.name, topic.name),
+          }))
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 4);
+        if (!cancelled) setAiBindingSuggestions(fallback);
+        return;
+      }
+
+      const boundTopicIds = new Set(selectedNodeTopics.map((topic) => topic.topicId));
+      const topicLookup = new Map(aiTopicInputs.map((topic) => [topic.topicId, topic.name ?? topic.topicId]));
+      const ranked = result.data.assignments
+        .filter((assignment) => assignment.nodeIds.includes(selectedNode) && !boundTopicIds.has(assignment.topicId))
+        .map((assignment) => ({
+          topicId: assignment.topicId,
+          topicName: topicLookup.get(assignment.topicId) ?? assignment.topicId,
+          score: Math.round(Number(assignment.confidence ?? 0) * 100),
+        }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 4);
+      setAiBindingSuggestions(ranked);
+    }
+    void loadAiBindingSuggestions();
+    return () => {
+      cancelled = true;
+    };
+  }, [aiNodeInputs, aiTopicInputs, searchTopic, selectedNode, selectedNodeData?.name, selectedNodeTopics, topicSetId]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAiAnalysis() {
+      if (!topicSetId) {
+        setAiAnalysisResult(null);
+        return;
+      }
+      const result = await getTopicSetAiAnalysis({
+        topicSetId,
+        dataset: simulationRuntimeEnvironment?.datasetName ?? null,
+        sampleSize: 20,
+      });
+      if (cancelled) return;
+      if (!result.data) {
+        setAiAnalysisResult(null);
+        return;
+      }
+      setAiAnalysisResult(result.data);
+    }
+    void loadAiAnalysis();
+    return () => {
+      cancelled = true;
+    };
+  }, [simulationRuntimeEnvironment?.datasetName, topicSetId, runtimeRefreshTick, loadedTopicIdsKey]);
   const driftLastAnalysis = useMemo(
     () => driftDashboard?.lastAnalysis ?? driftHealth?.snapshotDate ?? driftHistory[driftHistory.length - 1]?.snapshotDate ?? null,
     [driftDashboard?.lastAnalysis, driftHealth?.snapshotDate, driftHistory]
@@ -882,6 +1062,898 @@ export function TopicSetWorkspaceClient({
       change: Number(current?.unmappedDocs ?? 0) - Number(previous?.unmappedDocs ?? 0),
     };
   }, [driftHistory]);
+  const emptyNodeIds = useMemo(
+    () =>
+      flatNodes
+        .filter((node) => (childrenByParent[node.id]?.length ?? 0) === 0 && Number(node.topicCount ?? 0) === 0)
+        .map((node) => node.id),
+    [childrenByParent, flatNodes]
+  );
+  const overlapTopicIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const row of overlapRows) {
+      ids.add(row.topicAId);
+      ids.add(row.topicBId);
+    }
+    return ids;
+  }, [overlapRows]);
+  const aiNodeStateMap = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        overlap?: boolean;
+        empty?: boolean;
+        hot?: boolean;
+        uncategorized?: boolean;
+      }
+    > = {};
+    for (const node of flatNodes) {
+      const nodeTopicIds = new Set((topics[node.id] ?? []).map((topic) => topic.topicId));
+      map[node.id] = {
+        overlap: Array.from(nodeTopicIds).some((topicId) => overlapTopicIds.has(topicId)),
+        empty: emptyNodeIds.includes(node.id),
+        hot: Number(coverageByNodeId[node.id] ?? node.docCount ?? 0) >= Math.max(5, Math.round(maxDocCount * 0.6)),
+        uncategorized: Number(unmappedDashboard?.unmappedDocs ?? unmappedTotal ?? 0) > 0 && Number(node.topicCount ?? 0) > 0,
+      };
+    }
+    return map;
+  }, [coverageByNodeId, emptyNodeIds, flatNodes, maxDocCount, overlapTopicIds, topics, unmappedDashboard?.unmappedDocs, unmappedTotal]);
+  const heuristicAiStructureGroups = useMemo(() => {
+    const overlapNames = uniqueStrings(
+      overlapRows.flatMap((row) => [row.topicAName ?? row.topicAId, row.topicBName ?? row.topicBId])
+    ).slice(0, 3);
+    const lowCoverageNames = uniqueStrings(lowCoverageRows.map((row) => row.name)).slice(0, 3);
+    const emptyNames = uniqueStrings(
+      flatNodes
+        .filter((node) => emptyNodeIds.includes(node.id))
+        .map((node) => node.name)
+    ).slice(0, 3);
+
+    const groups: Array<{ title: string; items: string[] }> = [];
+    if (overlapNames.length > 0) {
+      groups.push({ title: t("topicSet.ai.structureOverlapGroup"), items: overlapNames });
+    }
+    if (lowCoverageNames.length > 0) {
+      groups.push({ title: t("topicSet.ai.structureRefineGroup"), items: lowCoverageNames });
+    }
+    if (emptyNames.length > 0) {
+      groups.push({ title: t("topicSet.ai.structureCleanupGroup"), items: emptyNames });
+    }
+    if (groups.length === 0) {
+      groups.push({
+        title: t("topicSet.ai.structureDefaultGroup"),
+        items: flatNodes.slice(0, 3).map((node) => node.name),
+      });
+    }
+    return groups.slice(0, 2);
+  }, [emptyNodeIds, flatNodes, lowCoverageRows, overlapRows]);
+  const aiStructureGroups = useMemo(
+    () =>
+      aiStructureDimensions.length > 0
+        ? aiStructureDimensions.map((item) => ({ title: item.name, items: item.nodes }))
+        : heuristicAiStructureGroups,
+    [aiStructureDimensions, heuristicAiStructureGroups]
+  );
+  const selectedNodeOverlapRows = useMemo(() => {
+    const selectedTopicIds = new Set(selectedNodeTopics.map((topic) => topic.topicId));
+    return overlapRows.filter(
+      (row) => selectedTopicIds.has(row.topicAId) || selectedTopicIds.has(row.topicBId)
+    );
+  }, [overlapRows, selectedNodeTopics]);
+  const selectedNodeAiAnalysis = useMemo(() => {
+    if (!selectedNodeData) return null;
+    const issues: string[] = [];
+    const suggestions: string[] = [];
+    const explain: string[] = [];
+    const boundCount = Number(nodeDetail?.topicCount ?? selectedNodeTopics.length ?? 0);
+    const coverageCount = Number(selectedCoverageDocs ?? selectedNodeData.docCount ?? 0);
+
+    if (boundCount <= 1) {
+      issues.push(t("topicSet.ai.issueTooFewTopics", { count: String(boundCount) }));
+      suggestions.push(t("topicSet.ai.suggestionAddTopic"));
+    }
+    if (coverageCount <= 15) {
+      issues.push(t("topicSet.ai.issueCoverageNarrow", { count: String(coverageCount) }));
+      suggestions.push(t("topicSet.ai.suggestionExpandCoverage"));
+    }
+    if (selectedNodeOverlapRows.length > 0) {
+      const overlapNames = uniqueStrings(
+        selectedNodeOverlapRows.flatMap((row) => [row.topicAName ?? row.topicAId, row.topicBName ?? row.topicBId])
+      ).slice(0, 2);
+      issues.push(t("topicSet.ai.issueOverlap", { names: overlapNames.join(" / ") || "-" }));
+      suggestions.push(t("topicSet.ai.suggestionSplitBoundary"));
+      explain.push(t("topicSet.ai.explainOverlap", { names: overlapNames.join(" / ") || "-" }));
+    }
+    if (issues.length === 0) {
+      issues.push(t("topicSet.ai.issueHealthy"));
+      suggestions.push(t("topicSet.ai.suggestionMaintain"));
+    }
+    if (aiBindingSuggestions.length > 0) {
+      explain.push(
+        t("topicSet.ai.explainBinding", {
+          name: aiBindingSuggestions[0]?.topicName ?? "-",
+          score: String(aiBindingSuggestions[0]?.score ?? 0),
+        })
+      );
+    }
+    if (aiOptimizeResult) {
+      issues.unshift(...aiOptimizeResult.issues.slice(0, 2));
+      suggestions.unshift(
+        ...aiOptimizeResult.suggestions
+          .map((item) => item.reason)
+          .filter(Boolean)
+          .slice(0, 2)
+      );
+      const labels = aiOptimizeResult.suggestions
+        .map((item) => extractSuggestionLabel(item.payload))
+        .filter(Boolean)
+        .slice(0, 2);
+      if (labels.length > 0) {
+        explain.push(labels.join(" / "));
+      }
+    }
+    return {
+      issues: uniqueStrings(issues).slice(0, 4),
+      suggestions: uniqueStrings(suggestions).slice(0, 4),
+      explain: uniqueStrings(explain).slice(0, 3),
+    };
+  }, [aiBindingSuggestions, aiOptimizeResult, nodeDetail?.topicCount, selectedCoverageDocs, selectedNodeData, selectedNodeOverlapRows, selectedNodeTopics.length]);
+  const selectedNodeAiActions = useMemo(() => {
+    if (!selectedNodeData) return [];
+    return [
+      {
+        id: "split",
+        label: t("topicSet.ai.actionSplit"),
+        hint: t("topicSet.ai.actionSplitHint"),
+        onClick: () => setFeedback({ type: "info", title: t("topicSet.ai.actionSplit"), message: t("topicSet.ai.actionQueued") }),
+      },
+      {
+        id: "merge",
+        label: t("topicSet.ai.actionMerge"),
+        hint: t("topicSet.ai.actionMergeHint"),
+        onClick: () => setFeedback({ type: "info", title: t("topicSet.ai.actionMerge"), message: t("topicSet.ai.actionQueued") }),
+      },
+      {
+        id: "rename",
+        label: t("topicSet.ai.actionRename"),
+        hint: t("topicSet.ai.actionRenameHint"),
+        onClick: () => {
+          setRenamingNodeId(selectedNodeData.id);
+          setRenamingName(`${selectedNodeData.name}${t("topicSet.ai.renameSuffix")}`);
+        },
+      },
+    ];
+  }, [selectedNodeData]);
+  const aiUnmappedTopics = useMemo(
+    () =>
+      uniqueStrings([
+        ...aiBindingSuggestions.map((item) => item.topicName),
+        ...selectedNodeOverlapRows.flatMap((row) => [row.topicAName ?? row.topicAId, row.topicBName ?? row.topicBId]),
+      ]).slice(0, 4),
+    [aiBindingSuggestions, selectedNodeOverlapRows]
+  );
+  const aiInsightSummary = useMemo(() => {
+    const overlapHigh = (aiAnalysisResult?.overlapLevel ?? "").toUpperCase() === "HIGH" || overlapRows.length > 0;
+    const uncoveredRatio = aiAnalysisResult?.coverage != null
+      ? Number(aiAnalysisResult.coverage) * (Number(aiAnalysisResult.coverage) <= 1 ? 100 : 1)
+      : coverageDashboard?.totalDocs
+      ? Number((Number(coverageDashboard.classifiedDocs ?? 0) / Math.max(1, coverageDashboard.totalDocs)) * 100)
+      : null;
+    const unmappedCount = Number(aiAnalysisResult?.unmappedCount ?? unmappedDashboard?.unmappedDocs ?? unmappedTotal ?? 0);
+    const suggestions = uniqueStrings([
+      ...((aiAnalysisResult?.suggestions ?? []).map((item) => item.reason)),
+      overlapHigh ? t("topicSet.ai.globalSuggestionOverlap") : null,
+      emptyNodeIds.length > 0 ? t("topicSet.ai.globalSuggestionEmpty", { count: String(emptyNodeIds.length) }) : null,
+      unmappedCount > 0 ? t("topicSet.ai.globalSuggestionUnmapped", { count: String(unmappedCount) }) : null,
+      ...((aiOptimizeResult?.suggestions ?? []).map((item) => item.reason)),
+    ]);
+    const issues = uniqueStrings([
+      ...(aiAnalysisResult?.issues ?? []),
+      ...(aiOptimizeResult?.issues ?? []),
+      overlapHigh ? t("topicSet.ai.globalIssueOverlap") : null,
+      emptyNodeIds.length > 0 ? t("topicSet.ai.globalIssueEmpty", { count: String(emptyNodeIds.length) }) : null,
+      unmappedCount > 0 ? t("topicSet.ai.globalIssueUnmapped", { count: String(unmappedCount) }) : null,
+    ]);
+    return {
+      coverage: uncoveredRatio == null ? "-" : `${Math.round(uncoveredRatio)}%`,
+      overlap:
+        (aiAnalysisResult?.overlapLevel || aiOptimizeResult?.overlapLevel)
+          ? String(aiAnalysisResult?.overlapLevel ?? aiOptimizeResult?.overlapLevel).toUpperCase() === "HIGH"
+            ? t("topicSet.ai.levelHigh")
+            : t("topicSet.ai.levelNormal")
+          : overlapHigh
+          ? t("topicSet.ai.levelHigh")
+          : t("topicSet.ai.levelNormal"),
+      unmapped: `${Math.round(
+        ((unmappedCount / Math.max(1, coverageDashboard?.totalDocs ?? Number(aiAnalysisResult?.stats?.totalDocs ?? 1))) || 0) * 100
+      )}%`,
+      issues: issues.slice(0, 5),
+      suggestions: suggestions.slice(0, 5),
+    };
+  }, [aiAnalysisResult, aiOptimizeResult, coverageDashboard, emptyNodeIds.length, overlapRows.length, unmappedDashboard?.unmappedDocs, unmappedTotal]);
+  const handleApplyAiBindings = useCallback(async () => {
+    if (!selectedNode || aiBindingSuggestions.length === 0) {
+      setFeedback({
+        type: "info",
+        title: t("topicSet.ai.autoAssign"),
+        message: t("topicSet.ai.noRecommendedTopics"),
+      });
+      return;
+    }
+    for (const item of aiBindingSuggestions.slice(0, 3)) {
+      const result = await bindTopic(selectedNode, item.topicId);
+      if (!result.ok) {
+        if (result.status === VERSION_CONFLICT_STATUS) {
+          await handleVersionConflict(result.error);
+          return;
+        }
+        setFeedback({
+          type: "error",
+          title: t("topicSet.feedback.bindFailed"),
+          message: result.error,
+        });
+        return;
+      }
+    }
+    const refreshResult = await refreshRuntimeViews();
+    if (!refreshResult.ok) {
+      setFeedback({
+        type: "error",
+        title: t("topicSet.feedback.runtimeRefreshFailed"),
+        message: refreshResult.error,
+      });
+      return;
+    }
+    await refreshNodeDetail(selectedNode);
+    setFeedback({
+      type: "success",
+      title: t("topicSet.ai.autoAssignDone"),
+    });
+  }, [aiBindingSuggestions, bindTopic, refreshNodeDetail, refreshRuntimeViews, selectedNode]);
+  const handleOpenAiStructure = useCallback(async () => {
+    if (!topicSetId) return;
+    setAiStructureOpen(true);
+    setAiInsightExpanded(true);
+    setAiStructureLoading(true);
+    const result = await suggestTopicSetStructureWithAi({
+      topicSetId,
+      topics: aiTopicInputs,
+      dataset: simulationRuntimeEnvironment?.datasetName ?? null,
+    });
+    setAiStructureLoading(false);
+    if (!result.data) {
+      setAiStructureDimensions([]);
+      setFeedback({
+        type: "info",
+        title: t("topicSet.ai.generateStructure"),
+        message: result.error ?? t("topicSet.ai.applyStructureHint"),
+      });
+      return;
+    }
+    setAiStructureDimensions(result.data.dimensions ?? []);
+  }, [aiTopicInputs, simulationRuntimeEnvironment?.datasetName, topicSetId]);
+  const handleRunAiOptimize = useCallback(async () => {
+    if (!topicSetId) return;
+    setAiInsightExpanded(true);
+    const result = await optimizeTopicSetWithAi({
+      topicSetId,
+      dataset: simulationRuntimeEnvironment?.datasetName ?? null,
+      sampleSize: 20,
+      simulateResult: {
+        totalDocs: coverageDashboard?.totalDocs ?? null,
+        classifiedDocs: coverageDashboard?.classifiedDocs ?? null,
+        unmappedDocs: Number(unmappedDashboard?.unmappedDocs ?? unmappedTotal ?? 0),
+        coverageRatio:
+          coverageDashboard?.totalDocs != null
+            ? Number(coverageDashboard.classifiedDocs ?? 0) / Math.max(1, Number(coverageDashboard.totalDocs))
+            : null,
+        overlapDocCount: overlapRows.reduce((sum, row) => sum + Number(row.overlapDocs ?? 0), 0),
+        overlapRatio:
+          coverageDashboard?.totalDocs != null
+            ? overlapRows.reduce((sum, row) => sum + Number(row.overlapDocs ?? 0), 0) /
+              Math.max(1, Number(coverageDashboard.totalDocs))
+            : null,
+      },
+    });
+    if (!result.data) {
+      setFeedback({
+        type: "info",
+        title: t("topicSet.ai.optimize"),
+        message: result.error ?? t("topicSet.ai.optimizeReady"),
+      });
+      return;
+    }
+    setAiOptimizeResult(result.data);
+    setFeedback({
+      type: "success",
+      title: t("topicSet.ai.optimize"),
+      message: t("topicSet.ai.optimizeReady"),
+    });
+  }, [coverageDashboard, overlapRows, simulationRuntimeEnvironment?.datasetName, topicSetId, unmappedDashboard?.unmappedDocs, unmappedTotal]);
+  const handleApplyAiStructure = useCallback(async () => {
+    if (!canEdit) {
+      setFeedback({
+        type: "info",
+        title: t("topicSet.feedback.readonlyTitle"),
+        message: t("topicSet.feedback.readonlyMessage"),
+      });
+      return;
+    }
+    setAiStructureApplying(true);
+    try {
+      for (const group of aiStructureGroups) {
+        let parentNodeId =
+          flatNodes.find((node) => node.parentId == null && node.name === group.title)?.id ?? null;
+        if (!parentNodeId) {
+          const parentResult = await createNode({ parentId: null, name: group.title });
+          if (!parentResult.ok || !parentResult.nodeId) {
+            if (parentResult.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(parentResult.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.createFailed"),
+              message: parentResult.error,
+            });
+            return;
+          }
+          parentNodeId = parentResult.nodeId;
+        }
+
+        const latestNodeMap = useTopicSetStore.getState().nodeMap;
+        const existingChildren = Object.values(latestNodeMap).filter((node) => node.parentId === parentNodeId);
+        for (const item of group.items) {
+          if (existingChildren.some((node) => node.name === item)) continue;
+          const childResult = await createNode({ parentId: parentNodeId, name: item });
+          if (!childResult.ok) {
+            if (childResult.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(childResult.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.createFailed"),
+              message: childResult.error,
+            });
+            return;
+          }
+        }
+      }
+      setAiStructureOpen(false);
+      setFeedback({
+        type: "success",
+        title: t("topicSet.ai.apply"),
+        message: t("topicSet.ai.structureApplied"),
+      });
+    } finally {
+      setAiStructureApplying(false);
+    }
+  }, [aiStructureGroups, canEdit, createNode, flatNodes]);
+  const handleApplyOptimizeSuggestion = useCallback(
+    async (suggestion: TopicSetAISuggestion) => {
+      const payload = suggestion.payload ?? {};
+
+      if (hasAction(payload, "REVIEW_EMPTY_NODES")) {
+        const reviewPayload = payload as TopicSetAIReviewEmptyNodesPayload;
+        const firstEmptyNodeId = reviewPayload.nodeIds?.[0] ?? emptyNodeIds[0] ?? null;
+        if (firstEmptyNodeId) {
+          selectNode(firstEmptyNodeId);
+        }
+        setFeedback({
+          type: "info",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.emptyNodesReviewHint", {
+            count: String(Number(reviewPayload.emptyNodeCount ?? reviewPayload.nodeIds?.length ?? emptyNodeIds.length ?? 0)),
+          }),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "DELETE_EMPTY_NODES")) {
+        const deletePayload = payload as TopicSetAIReviewEmptyNodesPayload;
+        const deletableNodeIds = (deletePayload.nodeIds ?? []).filter(Boolean);
+        if (deletableNodeIds.length === 0) {
+          setFeedback({
+            type: "info",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.emptyNodesReviewHint", {
+              count: String(Number(deletePayload.emptyNodeCount ?? emptyNodeIds.length ?? 0)),
+            }),
+          });
+          return;
+        }
+        for (const nodeId of deletableNodeIds) {
+          const node = nodeMap[nodeId];
+          if (!node) continue;
+          if ((childrenByParent[nodeId]?.length ?? 0) > 0) continue;
+          if (Number(node.topicCount ?? 0) > 0) continue;
+          const result = await deleteNode(nodeId);
+          if (!result.ok) {
+            if (result.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(result.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.deleteFailed"),
+              message: result.error,
+            });
+            return;
+          }
+        }
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.emptyNodesDeleted"),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "IMPROVE_COVERAGE")) {
+        await handleApplyAiBindings();
+        return;
+      }
+
+      if (hasAction(payload, "SPLIT_NODE")) {
+        const splitPayload = payload as TopicSetAISplitNodePayload;
+        const targetNode =
+          (splitPayload.targetNodeId ? nodeMap[splitPayload.targetNodeId] : null) ??
+          flatNodes.find((node) => node.name === splitPayload.targetNodeName) ??
+          null;
+        if (!targetNode) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.targetNodeNotFound", { name: splitPayload.targetNodeName ?? "-" }),
+          });
+          return;
+        }
+
+        const children = splitPayload.children ?? [];
+        for (const child of children) {
+          const childName = String(child?.name ?? "").trim();
+          if (!childName) continue;
+          const exists = flatNodes.some((node) => node.parentId === targetNode.id && node.name === childName);
+          if (exists) continue;
+          const result = await createNode({
+            parentId: targetNode.id,
+            name: childName,
+            description: child.description ?? null,
+          });
+          if (!result.ok) {
+            if (result.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(result.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.createFailed"),
+              message: result.error,
+            });
+            return;
+          }
+        }
+        selectNode(targetNode.id);
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.splitApplied", {
+            target: targetNode.name,
+            count: String(children.length),
+          }),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "MERGE_NODES")) {
+        const mergePayload = payload as TopicSetAIMergeNodesPayload;
+        const targetNode =
+          (mergePayload.targetNodeId ? nodeMap[mergePayload.targetNodeId] : null) ??
+          flatNodes.find((node) => node.name === mergePayload.targetNodeName) ??
+          null;
+        const sourceNodes = uniqueStrings([
+          ...(mergePayload.sourceNodeIds ?? []),
+          ...(mergePayload.sourceNodeNames ?? []),
+        ])
+          .map((value) => nodeMap[value] ?? flatNodes.find((node) => node.name === value) ?? null)
+          .filter((node): node is NonNullable<typeof node> => Boolean(node))
+          .filter((node) => node.id !== targetNode?.id);
+        if (!targetNode) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.targetNodeNotFound", { name: mergePayload.targetNodeName ?? "-" }),
+          });
+          return;
+        }
+        if (sourceNodes.length === 0) {
+          selectNode(targetNode.id);
+          setFeedback({
+            type: "info",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.mergeReviewHint", {
+              targets: mergePayload.targetNodeName ?? targetNode.name,
+            }),
+          });
+          return;
+        }
+        const unsafeSource = sourceNodes.find((node) => isDescendant(childrenByParent, node.id, targetNode.id));
+        if (unsafeSource) {
+          selectNode(unsafeSource.id);
+          setFeedback({
+            type: "info",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.mergeReviewHint", {
+              targets: `${unsafeSource.name} / ${targetNode.name}`,
+            }),
+          });
+          return;
+        }
+
+        const targetTopicIds = new Set((topics[targetNode.id] ?? []).map((topic) => topic.topicId));
+        for (const sourceNode of sourceNodes) {
+          const sourceTopics = topics[sourceNode.id] ?? [];
+          for (const topic of sourceTopics) {
+            if (!targetTopicIds.has(topic.topicId)) {
+              const bindResult = await bindTopic(targetNode.id, topic.topicId);
+              if (!bindResult.ok) {
+                if (bindResult.status === VERSION_CONFLICT_STATUS) {
+                  await handleVersionConflict(bindResult.error);
+                  return;
+                }
+                setFeedback({
+                  type: "error",
+                  title: t("topicSet.feedback.bindFailed"),
+                  message: bindResult.error,
+                });
+                return;
+              }
+              targetTopicIds.add(topic.topicId);
+            }
+            const unbindResult = await unbindTopic(sourceNode.id, topic.topicId);
+            if (!unbindResult.ok) {
+              if (unbindResult.status === VERSION_CONFLICT_STATUS) {
+                await handleVersionConflict(unbindResult.error);
+                return;
+              }
+              setFeedback({
+                type: "error",
+                title: t("topicSet.feedback.unbindFailed"),
+                message: unbindResult.error,
+              });
+              return;
+            }
+          }
+
+          for (const childNodeId of childrenByParent[sourceNode.id] ?? []) {
+            if (childNodeId === targetNode.id) continue;
+            const childNode = nodeMap[childNodeId];
+            if (!childNode) continue;
+            const sourceDepth = childNode.path.split("/").filter(Boolean).length;
+            const parentDepth = targetNode.path.split("/").filter(Boolean).length;
+            let subtreeMaxDepth = sourceDepth;
+            const stack = [...(childrenByParent[childNode.id] ?? [])];
+            while (stack.length > 0) {
+              const currentNodeId = stack.shift();
+              if (!currentNodeId) continue;
+              const currentNode = nodeMap[currentNodeId];
+              const currentDepth = currentNode?.path.split("/").filter(Boolean).length ?? 0;
+              subtreeMaxDepth = Math.max(subtreeMaxDepth, currentDepth);
+              stack.unshift(...(childrenByParent[currentNodeId] ?? []));
+            }
+            const subtreeHeight = Math.max(0, subtreeMaxDepth - sourceDepth);
+            const movedMaxDepth = parentDepth + 1 + subtreeHeight;
+            if (sourceDepth > 0 && parentDepth > 0 && movedMaxDepth > MAX_TAXONOMY_DEPTH) {
+              setFeedback({
+                type: "error",
+                title: t("topicSet.feedback.invalidMoveTitle"),
+                message: t("topicSet.feedback.depthLimit", { max: MAX_TAXONOMY_DEPTH }),
+              });
+              return;
+            }
+            const moveResult = await moveNode(childNode.id, targetNode.id, null);
+            if (!moveResult.ok) {
+              if (moveResult.status === VERSION_CONFLICT_STATUS) {
+                await handleVersionConflict(moveResult.error);
+                return;
+              }
+              setFeedback({
+                type: "error",
+                title: t("topicSet.feedback.moveFailed"),
+                message: moveResult.error,
+              });
+              return;
+            }
+          }
+
+          const deleteResult = await deleteNode(sourceNode.id);
+          if (!deleteResult.ok) {
+            if (deleteResult.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(deleteResult.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.deleteFailed"),
+              message: deleteResult.error,
+            });
+            return;
+          }
+        }
+        const refreshResult = await refreshRuntimeViews();
+        if (!refreshResult.ok) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.runtimeRefreshFailed"),
+            message: refreshResult.error,
+          });
+          return;
+        }
+        selectNode(targetNode.id);
+        await refreshNodeDetail(targetNode.id);
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.mergeApplied", {
+            count: String(sourceNodes.length),
+            target: targetNode.name,
+          }),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "MOVE_NODE")) {
+        const movePayload = payload as TopicSetAIMoveNodePayload;
+        const sourceNode =
+          (movePayload.nodeId ? nodeMap[movePayload.nodeId] : null) ??
+          flatNodes.find((node) => node.name === movePayload.nodeName) ??
+          null;
+        const targetParent =
+          (movePayload.newParentId ? nodeMap[movePayload.newParentId] : null) ??
+          flatNodes.find((node) => node.name === movePayload.newParentName) ??
+          null;
+        if (!sourceNode || !targetParent) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.targetNodeNotFound", {
+              name: movePayload.nodeName ?? movePayload.newParentName ?? "-",
+            }),
+          });
+          return;
+        }
+        if (sourceNode.id === targetParent.id || isDescendant(childrenByParent, sourceNode.id, targetParent.id)) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.invalidMoveTitle"),
+            message: t("topicSet.feedback.invalidMoveMessage"),
+          });
+          return;
+        }
+        const sourceDepth = sourceNode.path.split("/").filter(Boolean).length;
+        const parentDepth = targetParent.path.split("/").filter(Boolean).length;
+        let subtreeMaxDepth = sourceDepth;
+        const stack = [...(childrenByParent[sourceNode.id] ?? [])];
+        while (stack.length > 0) {
+          const currentNodeId = stack.shift();
+          if (!currentNodeId) continue;
+          const currentNode = nodeMap[currentNodeId];
+          const currentDepth = currentNode?.path.split("/").filter(Boolean).length ?? 0;
+          subtreeMaxDepth = Math.max(subtreeMaxDepth, currentDepth);
+          stack.unshift(...(childrenByParent[currentNodeId] ?? []));
+        }
+        const subtreeHeight = Math.max(0, subtreeMaxDepth - sourceDepth);
+        const movedMaxDepth = parentDepth + 1 + subtreeHeight;
+        if (sourceDepth > 0 && parentDepth > 0 && movedMaxDepth > MAX_TAXONOMY_DEPTH) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.invalidMoveTitle"),
+            message: t("topicSet.feedback.depthLimit", { max: MAX_TAXONOMY_DEPTH }),
+          });
+          return;
+        }
+        const result = await moveNode(sourceNode.id, targetParent.id, null);
+        if (!result.ok) {
+          if (result.status === VERSION_CONFLICT_STATUS) {
+            await handleVersionConflict(result.error);
+            return;
+          }
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.moveFailed"),
+            message: result.error,
+          });
+          return;
+        }
+        const refreshResult = await refreshRuntimeViews();
+        if (!refreshResult.ok) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.runtimeRefreshFailed"),
+            message: refreshResult.error,
+          });
+          return;
+        }
+        selectNode(sourceNode.id);
+        await refreshNodeDetail(sourceNode.id);
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.moveApplied", {
+            source: sourceNode.name,
+            target: targetParent.name,
+          }),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "RENAME_NODE")) {
+        const renamePayload = payload as TopicSetAIRenameNodePayload;
+        const targetNode =
+          (renamePayload.targetNodeId ? nodeMap[renamePayload.targetNodeId] : null) ??
+          flatNodes.find((node) => node.name === renamePayload.currentName) ??
+          null;
+        const suggestedName = String(renamePayload.suggestedName ?? "").trim();
+        if (!targetNode || !suggestedName) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.targetNodeNotFound", { name: renamePayload.currentName ?? "-" }),
+          });
+          return;
+        }
+        const result = await renameNode(targetNode.id, {
+          name: suggestedName,
+          description: nodeDetail?.description ?? null,
+        });
+        if (!result.ok) {
+          if (result.status === VERSION_CONFLICT_STATUS) {
+            await handleVersionConflict(result.error);
+            return;
+          }
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.updateFailed"),
+            message: result.error,
+          });
+          return;
+        }
+        selectNode(targetNode.id);
+        await refreshNodeDetail(targetNode.id);
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.renameApplied", { from: targetNode.name, to: suggestedName }),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "BIND_TOPICS")) {
+        const bindPayload = payload as TopicSetAIBindTopicsPayload;
+        const targetNode =
+          (bindPayload.targetNodeId ? nodeMap[bindPayload.targetNodeId] : null) ??
+          flatNodes.find((node) => node.name === bindPayload.targetNodeName) ??
+          null;
+        if (!targetNode) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.targetNodeNotFound", { name: bindPayload.targetNodeName ?? "-" }),
+          });
+          return;
+        }
+        selectNode(targetNode.id);
+        for (const topicId of bindPayload.topicIds ?? []) {
+          const result = await bindTopic(targetNode.id, topicId);
+          if (!result.ok) {
+            if (result.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(result.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.bindFailed"),
+              message: result.error,
+            });
+            return;
+          }
+        }
+        const refreshResult = await refreshRuntimeViews();
+        if (!refreshResult.ok) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.runtimeRefreshFailed"),
+            message: refreshResult.error,
+          });
+          return;
+        }
+        await refreshNodeDetail(targetNode.id);
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.bindApplied", {
+            count: String(bindPayload.topicIds?.length ?? 0),
+            target: targetNode.name,
+          }),
+        });
+        return;
+      }
+
+      if (hasAction(payload, "UNBIND_TOPICS")) {
+        const unbindPayload = payload as TopicSetAIBindTopicsPayload;
+        const targetNode =
+          (unbindPayload.targetNodeId ? nodeMap[unbindPayload.targetNodeId] : null) ??
+          flatNodes.find((node) => node.name === unbindPayload.targetNodeName) ??
+          null;
+        if (!targetNode) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.ai.applySuggestion"),
+            message: t("topicSet.ai.targetNodeNotFound", { name: unbindPayload.targetNodeName ?? "-" }),
+          });
+          return;
+        }
+        selectNode(targetNode.id);
+        for (const topicId of unbindPayload.topicIds ?? []) {
+          const result = await unbindTopic(targetNode.id, topicId);
+          if (!result.ok) {
+            if (result.status === VERSION_CONFLICT_STATUS) {
+              await handleVersionConflict(result.error);
+              return;
+            }
+            setFeedback({
+              type: "error",
+              title: t("topicSet.feedback.unbindFailed"),
+              message: result.error,
+            });
+            return;
+          }
+        }
+        const refreshResult = await refreshRuntimeViews();
+        if (!refreshResult.ok) {
+          setFeedback({
+            type: "error",
+            title: t("topicSet.feedback.runtimeRefreshFailed"),
+            message: refreshResult.error,
+          });
+          return;
+        }
+        await refreshNodeDetail(targetNode.id);
+        setFeedback({
+          type: "success",
+          title: t("topicSet.ai.applySuggestion"),
+          message: t("topicSet.ai.unbindApplied", {
+            count: String(unbindPayload.topicIds?.length ?? 0),
+            target: targetNode.name,
+          }),
+        });
+        return;
+      }
+
+      setFeedback({
+        type: "info",
+        title: t("topicSet.ai.applySuggestion"),
+        message: suggestion.reason,
+      });
+    },
+    [bindTopic, childrenByParent, createNode, deleteNode, emptyNodeIds, flatNodes, handleApplyAiBindings, nodeDetail?.description, nodeMap, moveNode, refreshNodeDetail, refreshRuntimeViews, renameNode, selectNode, topics, unbindTopic]
+  );
+  const aiOptimizeSuggestionActions = useMemo(
+    () =>
+      (aiOptimizeResult?.suggestions ?? []).map((suggestion, index) => ({
+        id: `opt-${index}`,
+        title:
+          extractSuggestionLabel(suggestion.payload) ||
+          String(suggestion.payload?.action ?? suggestion.type ?? `suggestion-${index}`),
+        reason: suggestion.reason,
+        confidence: suggestion.confidence,
+        onApply: () => {
+          void handleApplyOptimizeSuggestion(suggestion);
+        },
+      })),
+    [aiOptimizeResult?.suggestions, handleApplyOptimizeSuggestion]
+  );
   const driftImpactRows = useMemo(() => {
     const coverageItems = driftCoverageRows.slice(0, 5).map((row) => ({
       id: `coverage:${row.topicId ?? row.topicName ?? "topic"}`,
@@ -2398,6 +3470,7 @@ export function TopicSetWorkspaceClient({
         canCreateVersion={canCreateVersion}
         canDeprecate={canDeprecate}
         canArchive={canArchive}
+        canRunAi={canEdit}
         taggingLoading={taggingLoading}
         diffSummary={headerDiffSummary}
         diffBaselineVersion={latestPublishedVersion}
@@ -2441,14 +3514,37 @@ export function TopicSetWorkspaceClient({
         onRunTagging={() => {
           void handleRunTagging();
         }}
+        onGenerateStructure={() => {
+          void handleOpenAiStructure();
+        }}
+        onAutoAssign={() => {
+          void handleApplyAiBindings();
+        }}
+        onAiOptimize={() => {
+          void handleRunAiOptimize();
+        }}
       />
 
       <WorkspaceTabs activeTab={activeTab} onChange={setActiveTab} />
+      <AIGenerateStructureModal
+        open={aiStructureOpen}
+        groups={aiStructureGroups}
+        applying={aiStructureApplying || aiStructureLoading}
+        onClose={() => setAiStructureOpen(false)}
+        onApply={() => void handleApplyAiStructure()}
+        onCompare={() =>
+          setFeedback({
+            type: "info",
+            title: t("topicSet.ai.compareCurrent"),
+            message: t("topicSet.ai.compareCurrentHint"),
+          })
+        }
+      />
 
       {activeTab === "taxonomy" && (
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-          <div className="xl:col-span-1">
-            <div className="mb-2 flex items-center gap-2">
+        <div className="space-y-4">
+          <section className="rounded-lg border bg-white p-4">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 className="rounded-md border px-2 py-1 text-xs disabled:cursor-not-allowed disabled:opacity-50"
@@ -2467,7 +3563,41 @@ export function TopicSetWorkspaceClient({
               >
                 {t("topicSet.workspace.addRootNode")}
               </button>
+              <button
+                type="button"
+                className="rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-xs text-fuchsia-700 disabled:opacity-50"
+                disabled={!canEdit}
+                onClick={() => {
+                  void handleOpenAiStructure();
+                }}
+              >
+                {t("topicSet.ai.generateStructure")}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700 disabled:opacity-50"
+                disabled={!canEdit || !selectedNode || aiBindingSuggestions.length === 0}
+                onClick={() => {
+                  void handleApplyAiBindings();
+                }}
+              >
+                {t("topicSet.ai.autoAssign")}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-xs text-sky-700 disabled:opacity-50"
+                disabled={!canEdit}
+                onClick={() => {
+                  void handleRunAiOptimize();
+                }}
+              >
+                {t("topicSet.ai.optimize")}
+              </button>
             </div>
+          </section>
+
+          <section className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+            <div className="xl:col-span-1">
             <TaxonomyTree
               nodes={nodes}
               nodeMap={nodeMap}
@@ -2499,6 +3629,20 @@ export function TopicSetWorkspaceClient({
                 void prefetchImpactForNode(nodeId);
               }}
               maxDocCount={maxDocCount}
+              aiSuggestionOpen={aiStructureOpen}
+              aiSuggestionGroups={aiStructureGroups}
+              aiNodeStateMap={aiNodeStateMap}
+              onToggleAiSuggestion={() => {
+                void handleOpenAiStructure();
+              }}
+              onApplyAiSuggestion={() => void handleApplyAiStructure()}
+              onCompareAiSuggestion={() => {
+                setFeedback({
+                  type: "info",
+                  title: t("topicSet.ai.compareCurrent"),
+                  message: t("topicSet.ai.compareCurrentHint"),
+                });
+              }}
               onStartCreate={(parentId) => {
                 if (!canEdit) return;
                 setCreateParentId(parentId);
@@ -2606,6 +3750,9 @@ export function TopicSetWorkspaceClient({
                 );
                 setFeedback({ type: "success", title: t("topicSet.feedback.nodeUpdated") });
               }}
+              aiAnalysis={selectedNodeAiAnalysis}
+              aiActions={selectedNodeAiActions}
+              aiSuggestionActions={aiOptimizeSuggestionActions}
             />
           </div>
 
@@ -2616,6 +3763,10 @@ export function TopicSetWorkspaceClient({
               topicDocCountMap={topicDocCountMap}
               loadingBoundTopics={false}
               onSearch={searchTopic}
+              aiRecommendedTopics={aiBindingSuggestions}
+              unmappedTopics={aiUnmappedTopics}
+              onBindRecommended={handleApplyAiBindings}
+              onAutoClassify={handleApplyAiBindings}
               onBind={async (topicId) => {
                 if (!selectedNode) return;
                 const result = await bindTopic(selectedNode, topicId);
@@ -2673,7 +3824,24 @@ export function TopicSetWorkspaceClient({
               }}
             />
           </div>
-        </section>
+          </section>
+
+          <AIInsightPanel
+            expanded={aiInsightExpanded}
+            summary={aiInsightSummary}
+            onToggle={() => setAiInsightExpanded((prev) => !prev)}
+            onOptimize={() => {
+              void handleRunAiOptimize();
+            }}
+            onApplyOneByOne={() =>
+              setFeedback({
+                type: "info",
+                title: t("topicSet.ai.applyOneByOne"),
+                message: t("topicSet.ai.applyOneByOneHint"),
+              })
+            }
+          />
+        </div>
       )}
 
       {activeTab === "map" && (

@@ -3163,6 +3163,372 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiResponseVoid'
 
+  /api/ai/topicset/suggest-structure:
+    post:
+      tags: [AI]
+      summary: Suggest a topicset structure from existing topics
+      operationId: suggestTopicSetStructure
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetAISuggestStructureRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetAISuggestStructureResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/ai/topicset/assign:
+    post:
+      tags: [AI]
+      summary: Suggest topic assignments for topicset nodes
+      operationId: assignTopicSetTopics
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetAIAssignRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetAIAssignResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/ai/topicset/optimize:
+    post:
+      tags: [AI]
+      summary: Suggest topicset optimizations from simulate and analyzer signals
+      operationId: optimizeTopicSetWithAi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopicSetAIOptimizeRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetAIOptimizeResponse'
+              examples:
+                splitNode:
+                  summary: Split a crowded node into children
+                  value:
+                    success: true
+                    data:
+                      coverage: 0.68
+                      overlapLevel: HIGH
+                      issues:
+                        - 博士相关 Topic 在少量节点上聚集，建议拆分子节点
+                      suggestions:
+                        - type: OPTIMIZATION
+                          confidence: 0.88
+                          reason: 博士相关 Topic 有明显聚集，建议拆分补贴与引进两个子节点。
+                          payload:
+                            action: SPLIT_NODE
+                            targetNodeId: 22222222-2222-2222-2222-222222222222
+                            targetNodeName: 博士人才
+                            children:
+                              - name: 博士补贴
+                                description: 博士补贴相关主题
+                              - name: 博士引进
+                                description: 博士引进相关主题
+                      simulateResult:
+                        totalDocs: 1000
+                        classifiedDocs: 680
+                        unmappedDocs: 320
+                        coverageRatio: 0.68
+                        overlapDocCount: 140
+                        overlapRatio: 0.14
+                    error: null
+                mergeNodes:
+                  summary: Merge two semantically similar nodes
+                  value:
+                    success: true
+                    data:
+                      coverage: 0.73
+                      overlapLevel: HIGH
+                      issues:
+                        - 海外人才与高层次人才边界接近
+                      suggestions:
+                        - type: OPTIMIZATION
+                          confidence: 0.73
+                          reason: 海外人才与高层次人才边界接近，建议人工复核是否需要合并。
+                          payload:
+                            action: MERGE_NODES
+                            sourceNodeIds:
+                              - 33333333-3333-3333-3333-333333333333
+                              - 44444444-4444-4444-4444-444444444444
+                            sourceNodeNames:
+                              - 海外人才
+                              - 高层次人才
+                            targetNodeName: 高层次人才
+                            mode: MANUAL_CONFIRM
+                    error: null
+                reviewEmptyNodes:
+                  summary: Review empty nodes before deletion
+                  value:
+                    success: true
+                    data:
+                      coverage: null
+                      overlapLevel: LOW
+                      issues:
+                        - 存在未绑定 Topic 的节点，结构可能过细或未完成映射。
+                      suggestions:
+                        - type: OPTIMIZATION
+                          confidence: 0.76
+                          reason: 空节点会降低可治理性，建议先人工复核后再删除或补充 Topic 绑定。
+                          payload:
+                            action: REVIEW_EMPTY_NODES
+                            emptyNodeCount: 4
+                    error: null
+                improveCoverage:
+                  summary: Improve low coverage with more topics or rebinding
+                  value:
+                    success: true
+                    data:
+                      coverage: 0.19
+                      overlapLevel: MEDIUM
+                      issues:
+                        - coverage 偏低，仍有较多文档未被映射。
+                      suggestions:
+                        - type: OPTIMIZATION
+                          confidence: 0.84
+                          reason: 低 coverage 说明需要补充结构或增强 Topic 归类。
+                          payload:
+                            action: IMPROVE_COVERAGE
+                            coverageRatio: 0.19
+                    error: null
+                moveNode:
+                  summary: Move a node under a new parent
+                  value:
+                    success: true
+                    data:
+                      coverage: null
+                      overlapLevel: MEDIUM
+                      issues:
+                        - 当前节点层级与其他节点维度不一致
+                      suggestions:
+                        - type: OPTIMIZATION
+                          confidence: 0.81
+                          reason: 博士引进应归入人才引进维度下，建议调整节点位置。
+                          payload:
+                            action: MOVE_NODE
+                            nodeId: 55555555-5555-5555-5555-555555555555
+                            nodeName: 博士引进
+                            newParentId: 66666666-6666-6666-6666-666666666666
+                            newParentName: 人才引进
+                    error: null
+                unbindTopics:
+                  summary: Unbind topics from an overly broad node
+                  value:
+                    success: true
+                    data:
+                      coverage: 0.61
+                      overlapLevel: HIGH
+                      issues:
+                        - 部分 Topic 在当前节点下造成较高 overlap
+                      suggestions:
+                        - type: OPTIMIZATION
+                          confidence: 0.79
+                          reason: 这些 Topic 与当前节点边界不再匹配，建议先解绑再重新归类。
+                          payload:
+                            action: UNBIND_TOPICS
+                            targetNodeId: 77777777-7777-7777-7777-777777777777
+                            targetNodeName: 高层次人才
+                            topicIds:
+                              - topic-1
+                              - topic-2
+                            topicNames:
+                              - 海外博士引进
+                              - 高端人才补贴
+                    error: null
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/ai/topicset/analysis:
+    get:
+      tags: [AI]
+      summary: Get topicset AI analysis panel data
+      operationId: getTopicSetAiAnalysis
+      parameters:
+        - name: topicSetId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dataset
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sampleSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicSetAIAnalysisResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/ai/topics/{topicId}/terms:
+    get:
+      tags: [AI]
+      summary: Extract semantic evidence terms for a topic
+      operationId: extractTopicEvidenceTerms
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runtimeEnvironmentId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sampleSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [AUTO, DRAFT, PUBLISHED]
+        - name: includeDocs
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: refineWithLlm
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicEvidenceTermsResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
+  /api/ai/topics/{topicId}/terms/analysis:
+    get:
+      tags: [AI]
+      summary: Analyze semantic evidence terms for a topic
+      operationId: analyzeTopicEvidenceTerms
+      parameters:
+        - name: topicId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: runtimeEnvironmentId
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: sampleSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [AUTO, DRAFT, PUBLISHED]
+        - name: refineWithLlm
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseTopicEvidenceTermsAnalysisResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseVoid'
+
   /api/topicsets/{id}/restore:
     post:
       tags: [TopicSet]
@@ -6205,6 +6571,72 @@ components:
           $ref: '#/components/schemas/ApiError'
       required: [success]
 
+    ApiResponseTopicSetAISuggestStructureResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetAISuggestStructureResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetAIAssignResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetAIAssignResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetAIOptimizeResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetAIOptimizeResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicSetAIAnalysisResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicSetAIAnalysisResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicEvidenceTermsResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicEvidenceTermsResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
+    ApiResponseTopicEvidenceTermsAnalysisResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/TopicEvidenceTermsAnalysisResponse'
+        error:
+          $ref: '#/components/schemas/ApiError'
+      required: [success]
+
     ApiResponseRuntimeDeployValidateResponse:
       type: object
       properties:
@@ -7307,6 +7739,8 @@ components:
           type: array
           items:
             type: string
+        datasetContext:
+          $ref: '#/components/schemas/TopicAiGenerateDatasetContext'
         mode:
           type: string
           nullable: true
@@ -7326,6 +7760,33 @@ components:
           type: string
           nullable: true
       required: [description]
+
+    TopicAiGenerateDatasetContext:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: string
+        fieldDefinitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicAiGenerateFieldDefinition'
+
+    TopicAiGenerateFieldDefinition:
+      type: object
+      properties:
+        field:
+          type: string
+        label:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        recommendedUsage:
+          type: string
+          nullable: true
 
     TopicAiGenerateResponse:
       type: object
@@ -7575,6 +8036,436 @@ components:
           items:
             type: string
       required: [provider, model, strengths, risks, recommendedActions]
+
+    TopicSetAITopicInput:
+      type: object
+      properties:
+        topicId:
+          type: string
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        explain:
+          type: string
+          nullable: true
+      required: [topicId]
+
+    TopicSetAINodeInput:
+      type: object
+      properties:
+        nodeId:
+          type: string
+          format: uuid
+          nullable: true
+        parentId:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        path:
+          type: string
+          nullable: true
+
+    TopicSetAIStructureNodeView:
+      type: object
+      properties:
+        name:
+          type: string
+        nodes:
+          type: array
+          items:
+            type: string
+      required: [name, nodes]
+
+    TopicSetAISuggestion:
+      type: object
+      description: Suggestion envelope. For optimize responses, clients should primarily execute by `payload.action`.
+      properties:
+        type:
+          type: string
+          enum: [STRUCTURE, ASSIGNMENT, OPTIMIZATION]
+        confidence:
+          type: number
+          format: double
+        reason:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+          description: |
+            Action protocol for executable optimize suggestions.
+            Recommended `payload.action` values:
+            - SPLIT_NODE
+            - MERGE_NODES
+            - RENAME_NODE
+            - MOVE_NODE
+            - BIND_TOPICS
+            - UNBIND_TOPICS
+            - DELETE_EMPTY_NODES
+            - REVIEW_EMPTY_NODES
+            - IMPROVE_COVERAGE
+            Suggested payload shapes:
+            - `MERGE_NODES`: `sourceNodeIds[]`, `sourceNodeNames[]`, `targetNodeId`, `targetNodeName`, `mode`
+            - `MOVE_NODE`: `nodeId`, `nodeName`, `newParentId`, `newParentName`
+            - `UNBIND_TOPICS`: `targetNodeId`, `targetNodeName`, `topicIds[]`, `topicNames[]`
+            - `BIND_TOPICS`: `targetNodeId`, `targetNodeName`, `topicIds[]`, `topicNames[]`
+          example:
+            action: SPLIT_NODE
+            targetNodeId: 22222222-2222-2222-2222-222222222222
+            targetNodeName: 博士人才
+            children:
+              - name: 博士补贴
+                description: 博士补贴相关主题
+              - name: 博士引进
+                description: 博士引进相关主题
+      required: [type, confidence, reason, payload]
+
+    TopicSetAISuggestStructureRequest:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAITopicInput'
+        dataset:
+          type: string
+          nullable: true
+        fields:
+          type: array
+          items:
+            type: string
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [topicSetId]
+
+    TopicSetAISuggestStructureResponse:
+      type: object
+      properties:
+        provider:
+          type: string
+        model:
+          type: string
+        dimensions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAIStructureNodeView'
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAISuggestion'
+      required: [provider, model, dimensions, suggestions]
+
+    TopicSetAIAssignmentView:
+      type: object
+      properties:
+        topicId:
+          type: string
+        nodeNames:
+          type: array
+          items:
+            type: string
+        nodeIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        confidence:
+          type: number
+          format: double
+        reason:
+          type: string
+      required: [topicId, nodeNames, nodeIds, confidence, reason]
+
+    TopicSetAIAssignRequest:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+          nullable: true
+          description: Optional. When provided, assignment scoring is enhanced with explain-derived topic terms.
+        termSource:
+          type: string
+          nullable: true
+          enum: [AUTO, DRAFT, PUBLISHED]
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAINodeInput'
+        topics:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAITopicInput'
+        refineWithLlm:
+          type: boolean
+          nullable: true
+          description: Optional. Defaults to false. When true, LLM may refine deterministic candidates but cannot create new nodes outside the candidate set.
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [topicSetId]
+
+    TopicSetAIAssignResponse:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAIAssignmentView'
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAISuggestion'
+      required: [assignments, suggestions]
+
+    TopicSetAISimulateResultInput:
+      type: object
+      properties:
+        totalDocs:
+          type: integer
+          format: int64
+          nullable: true
+        classifiedDocs:
+          type: integer
+          format: int64
+          nullable: true
+        unmappedDocs:
+          type: integer
+          format: int64
+          nullable: true
+        coverageRatio:
+          type: number
+          format: double
+          nullable: true
+        overlapDocCount:
+          type: integer
+          format: int64
+          nullable: true
+        overlapRatio:
+          type: number
+          format: double
+          nullable: true
+
+    TopicSetAIOptimizeRequest:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        dataset:
+          type: string
+          nullable: true
+        sampleSize:
+          type: integer
+          format: int32
+          nullable: true
+        simulateResult:
+          $ref: '#/components/schemas/TopicSetAISimulateResultInput'
+        provider:
+          type: string
+          nullable: true
+        model:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+          nullable: true
+      required: [topicSetId]
+
+    TopicSetAIOptimizeResponse:
+      type: object
+      properties:
+        coverage:
+          type: number
+          format: double
+          nullable: true
+        overlapLevel:
+          type: string
+        issues:
+          type: array
+          items:
+            type: string
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAISuggestion'
+        simulateResult:
+          $ref: '#/components/schemas/TopicSetAISimulateResultInput'
+      required: [overlapLevel, issues, suggestions]
+
+    TopicSetAIAnalysisResponse:
+      type: object
+      properties:
+        topicSetId:
+          type: string
+          format: uuid
+        coverage:
+          type: number
+          format: double
+          nullable: true
+        overlapLevel:
+          type: string
+        unmappedCount:
+          type: integer
+          format: int64
+          nullable: true
+        issues:
+          type: array
+          items:
+            type: string
+        suggestions:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicSetAISuggestion'
+        simulateResult:
+          $ref: '#/components/schemas/TopicSetAISimulateResultInput'
+        stats:
+          type: object
+          additionalProperties: true
+      required: [topicSetId, overlapLevel, issues, suggestions, stats]
+
+    TopicEvidenceTermView:
+      type: object
+      properties:
+        kind:
+          type: string
+          enum: [TERM]
+        term:
+          type: string
+        score:
+          type: number
+          format: double
+        docFreq:
+          type: integer
+          format: int32
+        totalFreq:
+          type: integer
+          format: int32
+        titleFreq:
+          type: integer
+          format: int32
+        contentFreq:
+          type: integer
+          format: int32
+      required: [kind, term, score, docFreq, totalFreq, titleFreq, contentFreq]
+
+    TopicEvidenceDocView:
+      type: object
+      properties:
+        docId:
+          type: string
+        title:
+          type: string
+          nullable: true
+        matchedTerms:
+          type: array
+          items:
+            type: string
+        matchedFields:
+          type: array
+          items:
+            type: string
+      required: [docId, matchedTerms, matchedFields]
+
+    TopicEvidenceTermsResponse:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        topicNodePath:
+          type: string
+          nullable: true
+        source:
+          type: string
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+          nullable: true
+        totalMatchedDocs:
+          type: integer
+          format: int64
+        sampledDocs:
+          type: integer
+          format: int32
+        terms:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicEvidenceTermView'
+        docs:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicEvidenceDocView'
+      required: [topicId, topicName, source, totalMatchedDocs, sampledDocs, terms, docs]
+
+    TopicEvidenceTermsAnalysisResponse:
+      type: object
+      properties:
+        topicId:
+          type: string
+        topicName:
+          type: string
+        topicNodePath:
+          type: string
+          nullable: true
+        source:
+          type: string
+        runtimeEnvironmentId:
+          type: integer
+          format: int64
+          nullable: true
+        totalMatchedDocs:
+          type: integer
+          format: int64
+        sampledDocs:
+          type: integer
+          format: int32
+        candidateTermCount:
+          type: integer
+          format: int32
+        stopwordFilteredCount:
+          type: integer
+          format: int32
+        lowFreqFilteredCount:
+          type: integer
+          format: int32
+        genericFilteredCount:
+          type: integer
+          format: int32
+        terms:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopicEvidenceTermView'
+      required:
+        [topicId, topicName, source, totalMatchedDocs, sampledDocs, candidateTermCount, stopwordFilteredCount, lowFreqFilteredCount, genericFilteredCount, terms]
 
     AiInvocationPageResponse:
       type: object

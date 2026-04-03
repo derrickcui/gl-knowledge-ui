@@ -55,6 +55,20 @@ type TaxonomyTreeProps = {
   onConfirmRename: (name: string) => void;
   onCancelRename: () => void;
   canRenameInline?: boolean;
+  aiSuggestionOpen?: boolean;
+  aiSuggestionGroups?: Array<{ title: string; items: string[] }>;
+  onToggleAiSuggestion?: () => void;
+  onApplyAiSuggestion?: () => void;
+  onCompareAiSuggestion?: () => void;
+  aiNodeStateMap?: Record<
+    string,
+    {
+      overlap?: boolean;
+      empty?: boolean;
+      hot?: boolean;
+      uncategorized?: boolean;
+    }
+  >;
 };
 
 type TreeNodeData = {
@@ -187,6 +201,7 @@ function ArborNode({
   onCancelRename,
   canRenameInline,
   maxDocCount,
+  aiNodeStateMap,
 }: NodeRendererProps<TreeNodeData> & {
   selectedNodeId: string | null;
   creatingParentId: string | null | undefined;
@@ -210,11 +225,21 @@ function ArborNode({
   onCancelRename: () => void;
   canRenameInline?: boolean;
   maxDocCount?: number;
+  aiNodeStateMap?: Record<
+    string,
+    {
+      overlap?: boolean;
+      empty?: boolean;
+      hot?: boolean;
+      uncategorized?: boolean;
+    }
+  >;
 }) {
   const isCreateDraft = node.data.kind === "create-draft";
   const isSelected = selectedNodeId === node.id;
   const isCreatingHere = creatingParentId === node.id;
   const isRenamingHere = renamingNodeId === node.id;
+  const nodeAiState = aiNodeStateMap?.[node.id];
   const [createDraft, setCreateDraft] = useState(creatingName);
   const [renameDraft, setRenameDraft] = useState(renamingName);
   const [isComposing, setIsComposing] = useState(false);
@@ -415,6 +440,40 @@ function ArborNode({
           >
             {node.data.name}
           </button>
+          <div className="flex items-center gap-1">
+            {nodeAiState?.overlap && (
+              <span
+                className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700"
+                title={t("topicSet.ai.treeStateOverlap")}
+              >
+                ⚠
+              </span>
+            )}
+            {nodeAiState?.empty && (
+              <span
+                className="rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] text-slate-600"
+                title={t("topicSet.ai.treeStateEmpty")}
+              >
+                ⬜
+              </span>
+            )}
+            {nodeAiState?.hot && (
+              <span
+                className="rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] text-rose-700"
+                title={t("topicSet.ai.treeStateHot")}
+              >
+                🔥
+              </span>
+            )}
+            {nodeAiState?.uncategorized && (
+              <span
+                className="rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] text-sky-700"
+                title={t("topicSet.ai.treeStateUncategorized")}
+              >
+                ❗
+              </span>
+            )}
+          </div>
           {typeof node.data.topicCount === "number" && node.data.topicCount > 0 && (
             <span
               className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800"
@@ -516,6 +575,12 @@ export function TaxonomyTree({
   onCancelRename,
   canRenameInline = true,
   maxDocCount = 0,
+  aiSuggestionOpen = false,
+  aiSuggestionGroups = [],
+  onToggleAiSuggestion,
+  onApplyAiSuggestion,
+  onCompareAiSuggestion,
+  aiNodeStateMap,
 }: TaxonomyTreeProps) {
   const fallbackCache = useMemo(() => buildCacheFromNested(nodes), [nodes]);
 
@@ -588,7 +653,49 @@ export function TaxonomyTree({
   return (
     <section className="rounded-lg border bg-white">
       <div className="border-b px-4 py-3">
-        <h2 className="text-sm font-semibold">{t("topicSet.tree.title")}</h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold">{t("topicSet.tree.title")}</h2>
+          <button
+            type="button"
+            className="rounded-md border border-fuchsia-200 bg-fuchsia-50 px-2 py-1 text-xs text-fuchsia-700"
+            onClick={onToggleAiSuggestion}
+          >
+            {t("topicSet.ai.treeSuggestion")}
+          </button>
+        </div>
+        {aiSuggestionOpen && aiSuggestionGroups.length > 0 && (
+          <div className="mt-3 rounded-lg border border-fuchsia-200 bg-fuchsia-50/60 p-3 text-xs">
+            <div className="font-medium text-fuchsia-800">{t("topicSet.ai.treeSuggestionPending")}</div>
+            <div className="mt-2 space-y-2">
+              {aiSuggestionGroups.map((group) => (
+                <div key={group.title}>
+                  <div className="font-medium text-slate-900">{group.title}</div>
+                  <ul className="mt-1 space-y-1 text-slate-700">
+                    {group.items.map((item) => (
+                      <li key={`${group.title}-${item}`}>- {item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md bg-black px-2.5 py-1 text-xs text-white"
+                onClick={onApplyAiSuggestion}
+              >
+                {t("topicSet.ai.apply")}
+              </button>
+              <button
+                type="button"
+                className="rounded-md border bg-white px-2.5 py-1 text-xs"
+                onClick={onCompareAiSuggestion}
+              >
+                {t("topicSet.ai.compareCurrent")}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="max-h-[68vh] overflow-auto p-2 scrollbar-thin">
         {creatingParentId === null && (
@@ -675,6 +782,7 @@ export function TaxonomyTree({
                 onCancelRename={onCancelRename}
                 canRenameInline={canRenameInline}
                 maxDocCount={maxDocCount}
+                aiNodeStateMap={aiNodeStateMap}
               />
             )}
           </Tree>

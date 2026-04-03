@@ -33,6 +33,7 @@ export function WorkspaceHeader({
   canCreateVersion,
   canDeprecate,
   canArchive,
+  canRunAi,
   taggingLoading,
   diffSummary,
   diffBaselineVersion,
@@ -47,6 +48,9 @@ export function WorkspaceHeader({
   onDeprecate,
   onArchive,
   onRunTagging,
+  onGenerateStructure,
+  onAutoAssign,
+  onAiOptimize,
 }: {
   topicSetDetail: TopicSetDetail | null;
   version: number | null;
@@ -60,6 +64,7 @@ export function WorkspaceHeader({
   canCreateVersion: boolean;
   canDeprecate: boolean;
   canArchive: boolean;
+  canRunAi?: boolean;
   taggingLoading?: boolean;
   diffSummary?: {
     nodesAdded: number;
@@ -80,6 +85,9 @@ export function WorkspaceHeader({
   onDeprecate: () => void;
   onArchive: () => void;
   onRunTagging: () => void;
+  onGenerateStructure?: () => void;
+  onAutoAssign?: () => void;
+  onAiOptimize?: () => void;
 }) {
   const activeVersionLabel = !topicSetDetail
     ? "-"
@@ -124,6 +132,30 @@ export function WorkspaceHeader({
         />
 
         <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-md border border-fuchsia-200 bg-fuchsia-50 px-3 py-1.5 text-sm text-fuchsia-700 disabled:opacity-50"
+            onClick={onGenerateStructure}
+            disabled={!topicSetDetail || !canRunAi}
+          >
+            {t("topicSet.ai.generateStructure")}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-700 disabled:opacity-50"
+            onClick={onAutoAssign}
+            disabled={!topicSetDetail || !canRunAi}
+          >
+            {t("topicSet.ai.autoAssign")}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border border-sky-200 bg-sky-50 px-3 py-1.5 text-sm text-sky-700 disabled:opacity-50"
+            onClick={onAiOptimize}
+            disabled={!topicSetDetail || !canRunAi}
+          >
+            {t("topicSet.ai.optimize")}
+          </button>
           <button type="button" className="rounded-md border px-3 py-1.5 text-sm" onClick={onViewVersions}>
             {t("topicSet.workspace.viewVersions")}
           </button>
